@@ -328,6 +328,8 @@ if "workbook" not in st.session_state: st.session_state.workbook=None
 if "filters" not in st.session_state: st.session_state.filters={}
 if "comparison_result" not in st.session_state: st.session_state.comparison_result=None
 if "comparison_error" not in st.session_state: st.session_state.comparison_error=None
+if "comparison_raw_files" not in st.session_state: st.session_state.comparison_raw_files=None
+if "comparison_filters" not in st.session_state: st.session_state.comparison_filters={}
 if "tracking_data" not in st.session_state: st.session_state.tracking_data=None
 if "tracking_error" not in st.session_state: st.session_state.tracking_error=None
 
@@ -384,6 +386,8 @@ with st.sidebar:
                     try:
                         workbooks=[load_workbook(f) for f in compare_uploads]
                         prepared=prepare_comparison(workbooks)
+                        st.session_state.comparison_raw_files=prepared["files"]
+                        st.session_state.comparison_filters={}
                         st.session_state.comparison_result=build_comparison(prepared)
                         st.session_state.comparison_error=None
                     except Exception as e:

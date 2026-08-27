@@ -589,3 +589,159 @@ def build_workbook_html_report(workbook: dict) -> str:
 }})();
 </script>
 </body></html>"""
+
+
+def build_comparison_html_report(comparison: dict, filters_summary: str = "Sin filtros aplicados") -> str:
+    """Informe HTML de la vista "Comparativa": qué cambió entre N archivos,
+    con los mismos filtros que el usuario tenga aplicados en pantalla. No es
+    una foto del dashboard: se reconstruye de forma independiente, igual que
+    los otros informes.
+    """
+    import plotly.express as px
+    from core.comparison_engine import combined_records_table
+
+    files = comparison.get("files", [])
+    generated = datetime.now().strftime("%d/%m/%Y %H:%M")
+    file_list = "".join(
+        f"<li><b>{i+1}.</b> {_esc(f['label'])} <span class='muted'>({_esc(f['filename'])} · {len(f['df']):,} registros)</span></li>"
+        for i, f in enumerate(files)
+    )
+
+    kpi_cards = []
+    for m in comparison.get("recent_metrics", []):
+        cp = m["cambio_pct"]
+        cp_txt = "—" if cp is None else f"{cp:+.1f}%"
+        tone = "up" if (cp or 0) > 0 else ("down" if (cp or 0) < 0 else "")
+        kpi_cards.append(
+            f"<div class='kpi'><div class='kpi-label'>{_esc(m['nombre'])}</div>"
+            f"<div class='kpi-value'>{_fmt(m['actual'])}</div>"
+            f"<div class='kpi-delta {tone}'>{cp_txt} vs. periodo anterior</div></div>"
+        )
+    kpi_html = "".join(kpi_cards)
+
+    signals_html = "".join(
+        f"<article class='finding-mini'><div class='finding-sheet'>{'↑ MEJORA' if s['tipo']=='positive' else '↓ ATENCIÓN' if s['tipo']=='warning' else 'CONTEXTO'}</div><p>{_esc(clean_display_text(s['texto']))}</p></article>"
+        for s in comparison.get("signals", [])
+    )
+
+    dim_tables = []
+    for dr in comparison.get("dimension_results", [])[:4]:
+        t = dr["table"]
+        up = t.sort_values("cambio", ascending=False).head(5)
+        down = t.sort_values("cambio", ascending=True).head(5)
+        def _rows(sub):
+            out = []
+            for _, r in sub.iterrows():
+                cp_txt = "—" if pd.isna(r["cambio_pct"]) else f"{r['cambio_pct']:+.1f}%"
+                out.append(
+                    f"<tr><td>{_esc(r['categoria'])}</td><td>{_fmt(r['anterior'])}</td><td>{_fmt(r['actual'])}</td>"
+                    f"<td>{cp_txt}</td></tr>"
+                )
+            return "".join(out)
+        dim_tables.append(f"""
+        <div class='table-card'>
+          <h3>{_esc(dr['dimension'])} · usando {_esc(dr['metric'])}</h3>
+          <div class='dim-grid'>
+            <div><p class='muted'>Mayor mejora</p><table><thead><tr><th>Categoría</th><th>Antes</th><th>Ahora</th><th>Variación</th></tr></thead><tbody>{_rows(up)}</tbody></table></div>
+            <div><p class='muted'>Mayor caída</p><table><thead><tr><th>Categoría</th><th>Antes</th><th>Ahora</th><th>Variación</th></tr></thead><tbody>{_rows(down)}</tbody></table></div>
+          </div>
+        </div>
+        """)
+
+    chart_blocks = []
+    for i, h in enumerate(comparison.get("history", [])[:6]):
+        series = h["serie"]
+        fig = px.line(series, x="periodo", y="valor", markers=True)
+        fig.update_layout(
+            height=340, margin=dict(l=20, r=20, t=20, b=20),
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="Periodo", yaxis_title=h["operacion"], font=dict(family="Inter,Segoe UI,Arial,sans-serif", size=12),
+        )
+        fig.update_traces(line_color="#e4002b", marker_color="#e4002b")
+        chart_blocks.append(_chart_block(f"Evolución · {h['metrica']}", f"{h['operacion']} por archivo comparado", fig, i + 1, include_js=(i == 0)))
+
+    matches = comparison.get("matches", [])
+    match_rows = "".join(
+        f"<tr><td>{_esc(m['a'])}</td><td>{_esc(m['b'])}</td><td>{m['score']*100:.0f}%</td><td>{_esc(_pretty_technical_safe(m.get('concept','')))}</td></tr>"
+        for m in matches
+    )
+
+    records = combined_records_table(files, max_rows=300)
+    records_section = ""
+    if not records.empty:
+        total_real = sum(len(f["df"]) for f in files)
+        head_cols = "".join(f"<th>{_esc(c)}</th>" for c in records.columns)
+        body_rows = "".join(
+            "<tr>" + "".join(f"<td>{_esc(v) if pd.notna(v) else '—'}</td>" for v in row) + "</tr>"
+            for row in records.itertuples(index=False)
+        )
+        note = f"Mostrando los primeros {len(records):,} de {total_real:,} registros totales." if total_real > len(records) else f"{len(records):,} registros."
+        records_section = f"""
+        <section class='section'><div class='table-card'>
+          <h3>Registros detallados</h3>
+          <p class='muted'>{note} Descarga el CSV completo desde la app si necesitas todo el detalle.</p>
+          <div style='overflow-x:auto'><table><thead><tr>{head_cols}</tr></thead><tbody>{body_rows}</tbody></table></div>
+        </div></section>
+        """
+
+    return f"""<!doctype html>
+<html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Informe comparativo — {len(files)} archivos</title>
+<style>
+:root{{--bg:#f4f6fa;--card:#fff;--text:#172033;--muted:#667085;--line:#dfe4ec;--blue:#e4002b;--green:#1b9a67;--amber:#d88708;--shadow:0 5px 18px rgba(23,32,51,.06)}}
+*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.45}}
+.wrap{{max-width:1200px;margin:0 auto;padding:30px 22px 60px}}
+.header{{background:#fff;border:1px solid var(--line);border-top:6px solid var(--blue);border-radius:17px;padding:26px 28px;box-shadow:var(--shadow)}}
+.kicker{{font-size:10px;font-weight:900;letter-spacing:.13em;color:var(--blue);text-transform:uppercase}}
+h1{{margin:6px 0 8px;font-size:28px;letter-spacing:-.03em}}
+.subtitle{{color:var(--muted);font-size:13.5px}}
+.filelist{{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-wrap:wrap;gap:8px}}
+.filelist li{{background:#f7f9fc;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12px}}
+.badge{{display:inline-block;margin-top:12px;background:#fde8ea;color:var(--blue);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700}}
+.section{{margin-top:26px}}.section h2{{font-size:19px;margin:0 0 12px}}
+.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}}
+.kpi{{background:#fff;border:1px solid var(--line);border-radius:13px;padding:15px;box-shadow:var(--shadow)}}
+.kpi-label{{font-size:11px;color:var(--muted);font-weight:700}}.kpi-value{{font-size:22px;font-weight:800;margin-top:6px}}
+.kpi-delta{{font-size:11.5px;font-weight:700;margin-top:6px;color:var(--muted)}}.kpi-delta.up{{color:var(--green)}}.kpi-delta.down{{color:var(--blue)}}
+.findings{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:11px}}
+.finding-mini{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px;box-shadow:var(--shadow)}}
+.finding-sheet{{font-size:9px;font-weight:900;letter-spacing:.1em;color:var(--blue);margin-bottom:5px}}
+.table-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow);margin-top:14px}}
+.table-card h3{{margin:0 0 10px;font-size:15px}}.dim-grid{{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
+table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}}
+th{{color:var(--muted);font-size:10px;text-transform:uppercase}}.muted{{color:var(--muted);font-size:11.5px;margin:0 0 6px}}
+.chart-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow);margin-top:14px}}
+.chart-head span{{font-size:9px;color:var(--blue);font-weight:900;letter-spacing:.12em}}.chart-head h3{{margin:4px 0 2px;font-size:15px}}.chart-head p{{margin:0;color:var(--muted);font-size:11px}}
+.footer{{margin-top:35px;color:#7a8495;font-size:11px;text-align:center}}
+@media(max-width:800px){{.dim-grid{{grid-template-columns:1fr}}}}
+</style></head><body><main class='wrap'>
+<header class='header'>
+  <div class='kicker'>Panel Analítico Universal · Informe comparativo</div>
+  <h1>Qué cambió entre {len(files)} archivos</h1>
+  <div class='subtitle'>Comparación calculada automáticamente cruzando variables equivalentes entre archivos, con los mismos filtros que tenías activos. Generado: {_esc(generated)}.</div>
+  <ul class='filelist'>{file_list}</ul>
+  <div class='badge'>Filtros aplicados: {_esc(filters_summary)}</div>
+</header>
+
+<section class='section'><h2>Resumen de cambios</h2><div class='kpis'>{kpi_html or '<div class="finding-mini">No se encontraron métricas comparables entre los archivos.</div>'}</div></section>
+
+{f'<section class="section"><h2>Lectura ejecutiva</h2><div class="findings">{signals_html}</div></section>' if signals_html else ''}
+
+{f'<section class="section"><h2>Cambios por categoría</h2>{"".join(dim_tables)}</section>' if dim_tables else ''}
+
+{f'<section class="section"><h2>Evolución a través de los archivos</h2>{"".join(chart_blocks)}</section>' if chart_blocks else ''}
+
+{records_section}
+
+<section class='section'><div class='table-card'><h3>Variables que se cruzaron entre archivos</h3><table><thead><tr><th>Columna (primer archivo)</th><th>Columna equivalente (último)</th><th>Coincidencia</th><th>Tipo</th></tr></thead><tbody>{match_rows or '<tr><td colspan="4">No se encontraron variables equivalentes.</td></tr>'}</tbody></table></div></section>
+
+<footer class='footer'>Informe generado automáticamente por Panel Analítico Universal · Refleja los filtros que tenías activos al momento de exportar.</footer>
+</main></body></html>"""
+
+
+def _pretty_technical_safe(value: str) -> str:
+    try:
+        from ui.labels import pretty_technical
+        return pretty_technical(value)
+    except Exception:
+        return str(value)

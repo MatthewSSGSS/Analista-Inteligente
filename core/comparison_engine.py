@@ -124,6 +124,155 @@ def _profile_for_comparison(workbook: dict) -> tuple[str, pd.DataFrame, dict]:
     return name, df.copy(), schema
 
 
+def _common_column_map(files: list[dict], predicate) -> dict[str, dict[str, str]]:
+    """Encuentra columnas (que cumplan `predicate`) presentes conceptualmente
+    en TODOS los archivos a la vez, aunque el nombre varíe entre ellos.
+    Base compartida por common_dimension_map y common_metric_map.
+    """
+    if not files:
+        return {}
+    reference = files[0]
+    ref_cols = [c for c in reference["df"].columns if predicate(c, reference["schema"])]
+    result: dict[str, dict[str, str]] = {}
+    for ref_col in ref_cols:
+        ref_concept = _concept(ref_col, reference["schema"])
+        mapping = {reference["filename"]: ref_col}
+        ok = True
+        for f in files[1:]:
+            best, best_score = None, -1.0
+            for c in f["df"].columns:
+                if not predicate(c, f["schema"]):
+                    continue
+                c_concept = _concept(c, f["schema"])
+                name_score = SequenceMatcher(None, _norm(ref_col), _norm(c)).ratio()
+                semantic_score = 1.0 if ref_concept != "unknown" and ref_concept == c_concept else 0.0
+                score = 0.78 * semantic_score + 0.22 * name_score
+                if _norm(ref_col) == _norm(c):
+                    score = max(score, 0.98)
+                if ref_concept == c_concept and ref_concept != "unknown":
+                    score = max(score, 0.85)
+                if score > best_score:
+                    best_score, best = score, c
+            if best is not None and best_score >= 0.72:
+                mapping[f["filename"]] = best
+            else:
+                ok = False
+                break
+        if ok and len(mapping) == len(files) and ref_col not in result:
+            result[ref_col] = mapping
+    return result
+
+
+def common_dimension_map(files: list[dict]) -> dict[str, dict[str, str]]:
+    """Encuentra dimensiones (categorías) presentes conceptualmente en TODOS
+    los archivos a la vez, aunque el nombre de columna varíe entre ellos.
+    Devuelve algo como {"Región": {"archivo1.xlsx": "Region", "archivo2.xlsx": "REGION_"}}
+    para poder filtrar cada archivo por su propia columna equivalente.
+    Solo se ofrece como filtro una dimensión que de verdad exista en TODOS
+    los archivos cargados, no solo en algunos.
+    """
+    return _common_column_map(files, _is_dimension)
+
+
+def common_metric_map(files: list[dict]) -> dict[str, dict[str, str]]:
+    """Igual que common_dimension_map, pero para métricas numéricas. Sirve
+    para mostrar los valores de cada archivo bajo un mismo nombre de columna
+    en la tabla de registros combinados, en vez de columnas duplicadas como
+    'Ventas' y 'VENTAS' y 'Ventas_Totales'."""
+    return _common_column_map(files, _is_metric)
+
+
+def common_date_map(files: list[dict]) -> dict[str, dict[str, str]]:
+    """Igual que las anteriores, pero para columnas de fecha, así 'Fecha'
+    también queda unificada en la tabla combinada en vez de una columna
+    de fecha distinta por cada archivo."""
+    def _is_date_col(col, schema):
+        return col in (schema.get("dates") or [])
+    return _common_column_map(files, _is_date_col)
+
+
+def combined_records_table(files: list[dict], max_rows: int = 5000) -> pd.DataFrame:
+    """Junta las filas de los archivos (ya filtrados) en una sola tabla, para
+    ver el detalle real, no solo agregados. Las dimensiones, fechas y
+    métricas que se lograron emparejar entre archivos quedan bajo un mismo
+    nombre de columna; el resto de columnas propias de cada archivo se
+    conservan con su nombre original. No inventa datos: lo que un archivo no
+    tiene, queda vacío para ese archivo en vez de romper la tabla.
+    """
+    if not files:
+        return pd.DataFrame()
+    dim_map = common_dimension_map(files)
+    metric_map = common_metric_map(files)
+    date_map = common_date_map(files)
+    rows = []
+    for f in files:
+        sub = f["df"]
+        if sub is None or sub.empty:
+            continue
+        out = pd.DataFrame(index=sub.index)
+        out["Archivo"] = f["filename"]
+        out["Periodo"] = f["label"]
+        used_cols = set()
+        for label, mapping in date_map.items():
+            col = mapping.get(f["filename"])
+            out[label] = sub[col] if col and col in sub.columns else None
+            if col:
+                used_cols.add(col)
+        for label, mapping in dim_map.items():
+            col = mapping.get(f["filename"])
+            out[label] = sub[col] if col and col in sub.columns else None
+            if col:
+                used_cols.add(col)
+        for label, mapping in metric_map.items():
+            col = mapping.get(f["filename"])
+            out[label] = sub[col] if col and col in sub.columns else None
+            if col:
+                used_cols.add(col)
+        # Columnas propias de este archivo que no se lograron emparejar con
+        # ningún otro (p. ej. algo que solo existe en uno de los 6 excel).
+        for c in sub.columns:
+            if c not in used_cols:
+                out[f"{c} ({f['filename']})"] = sub[c]
+        rows.append(out)
+    if not rows:
+        return pd.DataFrame()
+    combined = pd.concat(rows, ignore_index=True, sort=False)
+    if len(combined) > max_rows:
+        combined = combined.head(max_rows)
+    return combined
+
+
+def dimension_filter_options(files: list[dict], dim_map: dict[str, str]) -> list[str]:
+    """Unión de valores disponibles para una dimensión ya mapeada por archivo."""
+    values: set[str] = set()
+    for f in files:
+        col = dim_map.get(f["filename"])
+        if col and col in f["df"].columns:
+            values.update(v for v in f["df"][col].dropna().astype(str).str.strip().unique().tolist() if v)
+    return sorted(values, key=str.casefold)
+
+
+def apply_dimension_filters(files: list[dict], selections: dict[str, list[str]], dimension_maps: dict[str, dict[str, str]]) -> list[dict]:
+    """selections: {"Región": ["Norte","Centro"]}. Filtra cada archivo por su
+    propia columna equivalente a esa dimensión (pueden llamarse distinto en
+    cada uno). Si un archivo no tiene esa dimensión mapeada, se deja tal cual
+    en vez de vaciarlo por error.
+    """
+    if not selections:
+        return files
+    out = []
+    for f in files:
+        df = f["df"]
+        for dim_label, values in selections.items():
+            if not values:
+                continue
+            col = (dimension_maps.get(dim_label) or {}).get(f["filename"])
+            if col and col in df.columns:
+                df = df[df[col].astype(str).str.strip().isin(values)]
+        out.append({**f, "df": df})
+    return out
+
+
 def prepare_comparison(workbooks: list[dict]) -> dict:
     prepared = []
     for wb in workbooks:

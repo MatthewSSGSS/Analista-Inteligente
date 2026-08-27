@@ -3,6 +3,13 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from ui.labels import pretty_technical
+from core.comparison_engine import (
+    common_dimension_map,
+    dimension_filter_options,
+    apply_dimension_filters,
+    build_comparison,
+    combined_records_table,
+)
 
 
 def _fmt(v):
@@ -25,10 +32,56 @@ def _tone(v):
     return "positive" if v > 0 else "negative"
 
 
+def _render_filter_panel():
+    """Filtro que se aplica a los N archivos comparados a la vez, usando la
+    columna equivalente de cada uno aunque el nombre no sea idéntico entre
+    archivos. Recalcula la comparación completa cuando cambia la selección.
+    """
+    raw_files = st.session_state.get("comparison_raw_files")
+    if not raw_files:
+        return
+    dim_maps = common_dimension_map(raw_files)
+    if not dim_maps:
+        return
+    active = st.session_state.get("comparison_filters") or {}
+    with st.expander("🎚️ Filtrar todos los archivos a la vez", expanded=bool(active)):
+        st.caption(
+            "Se aplica a los "
+            f"{len(raw_files)} archivos comparados usando la columna equivalente de cada uno, "
+            "aunque se llame distinto (ej. 'Región' vs 'REGION_'). Los archivos que no tengan "
+            "esa dimensión quedan sin filtrar en vez de vaciarse por error."
+        )
+        cols = st.columns(min(3, len(dim_maps)))
+        picked = {}
+        for i, (label, mapping) in enumerate(dim_maps.items()):
+            options = dimension_filter_options(raw_files, mapping)
+            with cols[i % len(cols)]:
+                sel = st.multiselect(label, options, default=active.get(label, []), key=f"cmp_filter_{label}")
+                if sel:
+                    picked[label] = sel
+        c1, c2 = st.columns([1, 1])
+        if c1.button("Aplicar filtros", use_container_width=True, type="primary", key="cmp_apply_filters"):
+            st.session_state.comparison_filters = picked
+            filtered = apply_dimension_filters(raw_files, picked, dim_maps)
+            try:
+                st.session_state.comparison_result = build_comparison({"files": filtered})
+            except Exception as exc:
+                st.error(f"No se pudo recalcular la comparación con ese filtro: {exc}")
+            st.rerun()
+        if active and c2.button("Quitar filtros", use_container_width=True, key="cmp_clear_filters"):
+            st.session_state.comparison_filters = {}
+            st.session_state.comparison_result = build_comparison({"files": raw_files})
+            st.rerun()
+    if active:
+        summary = " · ".join(f"{k}: {', '.join(v)}" for k, v in active.items())
+        st.markdown(f'<div class="data-badge" style="display:inline-block;margin-bottom:8px;">Filtros activos en la comparativa: {summary}</div>', unsafe_allow_html=True)
+
+
 def render_comparison(result):
     st.markdown('<div class="section-intro"><div><div class="eyebrow">COMPARATIVA</div><h2>Qué cambió entre los archivos</h2></div><div class="data-badge">Último vs. anterior · primero vs. último</div></div>', unsafe_allow_html=True)
     files = result["files"]
     st.caption(" · ".join(f"{i+1}. {f['label']}" for i, f in enumerate(files)))
+    _render_filter_panel()
 
     metrics = result["recent_metrics"]
     if metrics:
@@ -44,7 +97,7 @@ def render_comparison(result):
             icon = "↑" if s["tipo"] == "positive" else "↓" if s["tipo"] == "warning" else "i"
             st.markdown(f'<div class="insight-card {s["tipo"]}"><div class="insight-icon">{icon}</div><div class="insight-body"><div class="insight-label">HALLAZGO COMPARATIVO</div><div class="insight-text">{s["texto"]}</div></div></div>', unsafe_allow_html=True)
 
-    tabs = st.tabs(["Resumen", "Ganadores y caídas", "Evolución", "Variables comparables"])
+    tabs = st.tabs(["Resumen", "Ganadores y caídas", "Evolución", "📋 Registros", "Variables comparables"])
     with tabs[0]:
         rows=[]
         for m in result["metrics"]:
@@ -82,9 +135,48 @@ def render_comparison(result):
             fig.update_layout(height=360,margin=dict(l=20,r=20,t=50,b=20),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",xaxis_title="Periodo",yaxis_title="Valor")
             st.plotly_chart(fig,use_container_width=True,key=f"comparison_history_{history_index}")
     with tabs[3]:
+        st.caption(
+            "Cada fila real de los archivos comparados (ya con tus filtros aplicados), no un "
+            "agregado. Las columnas que coinciden entre archivos (como una dimensión o una "
+            "métrica compartida) quedan bajo un mismo nombre; el resto conserva su nombre original."
+        )
+        records = combined_records_table(files)
+        if records.empty:
+            st.info("No hay registros para mostrar con la selección actual.")
+        else:
+            st.dataframe(records, use_container_width=True, hide_index=True)
+            st.caption(f"{len(records):,} registros mostrados (de los {sum(len(f['df']) for f in files):,} totales en los archivos comparados).")
+            st.download_button(
+                "⬇️ Descargar estos registros en CSV",
+                records.to_csv(index=False).encode("utf-8-sig"),
+                "registros_comparados.csv",
+                "text/csv",
+                use_container_width=True,
+                key="cmp_records_csv",
+            )
+    with tabs[4]:
         matches=result["matches"]
         if matches:
             table=pd.DataFrame([{"Archivo base":"Primero","Columna":""+m["a"],"Archivo final":"Último","Columna equivalente":m["b"],"Coincidencia":f"{m['score']*100:.0f}%","Tipo":pretty_technical(m["concept"])} for m in matches])
             st.dataframe(table,use_container_width=True,hide_index=True)
         else:
             st.info("No se encontraron variables equivalentes.")
+
+    st.divider()
+    st.markdown("#### 🌐 Informe HTML de esta comparación")
+    active_filters = st.session_state.get("comparison_filters") or {}
+    filters_summary = " · ".join(f"{k}: {', '.join(v)}" for k, v in active_filters.items()) or "Sin filtros aplicados"
+    st.caption(f"Genera un HTML listo para compartir con exactamente lo que ves aquí — {len(files)} archivos, filtros: {filters_summary}.")
+    try:
+        from ui.report_html import build_comparison_html_report
+        html_comparativo = build_comparison_html_report(result, filters_summary)
+        st.download_button(
+            "🌐 Exportar informe comparativo",
+            html_comparativo.encode("utf-8"),
+            "informe_comparativo.html",
+            "text/html",
+            use_container_width=True,
+            type="primary",
+        )
+    except Exception as exc:
+        st.error(f"No se pudo preparar el informe comparativo: {exc}")
