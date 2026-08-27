@@ -40,10 +40,22 @@ def _make_unique_columns(columns):
     return out
 
 
-def _read_excel_sheet(data, sheet_name):
+def _excel_engine(filename: str):
+    """Elige el motor de lectura correcto según la extensión. .xlsb es un
+    formato binario (no XML como .xlsx), así que necesita su propia
+    librería (pyxlsb); openpyxl no sabe leerlo."""
+    name = filename.lower()
+    if name.endswith(".xlsb"):
+        return "pyxlsb"
+    if name.endswith(".xls"):
+        return "xlrd"
+    return None  # .xlsx/.xlsm: pandas ya elige openpyxl automáticamente.
+
+
+def _read_excel_sheet(data, sheet_name, engine=None):
     # Read without assuming the first row is the header. Excel files often have
     # a title/merged row above the real table header.
-    raw = pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=None)
+    raw = pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=None, engine=engine)
     if raw.empty:
         return raw
     limit = min(len(raw), 15)
@@ -86,10 +98,11 @@ def load_workbook(uploaded):
     name = filename.lower()
     if name.endswith(".csv"):
         raw = {"CSV": _read_csv(data)}
-    elif name.endswith((".xlsx", ".xls")):
+    elif name.endswith((".xlsx", ".xls", ".xlsb", ".xlsm")):
         # Discover sheet names first, then read each sheet with header inference.
-        book = pd.ExcelFile(io.BytesIO(data))
-        raw = {sheet: _read_excel_sheet(data, sheet) for sheet in book.sheet_names}
+        engine = _excel_engine(name)
+        book = pd.ExcelFile(io.BytesIO(data), engine=engine)
+        raw = {sheet: _read_excel_sheet(data, sheet, engine=engine) for sheet in book.sheet_names}
     else:
         raise ValueError("Formato no soportado")
 

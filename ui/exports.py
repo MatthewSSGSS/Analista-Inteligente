@@ -19,6 +19,32 @@ def _insight_confidence(item):
     return item.get("confidence") or item.get("confidence_label") or "Media"
 
 
+def _active_filters_summary(schema=None):
+    """Texto legible de los filtros realmente activos en este momento, para
+    que el informe deje constancia exacta de qué recorte de datos muestra."""
+    filters = st.session_state.get("filters") or {}
+    if not filters:
+        return "Sin filtros aplicados (vista completa)"
+    parts = []
+    op_words = {"equals": "=", "eq": "=", "gt": ">", "gte": "≥", "lt": "<", "lte": "≤", "contains": "contiene"}
+    for col, rule in filters.items():
+        if not isinstance(rule, dict):
+            continue
+        op = rule.get("op")
+        value = rule.get("value")
+        label = str(col)
+        if op == "in":
+            vals = value if isinstance(value, (list, tuple, set)) else [value]
+            vals = [str(v) for v in vals]
+            if not vals:
+                continue
+            shown = ", ".join(vals[:3]) + (f" y {len(vals)-3} más" if len(vals) > 3 else "")
+            parts.append(f"{label}: {shown}")
+        elif op in op_words:
+            parts.append(f"{label} {op_words[op]} {value}")
+    return " · ".join(parts) if parts else "Sin filtros aplicados (vista completa)"
+
+
 def render_exports(df, dashboard, filename, sheet, full_df=None, schema=None, workbook=None):
     st.subheader("Centro de exportación")
     st.caption("Descarga los datos o genera un informe visual listo para compartir con dirección.")
@@ -57,9 +83,45 @@ HALLAZGOS
     # Informes HTML autocontenidos y compartibles.
     st.markdown("### 🌐 Informes HTML para compartir")
     st.caption(
-        "Puedes sacar dos niveles de informe: uno general de todo el Excel o uno mucho más corto "
-        "centrado en una sola hoja. Ambos ignoran los filtros del dashboard."
+        "Puedes sacar tres tipos de informe: uno general de todo el Excel, uno enfocado en una "
+        "sola hoja, o uno que refleje exactamente los filtros que tienes activos ahora mismo."
     )
+
+    filters_summary = _active_filters_summary(schema)
+    has_active_filters = bool(st.session_state.get("filters"))
+    st.markdown("#### 🎯 Informe según tus filtros actuales")
+    st.caption(
+        "Este es el único de los tres que SÍ depende de lo que tengas seleccionado ahora mismo "
+        "(ciudad, periodo, categoría, lo que hayas filtrado). Genera un informe listo para "
+        "presentar exactamente con ese recorte de datos, no con la hoja completa."
+    )
+    st.markdown(f'<div class="data-badge" style="display:inline-block;">Filtros activos: {filters_summary}</div>', unsafe_allow_html=True)
+    try:
+        html_filtrado = build_html_report(
+            df,
+            schema or {},
+            dashboard,
+            filename,
+            sheet,
+            f"Filtrado · {filters_summary}",
+        )
+    except Exception as exc:
+        html_filtrado = None
+        st.error(f"No se pudo preparar el informe con los filtros actuales: {exc}")
+    if html_filtrado:
+        st.download_button(
+            "🎯 Exportar informe con mis filtros" if has_active_filters else "🎯 Exportar informe (sin filtros aplicados)",
+            html_filtrado.encode("utf-8"),
+            "informe_filtrado.html",
+            "text/html",
+            use_container_width=True,
+            type="primary",
+            help="Usa exactamente los datos que ves ahora mismo en el dashboard, con tus filtros aplicados.",
+        )
+        if not has_active_filters:
+            st.caption("No tienes ningún filtro activo todavía, así que por ahora esto equivale al informe de la hoja completa. Aplica un filtro en la barra lateral y vuelve a exportar para que el informe cambie con él.")
+
+    st.divider()
 
     # Informe individual por hoja: permite sacar un reporte mucho más corto y
     # enfocado cuando el informe general del libro resulta demasiado extenso.

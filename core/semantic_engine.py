@@ -19,7 +19,7 @@ CONCEPTS = {
     "date": ["fecha", "date", "dia", "día", "day", "periodo", "período", "mes", "month", "año", "year", "created", "created_at", "timestamp"],
     "datetime": ["datetime", "timestamp", "fecha hora", "fecha_hora", "date time", "created_at", "updated_at"],
     "id": ["id", "codigo", "código", "code", "sku", "uuid", "folio", "invoice", "factura", "documento", "numero", "número", "no.", "nro", "cedula", "cédula", "identificacion", "identificación", "serial", "numero de serie", "número de serie", "no de serie", "no. de serie", "serie", "codigo interno", "código interno"],
-    "name": ["nombre", "name", "nombres", "full name", "fullname", "cliente", "customer", "empleado", "employee", "persona", "person"],
+    "name": ["nombre", "name", "nombres", "full name", "fullname"],
     "email": ["email", "e-mail", "correo", "mail"],
     "phone": ["telefono", "teléfono", "phone", "mobile", "celular", "movil", "móvil", "contacto", "numero de telefono", "número de teléfono"],
     "address": ["direccion", "dirección", "address", "domicilio", "ubicacion", "ubicación"],
@@ -97,10 +97,27 @@ def _name_score(column: str, concept: str) -> float:
         pattern = r"(?:^|\s)" + re.escape(phrase) + r"(?:\s|$)"
         if re.search(pattern, name):
             best = max(best, 0.92 if len(phrase) >= 4 else 0.84)
-        best = max(best, SequenceMatcher(None, name, phrase).ratio())
         pt = _tokenize(phrase)
         if tokens and pt:
             best = max(best, len(tokens & pt) / max(len(tokens | pt), 1))
+        # Typo-tolerant fuzzy match: only compared word-by-word against
+        # words of comparable length, and only trusted above a high bar.
+        # Never compare the *whole* column name against a short keyword
+        # (e.g. "país") as a single string: short phrases share a handful of
+        # letters with almost any unrelated longer word by pure coincidence
+        # (SequenceMatcher gave "Especialistas" a 0.47 match against "país",
+        # which made a specialist-type column get misread as a country
+        # column). Requiring comparable lengths keeps genuine typos like
+        # "ciudaad"/"ciudad" while rejecting that kind of noise.
+        for tok in tokens:
+            if not tok:
+                continue
+            shorter, longer = sorted([len(tok), len(phrase)])
+            if shorter == 0 or shorter / longer < 0.6:
+                continue
+            ratio = SequenceMatcher(None, tok, phrase).ratio()
+            if ratio >= 0.82:
+                best = max(best, ratio)
     return min(best, 1.0)
 
 
@@ -221,6 +238,27 @@ def classify_column(s: pd.Series, column: str) -> dict:
             score = 0.72 * ns + 0.28 * vs
         scores[concept] = min(score, 1.0)
 
+    # A number can never be someone's name, a customer, a country, etc., and
+    # text can never be an age or a percentage — no matter how well a stray
+    # word in a compound header happens to match. Without this, a numeric
+    # column titled "Calificación del cliente" could win on the word
+    # "cliente" (matching the customer concept) even though the column holds
+    # ratings, not customer identities. This is a hard compatibility rule,
+    # applied after name/value scoring so it can only remove wrong answers,
+    # never invent a right one.
+    is_numeric = pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
+    text_only_concepts = {"name", "email", "phone", "address", "country", "city", "region",
+                           "product", "category", "brand", "supplier", "customer", "employee",
+                           "gender", "status", "text", "task"}
+    numeric_only_concepts = {"age", "price", "cost", "revenue", "profit", "discount", "tax",
+                              "percentage", "rating", "quantity", "latitude", "longitude"}
+    if is_numeric:
+        for concept in text_only_concepts:
+            scores[concept] = 0.0
+    else:
+        for concept in numeric_only_concepts:
+            scores[concept] = 0.0
+
     # Strong type evidence. Only override when the underlying dtype itself is
     # definitive; numeric ranges alone stay below explicit semantic names.
     if pd.api.types.is_datetime64_any_dtype(s):
@@ -231,14 +269,20 @@ def classify_column(s: pd.Series, column: str) -> dict:
     if _email_rate(s) >= 0.95:
         scores["email"] = max(scores["email"], 0.99)
     if pd.api.types.is_numeric_dtype(s):
-        # Value-only clues are intentionally capped so Age does not beat a
-        # clearly named Quantity/Amount column just because both are numeric.
-        scores["age"] = max(scores["age"], min(_numeric_signal(s, "age") * 0.60, 0.60))
-        scores["percentage"] = max(scores["percentage"], min(_numeric_signal(s, "percentage") * 0.55, 0.55))
-        scores["quantity"] = max(scores["quantity"], min(_numeric_signal(s, "quantity") * 0.50, 0.50))
-        scores["rating"] = max(scores["rating"], min(_numeric_signal(s, "rating") * 0.55, 0.55))
-        scores["latitude"] = max(scores["latitude"], min(_geo_rate(s, "latitude") * 0.55, 0.55))
-        scores["longitude"] = max(scores["longitude"], min(_geo_rate(s, "longitude") * 0.55, 0.55))
+        # Value-only clues (does the number merely fall in a plausible range?)
+        # must never be enough on their own to produce a confident label —
+        # almost any small positive number "looks like" an age, a rating, a
+        # quantity AND a percentage at once. These caps are kept below the
+        # 0.58 threshold used below to fall back to "unknown", so a column
+        # only becomes e.g. "age" when its name also supports it (through the
+        # scoring loop above); pure numeric coincidence alone stays unknown
+        # instead of inventing a category the spreadsheet never had.
+        scores["age"] = max(scores["age"], min(_numeric_signal(s, "age") * 0.40, 0.40))
+        scores["percentage"] = max(scores["percentage"], min(_numeric_signal(s, "percentage") * 0.38, 0.38))
+        scores["quantity"] = max(scores["quantity"], min(_numeric_signal(s, "quantity") * 0.35, 0.35))
+        scores["rating"] = max(scores["rating"], min(_numeric_signal(s, "rating") * 0.38, 0.38))
+        scores["latitude"] = max(scores["latitude"], min(_geo_rate(s, "latitude") * 0.38, 0.38))
+        scores["longitude"] = max(scores["longitude"], min(_geo_rate(s, "longitude") * 0.38, 0.38))
 
     # Numeric identifiers are still identifiers even when Excel stores them as
     # integers. Use semantic/name evidence plus shape/cardinality; never rely

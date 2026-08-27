@@ -236,7 +236,14 @@ def metric_candidates(df, schema):
 
 
 def dimension_candidates(df, schema):
-    dims = schema.get("semantic", {}).get("dimensions") or schema.get("categorical", [])
+    # Unión, no "o": las columnas que el motor semántico reconoce con
+    # confianza van primero (mejor etiqueta), pero cualquier otra columna
+    # categórica que no encaje en un concepto de negocio conocido (por
+    # ejemplo, un nombre de columna ambiguo que no calzó con ningún
+    # concepto) sigue apareciendo como filtro con su nombre original, en
+    # vez de desaparecer silenciosamente del selector.
+    semantic_dims = schema.get("semantic", {}).get("dimensions") or []
+    fallback_dims = schema.get("categorical", [])
     dates = set(schema.get("dates", []))
     ids = set(schema.get("ids", []))
     out = []
@@ -255,14 +262,17 @@ def dimension_candidates(df, schema):
         "agosto","ago","august","aug","septiembre","setiembre","sep","sept","september",
         "octubre","oct","october","noviembre","nov","november","diciembre","dic","december","dec"
     }
-    for c in dims:
+
+    def _eligible(c):
         header_key = str(c).strip().lower().replace(".", "")
-        if c in df.columns and c not in dates and c not in ids and c not in out and header_key not in month_headers:
+        return c in df.columns and c not in dates and c not in ids and c not in out and header_key not in month_headers
+
+    for c in semantic_dims:
+        if _eligible(c):
             out.append(c)
-    if not out:
-        for c in schema.get("categorical", []):
-            if c in df.columns and c not in dates and c not in ids and not pd.api.types.is_numeric_dtype(df[c]):
-                out.append(c)
+    for c in fallback_dims:
+        if _eligible(c) and not pd.api.types.is_numeric_dtype(df[c]):
+            out.append(c)
     return out
 
 

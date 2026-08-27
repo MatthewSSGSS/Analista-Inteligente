@@ -91,8 +91,9 @@ def dynamic_kpis(df, schema, dashboard=None):
             if x.empty: continue
             grouped = x.groupby(dim)[metric].sum() if sem.get(metric) in ADDITIVE else x.groupby(dim)[metric].mean()
             if grouped.empty: continue
-            top_name, top_val = grouped.sort_values(ascending=False).iloc[0], grouped.max()
-            kpis.append({"label":f"Líder · {dim}", "value":str(top_name), "raw":float(top_val), "kind":"leader", "dimension":dim, "metric":metric})
+            sorted_grouped = grouped.sort_values(ascending=False)
+            top_name, top_val = str(sorted_grouped.index[0]), float(sorted_grouped.iloc[0])
+            kpis.append({"label":f"Líder · {dim}", "value":top_name, "raw":top_val, "kind":"leader", "dimension":dim, "metric":metric})
             break
     # Normalize labels/values and keep a compact executive row.
     return kpis[:8]

@@ -43,6 +43,13 @@ def _kpi_grid(kpis, growth=None, per_row=4):
 
 def _display_kpi_value(k):
     value=k.get("value")
+    if k.get("kind")=="leader":
+        # "Líder · Asesor" debe leerse completo de un vistazo: el nombre Y
+        # cuánto vendió/logró, no solo el nombre suelto.
+        raw=k.get("raw")
+        if isinstance(raw,(int,float,np.integer,np.floating)) and not isinstance(raw,bool):
+            return f"{value} · {_fmt(raw)}"
+        return str(value)
     if isinstance(value,(int,float,np.integer,np.floating)) and not isinstance(value,bool):
         if k.get("kind")=="growth": return f"{value:+.1f}%"
         return _fmt(value)
@@ -601,6 +608,15 @@ def _visual_controls(df, schema, key_prefix="main"):
     dates = schema.get("dates", [])
     with st.expander("🎛️ Segmentadores y controles", expanded=False):
         c1, c2, c3, c4 = st.columns(4)
+        # Si se cambió de hoja o de archivo, una métrica/dimensión elegida en
+        # una sesión anterior puede haber quedado guardada aunque ya no
+        # exista en este dataframe nuevo. Sin este chequeo, el selector la
+        # sigue mostrando como seleccionada y los gráficos truenan con un
+        # KeyError al intentar usar una columna que ya no está.
+        if metrics and st.session_state.get(f"{key_prefix}_metric") not in metrics:
+            st.session_state.pop(f"{key_prefix}_metric", None)
+        if dims and st.session_state.get(f"{key_prefix}_dimension") not in dims:
+            st.session_state.pop(f"{key_prefix}_dimension", None)
         if metrics and st.session_state.get("focus_metric") in metrics and f"{key_prefix}_metric" not in st.session_state:
             st.session_state[f"{key_prefix}_metric"] = st.session_state.get("focus_metric")
         if dims and st.session_state.get("focus_dimension") in dims and f"{key_prefix}_dimension" not in st.session_state:
@@ -909,6 +925,14 @@ def render_dashboard(df, dashboard):
 
     controls = _visual_controls(df, schema)
     m, d = controls["metric"], controls["dimension"]
+    # Última capa de seguridad: si por cualquier motivo (cambio de hoja,
+    # estado viejo de otra sesión, etc.) la métrica o dimensión seleccionada
+    # ya no existe en este dataframe, se descarta en vez de reventar más
+    # abajo con un KeyError al intentar graficarla.
+    if m is not None and m not in df.columns:
+        m = None
+    if d is not None and d not in df.columns:
+        d = None
 
     st.markdown(
         '<div class="analysis-toolbar"><div><span class="eyebrow">ÁREA DE ANÁLISIS</span><h2>Informe analítico</h2></div>'
@@ -1000,6 +1024,11 @@ def render_dashboard(df, dashboard):
                 )
 
                 if st.session_state.get(compare_state_key, False):
+                    # Mismo resguardo que en _visual_controls: si se cambió de
+                    # hoja/archivo, la dimensión de comparación guardada de
+                    # antes puede ya no existir en este dataframe.
+                    if st.session_state.get("individual_compare_dimension_v47") not in compare_options:
+                        st.session_state.pop("individual_compare_dimension_v47", None)
                     compare_dim = st.selectbox(
                         "Comparar por", compare_options,
                         format_func=lambda c: "Nombre completo" if c == full_name_col else _label(schema, c),

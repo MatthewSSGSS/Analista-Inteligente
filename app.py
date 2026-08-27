@@ -70,10 +70,19 @@ section[data-testid="stSidebar"] h1,section[data-testid="stSidebar"] h2,section[
 section[data-testid="stSidebar"] .stCaption,section[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{color:var(--sidebar-muted)!important}
 section[data-testid="stSidebar"] hr{border-color:var(--sidebar-line);margin:.75rem 0}
 section[data-testid="stSidebar"] input,section[data-testid="stSidebar"] textarea{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;color:#ffffff!important;border-radius:9px!important}
+section[data-testid="stSidebar"] [data-baseweb="select"]{background:var(--sidebar-panel)!important}
 section[data-testid="stSidebar"] [data-baseweb="select"]>div{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;border-radius:9px!important}
-section[data-testid="stSidebar"] [data-baseweb="select"] *{color:#ffffff!important}
+/* Baseweb nests several layers inside the select (value box, indicator
+   separator, dropdown-arrow box) that each carry their own background —
+   forcing every descendant transparent is the only reliable way to stop the
+   two-tone "dark pill with a white patch near the arrow" look. */
+section[data-testid="stSidebar"] [data-baseweb="select"] *{color:#ffffff!important;background:transparent!important;background-color:transparent!important;fill:#ffffff!important}
+section[data-testid="stSidebar"] [data-baseweb="select"] input::placeholder{color:var(--sidebar-muted)!important;opacity:1!important}
+section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"]{background:rgba(228,0,43,.22)!important;border:1px solid rgba(228,0,43,.4)!important}
+section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] span{color:#ffffff!important}
 section[data-testid="stSidebar"] [data-baseweb="popover"]{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important}
 section[data-testid="stSidebar"] [data-baseweb="menu"]{background:var(--sidebar-panel)!important}
+section[data-testid="stSidebar"] [data-baseweb="menu"] li:hover{background:rgba(228,0,43,.18)!important}
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"]{background:var(--sidebar-panel)!important;border:1px dashed var(--sidebar-line)!important;border-radius:var(--radius-md)!important}
 section[data-testid="stSidebar"] .stFileUploader small{color:var(--sidebar-muted)!important}
 section[data-testid="stSidebar"] .stButton>button{background:var(--sidebar-panel);color:#ffffff;border:1px solid var(--sidebar-line);border-radius:var(--radius-sm)}
@@ -83,19 +92,22 @@ section[data-testid="stSidebar"] [data-testid="stExpander"]{background:var(--sid
 section[data-testid="stSidebar"] [data-testid="stExpander"] summary{background:var(--sidebar-panel)!important;color:#ffffff!important}
 section[data-testid="stSidebar"] [data-testid="stExpander"] summary:hover{color:#ff6b7a!important}
 section[data-testid="stSidebar"] [data-testid="stAlert"]{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;color:var(--sidebar-text)!important}
-section[data-testid="stSidebar"] .mode-banner{background:rgba(228,0,43,.14);border:1px solid rgba(228,0,43,.35);color:#ffffff}
+section[data-testid="stSidebar"] .mode-banner{background:rgba(228,0,43,.16);border:1px solid rgba(228,0,43,.4);color:#ffffff}
+section[data-testid="stSidebar"] .mode-banner .mode-banner-label{color:var(--sidebar-muted)}
 section[data-testid="stSidebar"] .mode-banner b{color:#ffffff}
-section[data-testid="stSidebar"] .mode-confidence{color:var(--sidebar-muted)!important}
+section[data-testid="stSidebar"] .mode-confidence{color:#ffb3ba!important;background:rgba(255,255,255,.08)!important}
 /* Sidebar logo block, like the reference nav header */
 .sidebar-logo{display:flex;align-items:center;gap:10px;padding:2px 2px 14px;margin-bottom:10px;border-bottom:1px solid var(--sidebar-line)}
 .sidebar-logo-mark{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 34px}
 .sidebar-logo-text{font-size:14px;font-weight:800;font-family:'Sora','Inter',sans-serif;color:#ffffff;line-height:1.2}
 .sidebar-logo-text small{display:block;font-size:10.5px;font-weight:600;font-family:'Inter',sans-serif;color:var(--sidebar-muted)}
 .sidebar-section-label{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--sidebar-muted)!important;margin:14px 0 6px}
-/* View-mode selector styled as a nav pill row */
-section[data-testid="stSidebar"] div[role="radiogroup"]{background:#f7f9fc;border:1px solid #e2e6ed;border-radius:10px;padding:4px;gap:2px}
-section[data-testid="stSidebar"] div[role="radiogroup"] label{border-radius:7px;padding:5px 8px}
-section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:#fde8ea;color:#e4002b!important}
+/* View-mode selector styled as a dark nav pill row, matching the sidebar */
+section[data-testid="stSidebar"] div[role="radiogroup"]{background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:10px;padding:4px;gap:2px}
+section[data-testid="stSidebar"] div[role="radiogroup"] label{border-radius:7px;padding:6px 10px}
+section[data-testid="stSidebar"] div[role="radiogroup"] label p{color:var(--sidebar-muted)!important;font-weight:650}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:linear-gradient(180deg,#ff3b4e,#e4002b)}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#ffffff!important;font-weight:750}
 
 /* ===== Hero / page header: minimal and flat, like the reference report header ===== */
 .hero{padding:6px 2px 14px;margin:0 0 6px;border:none;background:transparent;box-shadow:none;border-bottom:1px solid var(--line)}
@@ -157,18 +169,39 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .stPlotlyChart{margin-top:-3px}
 
 /* ===== Tabs ===== */
-.stTabs [data-baseweb="tab-list"]{gap:4px;background:var(--panel);border:1px solid var(--line);padding:5px;border-radius:var(--radius-md);box-shadow:var(--shadow-sm);overflow-x:auto}
-.stTabs [data-baseweb="tab"]{height:38px;border-radius:8px;padding:0 14px;color:var(--muted);font-weight:650;transition:.15s ease}
-.stTabs [data-baseweb="tab"] p{color:inherit}
-.stTabs [data-baseweb="tab"]:hover{background:var(--panel-2);color:var(--text)}
-.stTabs [aria-selected="true"]{background:var(--blue-soft)!important;color:var(--blue)!important;box-shadow:inset 0 -2px 0 var(--blue)}
-.stTabs [data-baseweb="tab-highlight"]{background:var(--blue);height:2px}
+.stTabs [data-baseweb="tab-list"]{gap:6px;background:var(--panel-2);border:1px solid var(--line);padding:6px;border-radius:14px;box-shadow:var(--shadow-sm);overflow-x:auto}
+.stTabs [data-baseweb="tab"]{height:40px;border-radius:10px;padding:0 16px;color:var(--muted);font-weight:700;font-size:13.5px;transition:.15s ease;background:transparent}
+.stTabs [data-baseweb="tab"] p{color:inherit;font-weight:inherit}
+.stTabs [data-baseweb="tab"]:hover{background:var(--panel);color:var(--text)}
+.stTabs [aria-selected="true"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;color:#ffffff!important;box-shadow:0 3px 10px rgba(228,0,43,.3)!important}
+.stTabs [aria-selected="true"] p{color:#ffffff!important;font-weight:800!important}
+.stTabs [data-baseweb="tab-highlight"]{display:none!important}
+.stTabs [data-baseweb="tab-border"]{display:none!important}
 
-/* ===== Buttons ===== */
-.stButton>button{min-height:39px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:var(--radius-sm);font-weight:700;box-shadow:var(--shadow-sm);transition:transform .1s ease,border-color .1s ease}
-.stButton>button:hover{transform:translateY(-1px);border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
-button[kind="primary"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;border-color:#e4002b!important;color:#fff!important;box-shadow:0 6px 16px rgba(228,0,43,.22)!important}
-button[kind="primary"]:hover{background:linear-gradient(180deg,#ff5464,#e4002b)!important;color:#fff!important}
+/* ===== Buttons: quiet by default, only primary CTAs carry visual weight ===== */
+.stButton>button,[data-testid="stDownloadButton"] button,[data-testid="stFormSubmitButton"] button{
+  min-height:40px;padding:0 18px;background:var(--panel);color:var(--muted);
+  border:1px solid var(--line);border-radius:11px;font-weight:650;font-size:13.5px;
+  box-shadow:none;transition:border-color .12s ease,color .12s ease,background .12s ease,transform .08s ease;
+}
+.stButton>button:hover,[data-testid="stDownloadButton"] button:hover,[data-testid="stFormSubmitButton"] button:hover{
+  border-color:var(--blue);color:var(--blue);background:var(--blue-soft);
+}
+.stButton>button:active,[data-testid="stDownloadButton"] button:active{transform:scale(.98)}
+button[kind="primary"],[data-testid="stDownloadButton"] button[kind="primary"]{
+  background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;border-color:#e4002b!important;color:#fff!important;
+  font-weight:750!important;box-shadow:0 4px 12px rgba(228,0,43,.2)!important;
+}
+button[kind="primary"]:hover,[data-testid="stDownloadButton"] button[kind="primary"]:hover{
+  background:linear-gradient(180deg,#ff5464,#e4002b)!important;color:#fff!important;box-shadow:0 6px 16px rgba(228,0,43,.28)!important;
+}
+/* Secondary/download buttons that are still an important action (exports)
+   get a subtle brand-tinted outline so they read as "do this" without
+   competing with the one true primary action on screen. */
+[data-testid="stDownloadButton"] button{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
+[data-testid="stDownloadButton"] button:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
+section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button{background:var(--sidebar-panel);color:#ff8f97;border-color:rgba(228,0,43,.4)}
+section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button:hover{background:rgba(228,0,43,.18);color:#ffffff}
 
 /* ===== Native inputs: keep readable on a light surface, with a real visible border ===== */
 input,textarea{color:var(--text)!important;background:var(--panel)!important;border:1px solid var(--line)!important}
@@ -244,10 +277,11 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 .comparison-panel{margin:10px 0 8px;padding:12px 14px;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:var(--radius-sm);background:var(--blue-soft);color:var(--text)}
 .comparison-panel b{color:var(--text);display:block;margin-bottom:3px}
 
-/* ===== Mode banner ===== */
-.mode-banner{margin:8px 0 18px;padding:12px 15px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--blue-soft);color:var(--text)}
+/* ===== Mode banner: compact two-line block, never wraps awkwardly ===== */
+.mode-banner{margin:8px 0 8px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--blue-soft);color:var(--text);font-size:13px;line-height:1.5}
+.mode-banner-label{font-size:9.5px;font-weight:800;letter-spacing:.09em;color:var(--muted)}
 .mode-banner b{color:var(--text)}
-.mode-confidence{font-size:11px;color:var(--muted);margin-left:8px}
+.mode-confidence{font-size:10.5px;font-weight:700;color:var(--muted);background:var(--panel);border-radius:999px;padding:2px 8px;white-space:nowrap}
 
 /* ===== Accessibility ===== */
 button:focus-visible,input:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible{outline:2px solid var(--blue)!important;outline-offset:2px}
@@ -324,7 +358,7 @@ with st.sidebar:
     st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
 
     st.markdown('<p class="sidebar-section-label">Tu archivo</p>', unsafe_allow_html=True)
-    upload=st.file_uploader("Cargar Excel / CSV",type=["xlsx","xls","csv"], key="single_upload", label_visibility="collapsed")
+    upload=st.file_uploader("Cargar Excel / CSV",type=["xlsx","xls","xlsb","xlsm","csv"], key="single_upload", label_visibility="collapsed")
     if upload and st.button("Analizar archivo",type="primary",use_container_width=True):
         with st.spinner("Analizando estructura, fechas, calidad y relaciones..."):
             try:
@@ -337,7 +371,7 @@ with st.sidebar:
         st.markdown('<p class="sidebar-section-label" style="margin-top:0;">⚖️ Comparar periodos o archivos</p>', unsafe_allow_html=True)
         compare_uploads=st.file_uploader(
             "Selecciona 2 o más archivos",
-            type=["xlsx","xls","csv"],
+            type=["xlsx","xls","xlsb","xlsm","csv"],
             accept_multiple_files=True,
             key="compare_uploads",
             help="Ej.: Enero 2024, Enero 2025. También puedes cargar varios periodos."
@@ -369,7 +403,7 @@ with st.sidebar:
             st.caption("🟡 Sin base de datos conectada todavía — modo manual: exporta el consolidado y vuelve a subirlo la próxima vez.")
         tracking_new_files = st.file_uploader(
             "Excel nuevos a procesar",
-            type=["xlsx", "xls", "csv"],
+            type=["xlsx", "xls", "xlsb", "xlsm", "csv"],
             accept_multiple_files=True,
             key="tracking_new_uploads",
         )
@@ -422,7 +456,7 @@ with st.sidebar:
         df=item["processed"]
         schema=item["profile"]["schema"]
         mode_info=detect_dataset_mode(df, schema)
-        st.markdown(f'<div class="mode-banner"><b>Modo detectado:</b> {mode_info["label"]}<span class="mode-confidence">confianza {mode_info["confidence"]*100:.0f}%</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="mode-banner"><span class="mode-banner-label">MODO DETECTADO</span><br><b>{mode_info["label"]}</b> <span class="mode-confidence">{mode_info["confidence"]*100:.0f}%</span></div>', unsafe_allow_html=True)
         with st.expander("🤖 Asistente IA", expanded=False):
             st.caption("Opcional: conecta una API key para habilitar conversación y análisis asistido.")
             st.session_state.assistant_api_key = st.text_input("OpenAI API key", value=st.session_state.get("assistant_api_key", ""), type="password", key="sidebar_assistant_key")
@@ -613,7 +647,13 @@ if classification:
     capabilities = classification.get("capabilities", [])
     cap_labels = {"evolucion":"evolución", "comparacion_periodos":"comparación de periodos", "ranking":"rankings", "distribucion":"distribuciones", "relaciones":"relaciones entre métricas", "estadisticas":"estadísticas", "grafico_distribucion":"gráficos de distribución", "geografia":"geografía", "catalogo":"consulta de catálogo", "estados":"seguimiento de estados"}
     readable_caps = ", ".join(cap_labels.get(x, x) for x in capabilities[:6]) or "lectura y tabla"
-    st.markdown(f'<div class="mode-banner"><b>Tipo detectado:</b> {classification.get("label", "Datos generales")} · <span class="mode-confidence">confianza {classification.get("confidence",0)*100:.0f}%</span><br><span style="color:#5b6473">{classification.get("reason", "")} · Herramientas activadas: {readable_caps}.</span></div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="mode-banner"><b>Tipo detectado:</b> {classification.get("label", "Datos generales")}'
+        f'<span class="mode-confidence">confianza {classification.get("confidence",0)*100:.0f}%</span></div>',
+        unsafe_allow_html=True,
+    )
+    with st.expander("¿Por qué este tipo? Ver detalle", expanded=False):
+        st.caption(f'{classification.get("reason", "")} · Herramientas activadas: {readable_caps}.')
 
 if st.session_state.get("focus_view"):
     st.info(f"Análisis enfocado: {st.session_state.focus_view}. Revisa los gráficos y filtros visibles para profundizar.")
