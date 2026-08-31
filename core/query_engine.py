@@ -265,6 +265,21 @@ def answer_question(df: pd.DataFrame, schema: dict, question: str) -> dict:
         metric = choose_metric(df, schema)
         metric_was_guessed = True
 
+    # Si la pregunta no dejó NINGUNA señal real (ni mencionó una métrica ni
+    # una categoría ni un valor ni un periodo ni una operación reconocible
+    # más allá del "suma" por defecto), lo honesto es decir que no se
+    # encontró relación con este archivo, en vez de responder con un número
+    # adivinado como si la pregunta sí tuviera sentido para estos datos.
+    has_real_signal = (not metric_was_guessed) or bool(dimension) or bool(filters) or bool(period) or operation != "sum"
+    if not has_real_signal:
+        candidatas = ", ".join(_label(schema, m) for m in metrics[:3]) or "ninguna"
+        return {
+            "status": "ambiguo",
+            "answer": f"No encontré relación entre tu pregunta y la información de este archivo. Prueba mencionando algo que sí exista aquí — por ejemplo, sus indicadores son: {candidatas}.",
+            "detail": {"metric": None, "dimension": None, "filters": [], "operation": operation},
+            "chart_spec": None, "table": None,
+        }
+
     if not metric or metric not in df.columns:
         return {
             "status": "sin_datos",

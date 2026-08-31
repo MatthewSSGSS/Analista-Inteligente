@@ -10,7 +10,9 @@ import pandas as pd
 
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
+from core.dataset_mode import detect_dataset_mode
 from core.query_engine import answer_question, suggest_questions
+from core.assistant_engine import ask_assistant
 from visualization.charts import metric_candidates, dimension_candidates, _label
 
 
@@ -99,6 +101,25 @@ def render_practical_page():
         key="practico_upload", label_visibility="collapsed",
     )
     st.markdown('</div>', unsafe_allow_html=True)
+
+    with st.expander("⚙️ Conectar IA (opcional) — para responder preguntas más difíciles", expanded=False):
+        st.caption(
+            "El motor normal ya responde la mayoría de preguntas sin esto. Conecta una API de IA solo si "
+            "quieres que también entienda preguntas mal formuladas o poco comunes — nunca inventa números, "
+            "la IA solo decide qué calcular; el cálculo real siempre sale de tus datos."
+        )
+        # Los widgets con `key` ignoran el parámetro value= después del
+        # primer render (usan lo que ya está guardado en session_state para
+        # esa key) — por eso el valor por defecto se siembra UNA sola vez,
+        # antes de crear el widget, en vez de intentar "sincronizarlo" en
+        # cada ejecución (eso nunca sobrescribe un valor ya guardado).
+        if "practico_api_key_input" not in st.session_state:
+            st.session_state["practico_api_key_input"] = st.session_state.get("assistant_api_key", "")
+        st.session_state.practico_api_key = st.text_input("OpenAI API key", type="password", key="practico_api_key_input")
+        if "practico_model_input" not in st.session_state:
+            st.session_state["practico_model_input"] = st.session_state.get("assistant_model", "gpt-5.5")
+        st.session_state.practico_model = st.text_input("Modelo", key="practico_model_input")
+
     if upload and st.button("Analizar archivo", type="primary", use_container_width=True, key="practico_analyze_btn"):
         with st.spinner("Leyendo, limpiando y detectando la estructura del archivo..."):
             try:
@@ -155,12 +176,29 @@ def render_practical_page():
     if asked and question:
         with st.spinner("Buscando la respuesta en tus datos..."):
             result = answer_question(df, schema, question)
+            used_ai = False
+            if result["status"] != "ok" and st.session_state.get("practico_api_key"):
+                # Segunda capa: el motor de reglas no encontró una respuesta
+                # segura, así que se le pasa la pregunta a la IA — pero la IA
+                # solo decide QUÉ calcular (usando las mismas herramientas de
+                # solo lectura), nunca inventa el número directamente.
+                mode_info = detect_dataset_mode(df, schema)
+                ai_text = ask_assistant(
+                    question, df, schema, item["profile"], mode_info,
+                    dashboard=None, history=None,
+                    api_key=st.session_state.get("practico_api_key"),
+                    model=st.session_state.get("practico_model", "gpt-5.5"),
+                )
+                result = {"status": "ok", "answer": ai_text, "detail": {"source": "ia"}, "chart_spec": None, "table": None}
+                used_ai = True
         st.session_state.setdefault("practico_chat", [])
-        st.session_state.practico_chat.insert(0, {"q": question, "r": result})
+        st.session_state.practico_chat.insert(0, {"q": question, "r": result, "ai": used_ai})
 
     for entry in st.session_state.get("practico_chat", [])[:6]:
         q, r = entry["q"], entry["r"]
         status_tag = {"ok": "✅ Respuesta", "ambiguo": "🤔 No estoy seguro", "sin_datos": "⚠️ Sin datos suficientes"}.get(r["status"], "Respuesta")
+        if entry.get("ai"):
+            status_tag = "🤖 Respuesta (con IA)"
         css_class = "ambiguo" if r["status"] != "ok" else ""
         st.markdown(
             f'<div class="answer-card {css_class}"><div class="tag">{status_tag}<span class="q">· "{q}"</span></div><div class="text">{r["answer"]}</div></div>',

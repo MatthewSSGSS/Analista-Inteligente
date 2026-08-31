@@ -152,6 +152,89 @@ def _map_figure(summary: dict, metric: str | None):
     return fig
 
 
+def _map_figure_3d(summary: dict, metric: str | None, schema: dict):
+    """Mapa 3D estilo deck.gl: columnas que se elevan según el valor de cada
+    ubicación, sobre un mapa oscuro. No requiere API key de Mapbox (usa
+    tiles de Carto, gratis). Visualmente más llamativo que el mapa clásico;
+    el clic-para-detalle sigue viviendo en el mapa clásico porque pydeck no
+    ofrece ese mismo evento de selección en Streamlit todavía.
+    """
+    import pydeck as pdk
+
+    table = summary.get("table")
+    if table is None or table.empty:
+        return None
+    x = table.copy()
+    for c in ("_geo_lat", "_geo_lon", "_geo_metric", "share_pct"):
+        if c in x.columns:
+            x[c] = pd.to_numeric(x[c], errors="coerce")
+    x = x.dropna(subset=["_geo_lat", "_geo_lon"]).copy()
+    if x.empty:
+        return None
+
+    x["_geo_metric"] = x["_geo_metric"].fillna(0).clip(lower=0)
+    x["_geo_label"] = x["_geo_label"].astype(str)
+    max_val = float(x["_geo_metric"].max()) or 1.0
+
+    # Escala de color Claro: de un rojo tenue (valores bajos) a un rojo
+    # brillante e intenso (valores altos) — el mismo lenguaje visual que el
+    # resto de la app, pero con el efecto de "brillo" que da deck.gl.
+    def _color(v):
+        ratio = min(v / max_val, 1.0) if max_val else 0
+        r = int(120 + 135 * ratio)
+        g = int(20 * (1 - ratio))
+        b = int(40 * (1 - ratio))
+        return [r, g, b, 190]
+
+    x["color"] = x["_geo_metric"].apply(_color)
+    # La altura de cada columna es relativa al máximo, para que el mapa se
+    # vea proporcionado sin importar la magnitud real de los números.
+    x["elevation"] = (x["_geo_metric"] / max_val * 40000).clip(lower=500)
+    metric_label = _label(schema, metric) if metric else "Registros"
+
+    center_lat, center_lon = float(x["_geo_lat"].mean()), float(x["_geo_lon"].mean())
+    lat_span = max(float(x["_geo_lat"].max() - x["_geo_lat"].min()), 0.15)
+    lon_span = max(float(x["_geo_lon"].max() - x["_geo_lon"].min()), 0.15)
+    span = max(lat_span, lon_span)
+    zoom = 9.5
+    if span >= 15: zoom = 3.2
+    elif span >= 7: zoom = 4.3
+    elif span >= 3: zoom = 5.8
+    elif span >= 1.2: zoom = 7.2
+    elif span >= 0.5: zoom = 8.5
+    if -5.5 <= center_lat <= 13.5 and -80.5 <= center_lon <= -66:
+        center_lat, center_lon = 4.57, -74.30
+        zoom = 6.6 if span >= 3 else 7.8
+
+    layer = pdk.Layer(
+        "ColumnLayer",
+        data=x.to_dict("records"),
+        get_position="[_geo_lon, _geo_lat]",
+        get_elevation="elevation",
+        elevation_scale=1,
+        radius=max(1200, 22000 / max(len(x), 1)),
+        get_fill_color="color",
+        pickable=True,
+        auto_highlight=True,
+        highlight_color=[255, 255, 255, 120],
+    )
+    view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=52, bearing=18)
+    tooltip = {
+        "html": "<b>{_geo_label}</b><br/>" + metric_label + ": <b>{_geo_metric}</b>",
+        "style": {"backgroundColor": "#171c29", "color": "#ffffff", "fontSize": "12px", "borderRadius": "8px", "padding": "8px 10px"},
+    }
+    try:
+        deck = pdk.Deck(
+            layers=[layer], initial_view_state=view_state,
+            map_style="dark", map_provider="carto", tooltip=tooltip,
+        )
+    except Exception:
+        # Respaldo si el estilo/proveedor no está disponible en esta versión
+        # de pydeck: se construye sin especificar mapa base explícito.
+        deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip)
+    return deck
+
+
 def _selection_label(event, labels):
     """Recover the clicked map label even when Plotly split points into color traces."""
     try:
@@ -426,28 +509,49 @@ def render_georeferencing(df: pd.DataFrame, schema: dict):
 
     enriched = summary.get("data", pd.DataFrame())
     labels = table.sort_values("_geo_metric", ascending=False).reset_index(drop=True)["_geo_label"].astype(str)
-    fig = _map_figure(summary, metric)
-    if fig is None:
-        st.info("No se pudo construir el mapa con las ubicaciones disponibles.")
-        return
+
+    map_mode = st.radio(
+        "Estilo de mapa", ["🗺️ Clásico", "🌐 3D"], horizontal=True,
+        key="geo_map_mode_v60",
+        help="El mapa 3D es más vistoso; el clásico permite hacer clic en un punto para ver su detalle completo abajo.",
+    )
+
+    if map_mode == "🌐 3D":
+        try:
+            deck = _map_figure_3d(summary, metric, schema)
+        except Exception as exc:
+            deck = None
+            st.warning(f"No se pudo construir el mapa 3D ({exc}); mostrando el mapa clásico.")
+            map_mode = "🗺️ Clásico"
+        if deck is not None:
+            st.pydeck_chart(deck, use_container_width=True, height=560)
+            st.caption("Arrastra para rotar, rueda del mouse para acercar/alejar. Para ver el detalle de una zona, cambia a \"🗺️ Clásico\" y haz clic sobre el punto.")
+
+    fig = None
+    if map_mode == "🗺️ Clásico":
+        fig = _map_figure(summary, metric)
+        if fig is None:
+            st.info("No se pudo construir el mapa con las ubicaciones disponibles.")
+            return
 
     selected = st.session_state.get("geo_selected_location_v43")
     if selected and selected not in set(labels):
         st.session_state.geo_selected_location_v43 = None
         selected = None
 
-    event = st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={"displayModeBar": True, "scrollZoom": True, "displaylogo": False},
-        key="geo_interactive_map_v43",
-        on_select="rerun",
-        selection_mode=["points"],
-    )
-    clicked = _selection_label(event, labels)
-    if clicked:
-        st.session_state.geo_selected_location_v43 = str(clicked)
-        selected = str(clicked)
+    if fig is not None:
+        event = st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={"displayModeBar": True, "scrollZoom": True, "displaylogo": False},
+            key="geo_interactive_map_v43",
+            on_select="rerun",
+            selection_mode=["points"],
+        )
+        clicked = _selection_label(event, labels)
+        if clicked:
+            st.session_state.geo_selected_location_v43 = str(clicked)
+            selected = str(clicked)
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Ubicaciones", f"{len(table):,}")

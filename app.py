@@ -33,6 +33,8 @@ from ui.person_compare import render_person_compare
 from ui.executive import render_executive
 from ui.home import render_home
 from ui.landing import render_landing
+from ui.login import render_login
+import core.auth_engine as auth_engine
 from ui.mode_choice import render_mode_choice
 from ui.practical import render_practical_page
 from ui.tracking import render_tracking
@@ -337,6 +339,17 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 </style>
 """,unsafe_allow_html=True)
 
+if "authenticated" not in st.session_state: st.session_state.authenticated=False
+if "auth_user" not in st.session_state: st.session_state.auth_user=None
+
+# El login solo se activa si hay base de datos configurada (ahí es donde se
+# guardan los usuarios de forma persistente). Sin eso, no hay dónde guardar
+# cuentas entre sesiones, así que la app sigue funcionando sin login, igual
+# que antes.
+if auth_engine.is_available() and not st.session_state.authenticated:
+    render_login()
+    st.stop()
+
 if "workbook" not in st.session_state: st.session_state.workbook=None
 if "filters" not in st.session_state: st.session_state.filters={}
 if "comparison_result" not in st.session_state: st.session_state.comparison_result=None
@@ -387,6 +400,13 @@ st.markdown('<div class="hero"><h1>📊 Panel Analítico Universal</h1><p>De Exc
 
 with st.sidebar:
     st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
+    if st.session_state.get("auth_user"):
+        u = st.session_state.auth_user
+        col_user, col_out = st.columns([3, 1])
+        col_user.markdown(f'<p class="sidebar-section-label" style="margin:0;">👤 {u.get("display_name") or u.get("username")}</p>', unsafe_allow_html=True)
+        if col_out.button("Salir", key="logout_btn", use_container_width=True):
+            auth_engine.logout()
+            st.rerun()
     if st.button("⚡ Cambiar a Análisis Práctico", use_container_width=True, key="switch_to_practico"):
         st.session_state.analysis_mode = "practico"
         st.rerun()
