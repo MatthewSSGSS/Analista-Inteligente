@@ -154,37 +154,53 @@ def _map_figure(summary: dict, metric: str | None):
 
 def _map_figure_3d(summary: dict, metric: str | None, schema: dict):
     """Mapa 3D estilo deck.gl: columnas que se elevan según el valor de cada
-    ubicación, sobre un mapa oscuro. No requiere API key de Mapbox (usa
-    tiles de Carto, gratis). Visualmente más llamativo que el mapa clásico;
-    el clic-para-detalle sigue viviendo en el mapa clásico porque pydeck no
-    ofrece ese mismo evento de selección en Streamlit todavía.
+    ubicación. Usa un degradado frío→caliente (no solo tonos de rojo) para
+    que se entienda de un vistazo qué punto es mejor y cuál es peor, con
+    una leyenda visible debajo del mapa. No requiere API key de Mapbox (usa
+    tiles de Carto, gratis). El clic-para-detalle sigue viviendo en el mapa
+    clásico porque pydeck no ofrece ese mismo evento de selección en
+    Streamlit todavía.
     """
     import pydeck as pdk
 
     table = summary.get("table")
     if table is None or table.empty:
-        return None
+        return None, None
     x = table.copy()
     for c in ("_geo_lat", "_geo_lon", "_geo_metric", "share_pct"):
         if c in x.columns:
             x[c] = pd.to_numeric(x[c], errors="coerce")
     x = x.dropna(subset=["_geo_lat", "_geo_lon"]).copy()
     if x.empty:
-        return None
+        return None, None
 
     x["_geo_metric"] = x["_geo_metric"].fillna(0).clip(lower=0)
     x["_geo_label"] = x["_geo_label"].astype(str)
+    min_val = float(x["_geo_metric"].min())
     max_val = float(x["_geo_metric"].max()) or 1.0
 
-    # Escala de color Claro: de un rojo tenue (valores bajos) a un rojo
-    # brillante e intenso (valores altos) — el mismo lenguaje visual que el
-    # resto de la app, pero con el efecto de "brillo" que da deck.gl.
+    # Degradado frío → caliente (teal para lo más bajo, rojo Claro para lo
+    # más alto), en vez de solo variar la intensidad de un mismo rojo — así
+    # se distingue de un vistazo qué punto es mejor y cuál peor, no solo
+    # "todo se ve parecido pero un poco más oscuro".
+    _LOW = (15, 168, 160)   # teal
+    _MID = (245, 166, 35)   # ámbar
+    _HIGH = (228, 0, 43)    # rojo Claro
+
     def _color(v):
-        ratio = min(v / max_val, 1.0) if max_val else 0
-        r = int(120 + 135 * ratio)
-        g = int(20 * (1 - ratio))
-        b = int(40 * (1 - ratio))
-        return [r, g, b, 190]
+        span = (max_val - min_val) or 1.0
+        ratio = min(max(((v - min_val) / span), 0.0), 1.0)
+        if ratio < 0.5:
+            t = ratio / 0.5
+            r = int(_LOW[0] + (_MID[0] - _LOW[0]) * t)
+            g = int(_LOW[1] + (_MID[1] - _LOW[1]) * t)
+            b = int(_LOW[2] + (_MID[2] - _LOW[2]) * t)
+        else:
+            t = (ratio - 0.5) / 0.5
+            r = int(_MID[0] + (_HIGH[0] - _MID[0]) * t)
+            g = int(_MID[1] + (_HIGH[1] - _MID[1]) * t)
+            b = int(_MID[2] + (_HIGH[2] - _MID[2]) * t)
+        return [r, g, b, 205]
 
     x["color"] = x["_geo_metric"].apply(_color)
     # La altura de cada columna es relativa al máximo, para que el mapa se
@@ -213,26 +229,39 @@ def _map_figure_3d(summary: dict, metric: str | None, schema: dict):
         get_elevation="elevation",
         elevation_scale=1,
         radius=max(1200, 22000 / max(len(x), 1)),
+        disk_resolution=6,  # columnas hexagonales: se ve más "data-viz", menos genérico
         get_fill_color="color",
         pickable=True,
         auto_highlight=True,
-        highlight_color=[255, 255, 255, 120],
+        highlight_color=[255, 255, 255, 140],
+        material={"ambient": 0.55, "diffuse": 0.7, "shininess": 28, "specularColor": [255, 235, 230]},
     )
     view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=52, bearing=18)
     tooltip = {
         "html": "<b>{_geo_label}</b><br/>" + metric_label + ": <b>{_geo_metric}</b>",
         "style": {"backgroundColor": "#171c29", "color": "#ffffff", "fontSize": "12px", "borderRadius": "8px", "padding": "8px 10px"},
     }
+    # Mapa base con calles y nombres visibles (CARTO_ROAD) en vez del
+    # "dark" plano de antes, que se veía casi negro y sin ninguna
+    # referencia geográfica reconocible.
     try:
         deck = pdk.Deck(
             layers=[layer], initial_view_state=view_state,
-            map_style="dark", map_provider="carto", tooltip=tooltip,
+            map_style=pdk.map_styles.CARTO_ROAD, map_provider="carto", tooltip=tooltip,
         )
     except Exception:
-        # Respaldo si el estilo/proveedor no está disponible en esta versión
-        # de pydeck: se construye sin especificar mapa base explícito.
-        deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip)
-    return deck
+        try:
+            deck = pdk.Deck(layers=[layer], initial_view_state=view_state, map_style="light", map_provider="carto", tooltip=tooltip)
+        except Exception:
+            deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip)
+
+    legend = {
+        "metric_label": metric_label,
+        "min_label": _fmt(min_val),
+        "max_label": _fmt(max_val),
+        "low": _LOW, "mid": _MID, "high": _HIGH,
+    }
+    return deck, legend
 
 
 def _selection_label(event, labels):
@@ -518,13 +547,27 @@ def render_georeferencing(df: pd.DataFrame, schema: dict):
 
     if map_mode == "🌐 3D":
         try:
-            deck = _map_figure_3d(summary, metric, schema)
+            deck, legend = _map_figure_3d(summary, metric, schema)
         except Exception as exc:
-            deck = None
+            deck, legend = None, None
             st.warning(f"No se pudo construir el mapa 3D ({exc}); mostrando el mapa clásico.")
             map_mode = "🗺️ Clásico"
         if deck is not None:
             st.pydeck_chart(deck, use_container_width=True, height=560)
+            if legend:
+                low, mid, high = legend["low"], legend["mid"], legend["high"]
+                grad = f"rgb{low}, rgb{mid}, rgb{high}"
+                st.markdown(
+                    f'''<div style="display:flex;align-items:center;gap:10px;margin-top:8px;padding:10px 14px;
+                    background:var(--panel-2);border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--muted)">
+                    <span style="font-weight:700;color:var(--text)">{legend["metric_label"]}:</span>
+                    <span>{legend["min_label"]}</span>
+                    <div style="flex:1;height:10px;border-radius:999px;background:linear-gradient(90deg,{grad})"></div>
+                    <span>{legend["max_label"]}</span>
+                    <span style="color:var(--muted);margin-left:6px;">← menor &nbsp;&nbsp; mayor →</span>
+                    </div>''',
+                    unsafe_allow_html=True,
+                )
             st.caption("Arrastra para rotar, rueda del mouse para acercar/alejar. Para ver el detalle de una zona, cambia a \"🗺️ Clásico\" y haz clic sobre el punto.")
 
     fig = None
