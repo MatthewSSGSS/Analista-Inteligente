@@ -3,6 +3,17 @@ import pandas as pd
 from datetime import datetime
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
+
+
+@st.cache_data(show_spinner=False, max_entries=12, ttl=1800)
+def _cached_build_dashboard(df, profile):
+    # build_dashboard es lo más pesado de la app (KPIs, hallazgos, anomalías,
+    # estadísticas). Streamlit vuelve a ejecutar TODO el script en cada clic
+    # (cambiar de pestaña, aplicar un filtro), así que sin este caché se
+    # recalculaba desde cero cada vez, aunque los datos visibles no hubieran
+    # cambiado. Streamlit reconoce cuándo df/profile son iguales a una
+    # llamada anterior y reutiliza el resultado en vez de recalcular.
+    return build_dashboard(df, profile)
 from core.dataset_mode import detect_dataset_mode
 from core.filter_engine import apply_filters, natural_filter, cascading_options
 from ui.dashboard import render_dashboard
@@ -22,6 +33,8 @@ from ui.person_compare import render_person_compare
 from ui.executive import render_executive
 from ui.home import render_home
 from ui.landing import render_landing
+from ui.mode_choice import render_mode_choice
+from ui.practical import render_practical_page
 from ui.tracking import render_tracking
 from core.tracking_engine import ingest_file, sources_to_long, merge_long, read_consolidated
 import core.db_engine as db_engine
@@ -331,6 +344,8 @@ if "comparison_error" not in st.session_state: st.session_state.comparison_error
 if "comparison_raw_files" not in st.session_state: st.session_state.comparison_raw_files=None
 if "comparison_filters" not in st.session_state: st.session_state.comparison_filters={}
 if "tracking_data" not in st.session_state: st.session_state.tracking_data=None
+if "practico_workbook" not in st.session_state: st.session_state.practico_workbook=None
+if "practico_chat" not in st.session_state: st.session_state.practico_chat=[]
 if "tracking_error" not in st.session_state: st.session_state.tracking_error=None
 
 # Si hay una base de datos compartida configurada (ver core/db_engine.py),
@@ -354,10 +369,27 @@ if not st.session_state.app_started:
         st.rerun()
     st.stop()
 
+if "analysis_mode" not in st.session_state:
+    st.session_state.analysis_mode = None
+
+if st.session_state.analysis_mode is None:
+    choice = render_mode_choice()
+    if choice:
+        st.session_state.analysis_mode = choice
+        st.rerun()
+    st.stop()
+
+if st.session_state.analysis_mode == "practico":
+    render_practical_page()
+    st.stop()
+
 st.markdown('<div class="hero"><h1>📊 Panel Analítico Universal</h1><p>De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.</p></div>',unsafe_allow_html=True)
 
 with st.sidebar:
     st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
+    if st.button("⚡ Cambiar a Análisis Práctico", use_container_width=True, key="switch_to_practico"):
+        st.session_state.analysis_mode = "practico"
+        st.rerun()
 
     st.markdown('<p class="sidebar-section-label">Tu archivo</p>', unsafe_allow_html=True)
     upload=st.file_uploader("Cargar Excel / CSV",type=["xlsx","xls","xlsb","xlsm","csv"], key="single_upload", label_visibility="collapsed")
@@ -643,7 +675,7 @@ if query:
     st.caption(f"Resultado de la consulta: {len(df):,} registros")
 
 mode_info=detect_dataset_mode(df, schema)
-dashboard=build_dashboard(df,item["profile"])
+dashboard=_cached_build_dashboard(df,item["profile"])
 classification = mode_info.get("classification", {})
 geo_enabled, geo_meta = supports_georeferencing(df, schema)
 

@@ -11,6 +11,7 @@ from core.quality import assess
 from ui.labels import clean_display_text
 from core.dashboard_engine import build_dashboard
 from core.geo_engine import geographic_summary, supports_georeferencing
+from core.universal_analysis import semantic_map, ADDITIVE, drilldown_table
 from visualization.charts import (
     adaptive_chart_specs,
     correlation,
@@ -200,17 +201,46 @@ def _build_charts(df: pd.DataFrame, schema: dict, dashboard: dict, include_geo: 
     return blocks
 
 
+def _narrative_summary(df: pd.DataFrame, schema: dict, dashboard: dict, primary, dims) -> str:
+    """Frase ejecutiva de una línea combinando lo que el archivo realmente
+    tiene — nunca inventa una métrica o dimensión que no exista.
+    """
+    n = len(df)
+    parts = [f"El análisis de la selección actual recorre {n:,} registros"]
+    if primary and primary in df.columns:
+        sem = semantic_map(schema).get(primary, "")
+        s = pd.to_numeric(df[primary], errors="coerce").dropna()
+        if len(s):
+            value = float(s.sum()) if sem in ADDITIVE else float(s.mean())
+            verb = "con un total de" if sem in ADDITIVE else "con un promedio de"
+            parts.append(f"{verb} {_esc(_label(schema, primary)).lower()} de {_fmt(value)}")
+    if dims:
+        first_dim = dims[0]
+        if first_dim in df.columns:
+            unique_n = df[first_dim].nunique(dropna=True)
+            if unique_n:
+                parts.append(f"distribuidos en {unique_n:,} valores distintos de {_esc(_label(schema, first_dim)).lower()}")
+    change = dashboard.get("change_analysis") or {}
+    if change and change.get("pct") is not None:
+        pct = change["pct"]
+        direction = "mejoró" if pct > 0 else "empeoró" if pct < 0 else "se mantuvo estable"
+        parts.append(f"el indicador principal {direction} {abs(pct):.1f}% frente al periodo anterior")
+    return ", ".join(parts) + "."
+
+
 def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename: str, sheet: str, scope_label: str = "Selección actual") -> str:
     generated = datetime.now().strftime("%d/%m/%Y %H:%M")
     metrics = metric_candidates(df, schema)
     dims = dimension_candidates(df, schema)
     primary = dashboard.get("primary_metric") or (metrics[0] if metrics else None)
     quality = _quality_cards(df, schema)
+    narrative = _narrative_summary(df, schema, dashboard, primary, dims)
 
     kpis = dashboard.get("kpis") or []
-    kpi_html = []
+    kpi_html_all = []
     for k in kpis[:8]:
-        kpi_html.append(f"<div class='kpi'><div class='kpi-label'>{_esc(k.get('label','Indicador'))}</div><div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>")
+        kpi_html_all.append(f"<div class='kpi'><div class='kpi-label'>{_esc(k.get('label','Indicador'))}</div><div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>")
+    kpi_html_top4 = "".join(kpi_html_all[:4])
 
     insights = dashboard.get("insights") or []
     insight_html = []
@@ -247,33 +277,33 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
         </section>
         """
 
-    # Small analytical table: strongest groups for the first usable dimension.
-    ranking_html = ""
-    if primary and dims and dims[0] in df.columns:
-        try:
-            x = df[[dims[0], primary]].copy()
-            x[primary] = pd.to_numeric(x[primary], errors="coerce")
-            x = x.dropna(subset=[primary])
-            x[dims[0]] = x[dims[0]].fillna("Sin dato").astype(str)
-            grouped = x.groupby(dims[0])[primary].sum().sort_values(ascending=False).head(10)
-            rows = "".join(f"<tr><td>{_esc(k)}</td><td>{_fmt(v)}</td></tr>" for k, v in grouped.items())
-            ranking_html = f"<section class='table-card'><h2>Principales categorías</h2><p class='muted'>Top 10 por {_esc(_label(schema, primary))}.</p><table><thead><tr><th>{_esc(_label(schema, dims[0]))}</th><th>{_esc(_label(schema, primary))}</th></tr></thead><tbody>{rows}</tbody></table></section>"
-        except Exception:
-            pass
+    # Top 10 / Bottom 10 por la primera dimensión disponible — el mismo par
+    # de tablas que se ve arriba de todo en el informe, lado a lado.
+    top_bottom_html = ""
+    if primary and dims:
+        top_df = drilldown_table(df, schema, primary, dims[0], limit=10, ascending=False)
+        bottom_df = drilldown_table(df, schema, primary, dims[0], limit=10, ascending=True)
+        def _tb_rows(t):
+            return "".join(f"<tr><td>{i+1}</td><td>{_esc(r[dims[0]])}</td><td>{_fmt(r['Valor'])}</td></tr>" for i, r in t.iterrows())
+        if not top_df.empty:
+            top_bottom_html = f"""
+            <div class="table-card"><h3>🏆 Top 10 · mayor {_esc(_label(schema, primary)).lower()}</h3>
+            <table><thead><tr><th>#</th><th>{_esc(_label(schema, dims[0]))}</th><th>{_esc(_label(schema, primary))}</th></tr></thead><tbody>{_tb_rows(top_df)}</tbody></table></div>
+            <div class="table-card"><h3>🔻 Bottom 10 · menor {_esc(_label(schema, primary)).lower()}</h3>
+            <table><thead><tr><th>#</th><th>{_esc(_label(schema, dims[0]))}</th><th>{_esc(_label(schema, primary))}</th></tr></thead><tbody>{_tb_rows(bottom_df)}</tbody></table></div>
+            """
 
     quality_rows = "".join(f"<tr><td>{_esc(c)}</td><td>{_esc(v)}</td><td>{_esc(s)}</td></tr>" for c,v,s in quality)
 
-    # El gráfico más representativo (evolución si hay fecha+métrica; si no,
-    # ranking o distribución) se muestra grande e inmediatamente después del
-    # resumen ejecutivo. El resto de gráficos queda como material de apoyo
-    # más abajo, en vez de competir todos por la misma atención.
+    # Los primeros DOS gráficos (evolución + distribución, cuando existen)
+    # se muestran grandes y lado a lado justo después del resumen — igual
+    # que el resto de gráficos, se adaptan a lo que el archivo realmente
+    # tiene. El resto queda como material de apoyo más abajo.
     chart_blocks = _build_charts(df, schema, dashboard, include_geo=True)
-    if chart_blocks:
-        featured_chart_html = chart_blocks[0]
-        secondary_chart_blocks = chart_blocks[1:]
-    else:
-        featured_chart_html = "<div class='empty'>No hubo suficientes variables para construir gráficos universales con significado.</div>"
-        secondary_chart_blocks = []
+    primary_charts_html = "".join(chart_blocks[:2])
+    secondary_chart_blocks = chart_blocks[2:]
+    if not chart_blocks:
+        primary_charts_html = "<div class='empty'>No hubo suficientes variables para construir gráficos universales con significado.</div>"
     secondary_chart_html = "".join(secondary_chart_blocks)
 
     schema_summary = f"""
@@ -291,7 +321,10 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
 
     # Menú de navegación lateral: solo enlaza a secciones que realmente
     # existen en este informe, para no dejar enlaces muertos.
-    nav_items = [("resumen", "Resumen rápido"), ("vista-principal", "Vista principal")]
+    nav_items = [("resumen", "Resumen ejecutivo"), ("vista-principal", "Gráficos principales")]
+    if top_bottom_html:
+        nav_items.append(("top-bottom", "Top y Bottom 10"))
+    nav_items.append(("detalle", "Detalle adicional"))
     if change_html:
         nav_items.append(("cambio", "Cambio principal"))
     nav_items.append(("lectura", "Lectura analítica"))
@@ -299,8 +332,6 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     nav_items.append(("motor", "Qué encontró el motor"))
     if secondary_chart_html:
         nav_items.append(("graficos", "Otros gráficos"))
-    if ranking_html:
-        nav_items.append(("categorias", "Principales categorías"))
     nav_items.append(("calidad", "Calidad del dato"))
     nav_html = "".join(f'<a href="#{sid}">{_esc(label)}</a>' for sid, label in nav_items)
 
@@ -324,6 +355,8 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
 .kicker{{font-size:11px;font-weight:800;letter-spacing:.13em;color:#e4002b;text-transform:uppercase}}h1{{margin:6px 0 5px;font-size:30px;letter-spacing:-.03em}}.subtitle{{color:var(--muted);font-size:14px}}.meta{{display:flex;flex-wrap:wrap;gap:8px;margin-top:17px}}.meta span{{background:#f7f9fc;border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:11px;color:var(--muted)}}
 .section{{margin-top:28px;scroll-margin-top:20px}}.section>h2,.table-card h2{{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}}.section>p,.table-card>p{{margin:0 0 14px;color:var(--muted);font-size:13px}}
 .kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}}.kpi{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow)}}.kpi-label{{font-size:11px;color:var(--muted);font-weight:700}}.kpi-value{{font-size:24px;font-weight:800;margin-top:8px}}
+.narrative{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:14px 16px;font-size:13.5px;color:var(--text);margin:0 0 14px}}
+#detalle{{border-top:2px solid #e4e8ef;padding-top:22px;margin-top:36px}}
 .change-box{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:13px;padding:18px 20px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;gap:4px 18px;scroll-margin-top:20px}}.change-box span{{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--blue)}}.change-box h2{{margin:3px 0 0;font-size:19px}}.change-value{{font-size:30px;font-weight:900;align-self:center;color:var(--blue)}}.change-box p{{grid-column:1/-1;color:var(--muted);margin:6px 0 0}}
 .insights{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}}.insight{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:15px;box-shadow:var(--shadow)}}.insight.warning{{border-left-color:var(--amber)}}.insight.positive{{border-left-color:var(--green)}}.insight-tag{{font-size:9px;letter-spacing:.11em;font-weight:800;color:var(--muted)}}.insight h3{{margin:5px 0 6px;font-size:14px}}.insight p{{margin:0;font-size:13px}}.action,.implication{{margin-top:9px;background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}}
 .grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}.chart-card,.table-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 17px;box-shadow:var(--shadow);margin-top:14px;scroll-margin-top:20px}}.chart-head span{{font-size:9px;color:var(--blue);font-weight:800;letter-spacing:.13em}}.chart-head h3{{margin:4px 0 2px;font-size:15px}}.chart-head p{{margin:0 0 5px;color:var(--muted);font-size:11px}}.table-card table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left}}th{{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}}.muted{{color:var(--muted)}}.severity{{font-size:10px;font-weight:800;padding:4px 7px;border-radius:999px;background:#fff3dc;color:#a86000}}.empty{{padding:24px;background:#fff;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}}.meta-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:15px 0}}.meta-grid div{{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:13px}}.meta-grid b{{display:block;font-size:20px}}.meta-grid span{{color:var(--muted);font-size:11px}}.footer{{margin-top:35px;color:#7a8495;font-size:11px;text-align:center}}
@@ -337,14 +370,19 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
 <nav class="side-nav"><div class="nav-title">En este informe</div>{nav_html}</nav>
 <main class="wrap">
 <header class="header"><div class="kicker">Excel Intelligence · Informe ejecutivo</div><h1>Resumen analítico del Excel</h1><div class="subtitle">Una lectura lista para compartir: qué pasó, dónde se concentra, qué cambió y qué conviene revisar.</div><div class="meta"><span>Archivo: {_esc(filename)}</span><span>Hoja: {_esc(sheet)}</span><span>Alcance: {_esc(scope_label)}</span><span>Periodo: {_esc(_date_range(df, schema))}</span><span>Generado: {_esc(generated)}</span><span>Registros: {len(df):,}</span></div></header>
-<section class="section" id="resumen"><h2>Resumen rápido</h2><p>Indicadores principales calculados sobre el conjunto que se está reportando.</p><div class="kpis">{''.join(kpi_html) or '<div class="empty">No se detectaron KPIs universales.</div>'}</div></section>
-<section class="section" id="vista-principal"><h2>Vista principal</h2><p>El indicador más representativo detectado para esta hoja.</p>{featured_chart_html}</section>
+<section class="section" id="resumen">
+  <p class="narrative">{_esc(narrative)}</p>
+  <div class="kpis">{kpi_html_top4 or '<div class="empty">No se detectaron KPIs universales.</div>'}</div>
+</section>
+<section class="section" id="vista-principal"><h2>Gráficos principales</h2><p>Los indicadores más representativos detectados para esta hoja.</p><div class="grid2">{primary_charts_html}</div></section>
+{f'<section class="section" id="top-bottom"><h2>Top y Bottom 10</h2><p>Extremos por {_esc(_label(schema, primary))}, usando {_esc(_label(schema, dims[0]))} como categoría.</p><div class="grid2">{top_bottom_html}</div></section>' if top_bottom_html else ''}
+
+<section class="section" id="detalle"><h2>Detalle adicional</h2><p class="muted">El resto del análisis completo: qué cambió, hallazgos, alertas, cómo se interpretó el archivo y calidad del dato.</p></section>
 {change_html.replace('<section class="change-box">', '<section class="change-box" id="cambio">', 1)}
 <section class="section" id="lectura"><h2>Lectura analítica</h2><p>Hallazgos priorizados por el motor universal, con contexto y acción cuando existe.</p><div class="insights">{''.join(insight_html) or '<div class="empty">No se detectaron hallazgos suficientes para esta selección.</div>'}</div></section>
 <section class="section" id="alertas"><h2>Alertas y puntos de atención</h2><div class="table-card"><table><thead><tr><th>Nivel</th><th>Hallazgo</th><th>Qué hacer</th></tr></thead><tbody>{''.join(alert_html) or '<tr><td colspan="3">No hay alertas relevantes.</td></tr>'}</tbody></table></div></section>
 {schema_summary}
 {f'<section class="section" id="graficos"><h2>Otros gráficos disponibles</h2><p>Visualizaciones adicionales que complementan la vista principal.</p><div class="grid2">{secondary_chart_html}</div></section>' if secondary_chart_html else ''}
-{ranking_html.replace("<section class='table-card'>", "<section class='table-card' id='categorias'>", 1)}
 <section class="section" id="calidad"><div class="table-card"><h2>Calidad del dato</h2><p>Indicadores básicos para saber si el análisis merece confianza antes de tomar decisiones.</p><table><thead><tr><th>Indicador</th><th>Valor</th><th>Interpretación</th></tr></thead><tbody>{quality_rows}</tbody></table></div></section>
 <footer class="footer">Generado automáticamente por Panel Analítico Universal · El contenido se adapta a la estructura real del Excel.</footer>
 </main>
@@ -474,12 +512,16 @@ def build_workbook_html_report(workbook: dict) -> str:
         r["_anchor"] = sheet_id
 
         kpis = d.get("kpis") or []
-        kpi_html = "".join(
+        kpi_html_all = [
             f"<div class='kpi'><div class='kpi-label'>{_esc(k.get('label','Indicador'))}</div><div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>"
             for k in kpis[:6]
-        )
+        ]
+        kpi_html = "".join(kpi_html_all[:4])
         if not kpi_html:
             kpi_html = f"<div class='kpi'><div class='kpi-label'>Registros</div><div class='kpi-value'>{len(df):,}</div></div>"
+
+        sheet_dims = dimension_candidates(df, schema)
+        narrative = _narrative_summary(df, schema, d, r["primary"], sheet_dims)
 
         insights = d.get("insights") or []
         insight_html = "".join(
@@ -498,23 +540,40 @@ def build_workbook_html_report(workbook: dict) -> str:
             chart_counter += 1
             # Renumber the visible label without rebuilding Plotly HTML.
             numbered_blocks.append(block.replace("VISUAL 01", f"VISUAL {chart_counter:02d}", 1).replace("VISUAL 02", f"VISUAL {chart_counter:02d}", 1))
-        # El primer gráfico (el más representativo: evolución si hay fecha,
-        # si no ranking/distribución) se muestra grande justo después de los
+        # Los primeros DOS gráficos (evolución + distribución, cuando
+        # existen) se muestran grandes y lado a lado justo después de los
         # KPIs, igual que en el informe individual. El resto queda como
         # material de apoyo más abajo.
         if numbered_blocks:
-            featured_chart_html = numbered_blocks[0]
-            secondary_charts_html = "".join(numbered_blocks[1:])
+            primary_charts_html = "".join(numbered_blocks[:2])
+            secondary_charts_html = "".join(numbered_blocks[2:])
         else:
-            featured_chart_html = "<div class='empty'>Esta hoja no tiene suficientes variables para construir visualizaciones con significado.</div>"
+            primary_charts_html = "<div class='empty'>Esta hoja no tiene suficientes variables para construir visualizaciones con significado.</div>"
             secondary_charts_html = ""
+
+        top_bottom_html = ""
+        if r["primary"] and sheet_dims:
+            top_df = drilldown_table(df, schema, r["primary"], sheet_dims[0], limit=10, ascending=False)
+            bottom_df = drilldown_table(df, schema, r["primary"], sheet_dims[0], limit=10, ascending=True)
+            def _tb_rows(t):
+                return "".join(f"<tr><td>{i+1}</td><td>{_esc(row[sheet_dims[0]])}</td><td>{_fmt(row['Valor'])}</td></tr>" for i, row in t.iterrows())
+            if not top_df.empty:
+                top_bottom_html = f"""
+                <div class="table-card"><h3>🏆 Top 10 · mayor {_esc(_label(schema, r['primary'])).lower()}</h3>
+                <table><thead><tr><th>#</th><th>{_esc(_label(schema, sheet_dims[0]))}</th><th>{_esc(_label(schema, r['primary']))}</th></tr></thead><tbody>{_tb_rows(top_df)}</tbody></table></div>
+                <div class="table-card"><h3>🔻 Bottom 10 · menor {_esc(_label(schema, r['primary'])).lower()}</h3>
+                <table><thead><tr><th>#</th><th>{_esc(_label(schema, sheet_dims[0]))}</th><th>{_esc(_label(schema, r['primary']))}</th></tr></thead><tbody>{_tb_rows(bottom_df)}</tbody></table></div>
+                """
 
         qrows = "".join(f"<tr><td>{_esc(c)}</td><td>{_esc(v)}</td><td>{_esc(s)}</td></tr>" for c,v,s in r["quality"])
         sheet_sections.append(f"""
         <section class='sheet-section' id='{sheet_id}'>
           <div class='sheet-heading'><div><span class='kicker'>HOJA</span><h2>{_esc(r['sheet'])}</h2><p>{len(df):,} registros · {len(df.columns):,} columnas · {_esc(_date_range(df, schema))}</p></div><span class='sheet-primary'>{_esc(r['primary'] and _label(schema, r['primary']) or 'Sin métrica principal')}</span></div>
+          <p class='narrative'>{_esc(narrative)}</p>
           <div class='kpis'>{kpi_html}</div>
-          {featured_chart_html}
+          <div class='grid2'>{primary_charts_html}</div>
+          {f"<div class='grid2'>{top_bottom_html}</div>" if top_bottom_html else ""}
+          <div class='sheet-detail-divider'>Detalle adicional de esta hoja</div>
           <div class='sheet-grid'><div><h3>Lectura de esta hoja</h3><div class='insights'>{insight_html}</div></div><div class='table-card'><h3>Calidad</h3><table><tbody>{qrows}</tbody></table></div></div>
           {f"<div class='grid2'>{secondary_charts_html}</div>" if secondary_charts_html else ""}
         </section>
@@ -554,6 +613,8 @@ def build_workbook_html_report(workbook: dict) -> str:
 .findings{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:11px}}.finding-mini{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px;box-shadow:var(--shadow)}}.finding-sheet{{font-size:9px;font-weight:900;letter-spacing:.1em;color:var(--blue);text-transform:uppercase;margin-bottom:5px}}.finding-mini b{{font-size:13px}}.finding-mini p{{font-size:12px;color:var(--muted);margin:6px 0 0}}
 .sheet-section{{margin-top:34px;padding-top:22px;border-top:2px solid #e4e8ef;scroll-margin-top:20px}}.sheet-heading{{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:12px}}.sheet-heading h2{{margin:3px 0;font-size:23px}}.sheet-heading p{{margin:0;color:var(--muted);font-size:12px}}.sheet-primary{{padding:7px 10px;border-radius:999px;background:#fde8ea;color:var(--blue);font-size:10px;font-weight:800}}
 .sheet-grid{{display:grid;grid-template-columns:1.6fr .8fr;gap:14px;margin-top:14px}}.sheet-grid h3{{font-size:15px;margin:0 0 8px}}.insights{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}}.insight{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px;box-shadow:var(--shadow)}}.insight.warning{{border-left-color:var(--amber)}}.insight.positive{{border-left-color:var(--green)}}.insight-tag{{font-size:9px;letter-spacing:.1em;font-weight:900;color:var(--muted)}}.insight h3{{font-size:13px;margin:5px 0}}.insight p{{font-size:12px;margin:0}}
+.narrative{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px 15px;font-size:13px;color:var(--text);margin:10px 0 14px}}
+.sheet-detail-divider{{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin-top:20px}}
 .grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}}.chart-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 15px;box-shadow:var(--shadow);overflow:hidden;scroll-margin-top:20px}}.chart-head span{{font-size:9px;color:var(--blue);font-weight:900;letter-spacing:.12em}}.chart-head h3{{margin:4px 0 2px;font-size:15px}}.chart-head p{{margin:0;color:var(--muted);font-size:11px}}.empty{{padding:18px;background:#fff;border:1px dashed var(--line);border-radius:11px;color:var(--muted);font-size:12px}}.footer{{margin-top:40px;color:#7a8495;font-size:11px;text-align:center}}
 @media(max-width:1050px){{.side-nav{{display:none}}}}
 @media(max-width:900px){{.grid2,.sheet-grid,.insights{{grid-template-columns:1fr}}.report-shell{{padding:18px 11px}}.sheet-heading{{flex-direction:column}}}}

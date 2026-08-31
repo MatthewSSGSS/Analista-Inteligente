@@ -118,7 +118,7 @@ def drilldown_options(df, schema, exclude=None):
     return [d for d in dimension_candidates(df,schema) if d not in exclude]
 
 
-def drilldown_table(df, schema, metric, dimension, limit=12):
+def drilldown_table(df, schema, metric, dimension, limit=12, ascending=False):
     if not metric or not dimension or metric not in df.columns or dimension not in df.columns:
         return pd.DataFrame()
     sem=semantic_map(schema).get(metric,"")
@@ -126,7 +126,7 @@ def drilldown_table(df, schema, metric, dimension, limit=12):
     if x.empty: return pd.DataFrame()
     grouped=x.groupby(dimension)[metric].sum() if sem in ADDITIVE else x.groupby(dimension)[metric].mean()
     total=float(grouped.sum()) if sem in ADDITIVE else float(grouped.mean())
-    out=grouped.sort_values(ascending=False).head(limit).reset_index()
+    out=grouped.sort_values(ascending=ascending).head(limit).reset_index()
     out.columns=[dimension,"Valor"]
     out["Participación"]=(out["Valor"]/total*100).round(1) if total else 0
     return out

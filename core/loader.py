@@ -78,8 +78,39 @@ def _read_excel_sheet(data, sheet_name, engine=None):
     return data_df.reset_index(drop=True)
 
 
+def _detect_csv_sep(data: bytes) -> str:
+    """Detecta el separador real del CSV en vez de asumir siempre coma. Los
+    CSV exportados desde Excel en configuración regional de Colombia y buena
+    parte de Latinoamérica suelen usar punto y coma (;), porque la coma ya
+    se usa como separador decimal ahí. Sin esto, pandas intenta leer todo
+    como una sola columna y truena apenas encuentra una coma real dentro de
+    un valor de texto (p. ej. 'Bogotá, Colombia').
+    """
+    sample = data[:16384].decode("utf-8", errors="ignore")
+    candidates = [",", ";", "\t", "|"]
+    try:
+        import csv as _csv
+        dialect = _csv.Sniffer().sniff(sample, delimiters="".join(candidates))
+        if dialect.delimiter in candidates:
+            return dialect.delimiter
+    except Exception:
+        pass
+    # Respaldo: cuenta cuál separador aparece más seguido en la primera línea.
+    first_line = sample.split("\n", 1)[0]
+    counts = {d: first_line.count(d) for d in candidates}
+    best = max(counts, key=counts.get)
+    return best if counts[best] > 0 else ","
+
+
 def _read_csv(data):
-    raw = pd.read_csv(io.BytesIO(data), header=None, low_memory=False)
+    sep = _detect_csv_sep(data)
+    try:
+        raw = pd.read_csv(io.BytesIO(data), header=None, sep=sep, engine="python", on_bad_lines="skip")
+    except UnicodeDecodeError:
+        # Algunos CSV exportados desde Excel en Windows quedan en latin-1/cp1252
+        # en vez de UTF-8 (tildes, ñ). Se reintenta con esa codificación antes
+        # de rendirse.
+        raw = pd.read_csv(io.BytesIO(data), header=None, sep=sep, engine="python", on_bad_lines="skip", encoding="latin-1")
     if raw.empty:
         return raw
     limit = min(len(raw), 15)

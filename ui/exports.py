@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 from core.dashboard_engine import build_dashboard
 from ui.report_html import build_html_report, build_workbook_html_report
+from ui.interactive_report import build_interactive_html_report
 
 
 def _insight_text(item):
@@ -122,6 +123,28 @@ HALLAZGOS
             st.caption("No tienes ningún filtro activo todavía, así que por ahora esto equivale al informe de la hoja completa. Aplica un filtro en la barra lateral y vuelve a exportar para que el informe cambie con él.")
 
     st.divider()
+
+    st.divider()
+
+    st.markdown("#### 🧭 Informe interactivo (filtros que funcionan dentro del HTML)")
+    st.caption(
+        "A diferencia de los otros tres, este lleva los datos completos metidos adentro. "
+        "Quien lo abra puede cambiar los filtros ahí mismo — sin la app, sin internet — y todo "
+        "se actualiza solo: KPIs, gráficos y tablas de mayor/menor valor."
+    )
+    try:
+        html_interactivo = build_interactive_html_report(full_df if full_df is not None else df, schema or {}, filename, sheet)
+        st.download_button(
+            "🧭 Exportar informe interactivo",
+            html_interactivo.encode("utf-8"),
+            "informe_interactivo.html",
+            "text/html",
+            use_container_width=True,
+            help="Incluye todos los datos de la hoja (hasta 20,000 filas) para que los filtros funcionen sin la app.",
+        )
+        st.caption("⚠️ Este archivo pesa varios MB porque lleva los datos y los gráficos incrustados — es normal, así funciona sin internet.")
+    except Exception as exc:
+        st.error(f"No se pudo preparar el informe interactivo: {exc}")
 
     # Informe individual por hoja: permite sacar un reporte mucho más corto y
     # enfocado cuando el informe general del libro resulta demasiado extenso.
