@@ -1,3 +1,8 @@
+"""Comparación A vs. B: dos personas, lado a lado, con los mismos
+componentes que ya usa el perfil individual (ui/person_profile.py) —
+kpi_card, chart_card, section_header — en vez de tarjetas/gráficos armados
+a mano por separado.
+"""
 from __future__ import annotations
 import pandas as pd
 import plotly.express as px
@@ -5,7 +10,10 @@ import plotly.graph_objects as go
 import streamlit as st
 from core.numeric import numeric_series
 from core.universal_analysis import semantic_map, ADDITIVE, period_series
-from visualization.charts import metric_candidates, _label
+from visualization.charts import metric_candidates, _label, chart_text_color
+from ui.components.cards import kpi_card
+from ui.components.charts import chart_card
+from ui.components.section import section_header
 
 
 def _fmt(v):
@@ -30,6 +38,10 @@ def render_person_compare(df, schema):
         return
     sem = semantic_map(schema)
     preferred = [m for m in metrics if sem.get(m) in {"revenue","profit","quantity","sales","rating"}]
+
+    st.markdown(section_header("Comparar personas", eyebrow="COMPARACIÓN A VS B", subtitle="Compara dos personas lado a lado: mismos indicadores, mismo gráfico."), unsafe_allow_html=True)
+
+    # ── Selección: métrica + las dos personas, lado a lado ─────────────────
     metric = st.selectbox("Métrica a comparar", preferred or metrics, format_func=lambda c:_label(schema,c), key="ab_metric_v52")
     a,b = st.columns(2)
     with a: person_a = st.selectbox("Persona A", names, key="ab_person_a_v52")
@@ -42,9 +54,20 @@ def render_person_compare(df, schema):
     va=float(s_a.sum()) if additive else float(s_a.mean()) if len(s_a) else 0
     vb=float(s_b.sum()) if additive else float(s_b.mean()) if len(s_b) else 0
     delta=vb-va; pct=(delta/abs(va)*100) if va else None
-    c1,c2,c3,c4=st.columns(4)
-    c1.metric(person_a,_fmt(va)); c2.metric(person_b,_fmt(vb)); c3.metric("Diferencia",_fmt(delta),f"{pct:+.1f}%" if pct is not None else None); c4.metric("Mejor resultado",person_b if vb>va else person_a if va>vb else "Empate")
+    winner = person_b if vb>va else person_a if va>vb else "Empate"
 
+    # ── Métricas: las mismas 4 tarjetas de antes, con el componente que ya
+    # usa el perfil individual en vez de st.metric suelto ─────────────────
+    st.markdown(section_header("Métricas", compact=True), unsafe_allow_html=True)
+    delta_tone = "neutral" if pct is None else ("positive" if delta >= 0 else "negative")
+    c1,c2,c3,c4=st.columns(4)
+    c1.markdown(kpi_card(person_a,_fmt(va)), unsafe_allow_html=True)
+    c2.markdown(kpi_card(person_b,_fmt(vb)), unsafe_allow_html=True)
+    c3.markdown(kpi_card("Diferencia",_fmt(delta), delta=f"{pct:+.1f}%" if pct is not None else None, tone=delta_tone), unsafe_allow_html=True)
+    c4.markdown(kpi_card("Mejor resultado", winner), unsafe_allow_html=True)
+
+    # ── Gráfico comparativo: mismos 5 tipos de siempre ──────────────────────
+    st.markdown(section_header("Gráfico comparativo", compact=True), unsafe_allow_html=True)
     chart_type=st.selectbox("Tipo de comparación", ["Barras comparativas","Líneas","Barras apiladas","Barras 100%","Radar"], key="ab_chart_type_v52")
     date_cols=[d for d in schema.get("dates",[]) if d in df.columns]
     if date_cols:
@@ -76,8 +99,11 @@ def render_person_compare(df, schema):
     else:
         comp=pd.DataFrame({"Persona":[person_a,person_b],"Valor":[va,vb]})
         fig=px.bar(comp,x="Persona",y="Valor",color="Persona",text_auto=".3s",color_discrete_sequence=["#E4002B","#0FA8A0"]); fig.update_layout(height=360,showlegend=False)
-    fig.update_layout(margin=dict(l=15,r=15,t=20,b=25),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",font=dict(color="#172033"))
-    st.plotly_chart(fig,use_container_width=True,key="ab_compare_chart_v52")
+    fig.update_layout(margin=dict(l=15,r=15,t=20,b=25),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",font=dict(color=chart_text_color()))
+    chart_card(
+        f"{person_a} vs. {person_b}", f"{_label(schema, metric)} · {chart_type}", fig,
+        key="ab_compare_chart_v52", visual_type="COMPARACIÓN", badge_text="Datos de A y B",
+    )
 
     # Explain the gap using the first useful business dimension.
     dims=[]
@@ -94,5 +120,5 @@ def render_person_compare(df, schema):
             return agg.sort_values(ascending=False).head(5)
         ta,tb=top(rows_a),top(rows_b)
         comp=pd.concat([ta.rename(person_a),tb.rename(person_b)],axis=1).fillna(0).reset_index().rename(columns={"index":_label(schema,dim)})
-        st.markdown(f"### Qué explica la diferencia · {_label(schema,dim)}")
+        st.markdown(section_header(f"Qué explica la diferencia · {_label(schema,dim)}", compact=True), unsafe_allow_html=True)
         st.dataframe(comp,use_container_width=True,hide_index=True)

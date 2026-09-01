@@ -20,8 +20,8 @@ from core.tracking_engine import (
 
 def _confidence_badge(level: str) -> str:
     if level == "alta":
-        return '<span style="font-size:10.5px;font-weight:800;color:#189a63;background:#e7f7ef;border-radius:999px;padding:3px 9px;">Cruce por ID · alta confianza</span>'
-    return '<span style="font-size:10.5px;font-weight:800;color:#c8790a;background:#fdf2e2;border-radius:999px;padding:3px 9px;">Cruce por nombre · revisar</span>'
+        return '<span style="font-size:10.5px;font-weight:800;color:var(--green);background:var(--green-soft);border-radius:999px;padding:3px 9px;">Cruce por ID · alta confianza</span>'
+    return '<span style="font-size:10.5px;font-weight:800;color:var(--amber);background:var(--amber-soft);border-radius:999px;padding:3px 9px;">Cruce por nombre · revisar</span>'
 
 
 def _month_end(d: datetime) -> pd.Timestamp:

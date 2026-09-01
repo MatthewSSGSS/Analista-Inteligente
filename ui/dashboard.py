@@ -5,40 +5,38 @@ import re
 from ui.labels import clean_display_text
 from visualization.charts import (
     trend, grouped_trend, multi_trend, ranking, donut, histogram, scatter, correlation, geo, geo_summary_map, comparison, period_compare_bar,
-    metric_candidates, dimension_candidates, _label, adaptive_chart_specs, wide_month_chart, _base, CATEGORY_PALETTE
+    metric_candidates, dimension_candidates, _label, adaptive_chart_specs, wide_month_chart, _base, CATEGORY_PALETTE, chart_muted_color
 )
 from core.geo_engine import geographic_summary
 from core.chart_explainer import explain_chart
 from core.performance import choose_dimension
 from core.numeric import numeric_series
+from core.dates import format_month_year
 from core.universal_analysis import dynamic_kpis, drilldown_options, drilldown_table, person_stats, smart_chart_questions
 import plotly.graph_objects as go
 import plotly.express as px
 from ui.person_profile import render_person_profile
+from ui.components.cards import kpi_card, insight_card, executive_headline as _shared_executive_headline, executive_signals as _shared_executive_signals
+from ui.components.charts import chart_card as _shared_chart_card
+from ui.layouts.columns import kpi_grid as _kpi_grid_layout, two_column
+from ui.layouts.tabs import named_tabs
 
 
 def _card(label, value, delta=None, tone="neutral", icon=""):
-    delta_html = f'<div class="kpi-delta {tone}">{delta}</div>' if delta is not None else ""
-    return f'''<div class="kpi-card {tone}"><span class="kpi-label">{label}</span><div class="kpi-value">{value}</div>{delta_html}</div>'''
+    return kpi_card(label, value, delta=delta, tone=tone, icon=icon or None)
 
 
 def _kpi_grid(kpis, growth=None, per_row=4):
     """Cuadrícula de tarjetas KPI, 4 por fila (con salto de línea automático),
     como en un panel tipo Power BI: sin iconos, solo etiqueta/valor/variación."""
-    for row_start in range(0, len(kpis), per_row):
-        row = kpis[row_start:row_start + per_row]
-        cols = st.columns(per_row)
-        for i, k in enumerate(row):
-            global_i = row_start + i
-            with cols[i]:
-                delta = None; tone = "neutral"
-                if global_i == 1 and growth is not None:
-                    delta = f"{'▲' if growth >= 0 else '▼'} {abs(growth):.1f}% vs. periodo anterior"
-                    tone = "positive" if growth >= 0 else "negative"
-                st.markdown(_card(k["label"], k["value"], delta, tone), unsafe_allow_html=True)
-        # Rellena la fila si quedó incompleta, para que la cuadrícula no se vea rota.
-        for j in range(len(row), per_row):
-            cols[j].empty()
+    def render(entry):
+        global_i, k = entry
+        delta = None; tone = "neutral"
+        if global_i == 1 and growth is not None:
+            delta = f"{'▲' if growth >= 0 else '▼'} {abs(growth):.1f}% vs. periodo anterior"
+            tone = "positive" if growth >= 0 else "negative"
+        return _card(k["label"], k["value"], delta, tone)
+    _kpi_grid_layout(list(enumerate(kpis)), render, per_row=per_row)
 
 
 def _display_kpi_value(k):
@@ -94,29 +92,7 @@ def _drilldown_panel(df,schema,metric,dimension):
 
 
 def _chart_card(title, subtitle, fig, empty="No hay datos suficientes para este análisis.", insight=None, explain=None, key=None):
-    st.markdown(
-        f'<div class="chart-card pbi-visual"><div class="chart-head">'
-        f'<div class="chart-head-main"><span class="visual-type">VISUAL</span>'
-        f'<div class="chart-title">{title}</div><div class="chart-subtitle">{subtitle}</div></div>'
-        f'<span class="data-badge visual-badge">Datos actuales</span></div>',
-        unsafe_allow_html=True,
-    )
-    if fig is not None:
-        safe_key = key or "chart_" + re.sub(r"[^a-zA-Z0-9_]+", "_", f"{title}_{subtitle}")[:80]
-        # Streamlit requires every element key to be unique. The chart and
-        # its explanation button are two different elements, so they must
-        # never share the same key.
-        chart_key = f"{safe_key}__chart"
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True}, key=chart_key)
-        if insight:
-            st.markdown(f'<div class="chart-reading"><b>Lectura:</b> {insight}</div>', unsafe_allow_html=True)
-        if explain:
-            button_key = f"{safe_key}__explain"
-            if st.button("💡 Explicar gráfico", key=button_key, use_container_width=False):
-                st.markdown(f'<div class="chart-reading"><b>Interpretación:</b> {explain}</div>', unsafe_allow_html=True)
-    else:
-        st.info(empty)
-    st.markdown('</div>', unsafe_allow_html=True)
+    _shared_chart_card(title, subtitle, fig, empty=empty, insight=insight, explain=explain, key=key)
 
 
 def _fmt(v):
@@ -480,8 +456,8 @@ def _person_profile(df, schema, person_col, person_name, metric, date_col=None):
     dates = pd.Series(dtype="datetime64[ns]")
     if date_col and date_col in rows.columns:
         dates = pd.to_datetime(rows[date_col], errors="coerce").dropna()
-    c3.metric("Periodo inicial", dates.min().strftime("%b %Y") if len(dates) else "—")
-    c4.metric("Periodo final", dates.max().strftime("%b %Y") if len(dates) else "—")
+    c3.metric("Periodo inicial", format_month_year(dates.min()) if len(dates) else "—")
+    c4.metric("Periodo final", format_month_year(dates.max()) if len(dates) else "—")
 
     # --- Build temporal series once; every visual uses the same aggregation ---
     y = None
@@ -514,9 +490,10 @@ def _person_profile(df, schema, person_col, person_name, metric, date_col=None):
                     if pd.notna(pct.iloc[i]):
                         fig.add_annotation(x=y.iloc[i]["_period"], y=y.iloc[i][metric], text=f"{pct.iloc[i]:+.1f}%",
                                            showarrow=False, yshift=16,
-                                           font=dict(size=10,color="#8FB8E8"))
+                                           font=dict(size=10,color=chart_muted_color()))
                 fig.update_xaxes(tickformat="%b %Y", showgrid=False)
                 fig.update_yaxes(tickformat="~s", title=_label(schema, metric), showgrid=True, gridcolor="rgba(96,112,132,.16)")
+                fig = _base(fig, 380, show_xgrid=False)
                 _chart_card("Evolución del seleccionado", f"Resultado de {person_name} por mes", fig, key="individual_profile_trend_v47")
             with b:
                 latest=float(y.iloc[-1][metric]); previous=float(y.iloc[-2][metric])
@@ -525,8 +502,8 @@ def _person_profile(df, schema, person_col, person_name, metric, date_col=None):
                 st.markdown("#### Lectura rápida")
                 st.metric("Último periodo", _fmt_number(latest), f"{pct:+.1f}%" if pct is not None else "—")
                 best=y.loc[y[metric].idxmax()]; worst=y.loc[y[metric].idxmin()]
-                st.metric("Mejor periodo", best["_period"].strftime("%b %Y"), _fmt_number(best[metric]))
-                st.metric("Peor periodo", worst["_period"].strftime("%b %Y"), _fmt_number(worst[metric]))
+                st.metric("Mejor periodo", format_month_year(best["_period"]), _fmt_number(best[metric]))
+                st.metric("Peor periodo", format_month_year(worst["_period"]), _fmt_number(worst[metric]))
                 allvals=numeric_series(df[metric]).dropna() if metric in df.columns else pd.Series(dtype=float)
                 benchmark=float(allvals.mean()) if len(allvals) else None
                 if benchmark is not None and total_or_avg is not None:
@@ -535,6 +512,7 @@ def _person_profile(df, schema, person_col, person_name, metric, date_col=None):
         else:
             fig=px.bar(y,x="_period",y=metric,text_auto=".3s")
             fig.update_traces(marker_color="#E4002B",marker_line_width=0)
+            fig = _base(fig, 320, show_xgrid=False)
             _chart_card("Resultado disponible", f"Solo existe un periodo visible para {person_name}", fig, key="individual_profile_single_period_v47")
 
     # --- Diagnóstico ejecutivo del seleccionado ---
@@ -554,7 +532,7 @@ def _person_profile(df, schema, person_col, person_name, metric, date_col=None):
         if stats.get("series") is not None and not stats["series"].empty:
             best=stats.get("best_period"); worst=stats.get("worst_period")
             if best is not None and worst is not None:
-                st.caption(f"Mejor periodo: {pd.to_datetime(best).strftime('%b %Y')} · Peor periodo: {pd.to_datetime(worst).strftime('%b %Y')}")
+                st.caption(f"Mejor periodo: {format_month_year(best)} · Peor periodo: {format_month_year(worst)}")
 
     # --- What explains the result: product/category/channel ---
     candidates=[]
@@ -590,6 +568,7 @@ def _person_profile(df, schema, person_col, person_name, metric, date_col=None):
                        labels={mix_col:_label(schema,mix_col),value_col:_label(schema,value_col) if value_col in rows.columns else "Registros"})
             fig.update_traces(marker_color="#22C7B4",marker_line_width=0)
             fig.update_xaxes(showgrid=True,gridcolor="rgba(96,112,132,.16)"); fig.update_yaxes(showgrid=False,automargin=True)
+            fig = _base(fig, max(330, 34*len(mix)+90), show_xgrid=True)
             _chart_card(f"Qué mueve el resultado · {_label(schema,mix_col)}", f"Principales elementos asociados a {person_name}", fig, key="individual_profile_mix_v47")
 
     # --- Data coverage / categorical footprint ---
@@ -636,23 +615,12 @@ def _visual_controls(df, schema, key_prefix="main"):
 
 def _executive_headline(dashboard):
     """Solo el veredicto principal: siempre visible, sin detalle adicional."""
-    ex=dashboard.get("executive",{})
-    cls=ex.get("status","neutral")
-    st.markdown(f'<div class="executive-card {cls}"><div class="executive-status">{("Situación favorable" if cls=="positive" else "Requiere atención" if cls=="negative" else "Situación estable")}</div><div class="executive-headline">{ex.get("headline","")}</div><div class="executive-detail">{ex.get("detail","")}</div></div>',unsafe_allow_html=True)
+    _shared_executive_headline(dashboard)
 
 
 def _executive_signals(dashboard):
     """Detalle de señales positivas y puntos a vigilar: pensado para vivir dentro de un expander."""
-    ex=dashboard.get("executive",{})
-    a,b=st.columns(2)
-    with a:
-        st.markdown('<div class="mini-list"><b>Señales positivas</b></div>',unsafe_allow_html=True)
-        for x in ex.get("positive",[])[:3]: st.markdown(f'<div class="mini-positive">✓ {x}</div>',unsafe_allow_html=True)
-        if not ex.get("positive"): st.caption("No se detectaron mejoras destacadas automáticamente.")
-    with b:
-        st.markdown('<div class="mini-list"><b>Puntos a vigilar</b></div>',unsafe_allow_html=True)
-        for x in ex.get("watch",[])[:3]: st.markdown(f'<div class="mini-warning">! {x}</div>',unsafe_allow_html=True)
-        if not ex.get("watch"): st.caption("No se detectaron alertas prioritarias.")
+    _shared_executive_signals(dashboard)
 
 
 def _alerts_panel(df, dashboard):
@@ -785,7 +753,7 @@ def _performance_panel(df, dashboard):
     fig.update_xaxes(title=None,tickformat="~s")
     fig.update_yaxes(title=None,categoryorder="array",categoryarray=names)
     fig=__import__('visualization.charts',fromlist=['_base'])._base(fig,max(300,38*len(names)+80),show_xgrid=True)
-    a,b=st.columns([1.65,1])
+    a,b=two_column(1.65,1)
     with a:
         _chart_card("Mejor vs. menor desempeño",f"{_label(schema,dim)} · azul = mayor resultado · rojo = menor resultado",fig,"No hay datos suficientes.",key="performance_extremes_chart")
     with b:
@@ -804,146 +772,18 @@ def _insights_panel(insights):
         title = clean_display_text(item.get("title", "Hallazgo"))
         finding = clean_display_text(item.get("finding", ""))
         action = clean_display_text(item.get("action", ""))
-        html = (
-            f'<div class="insight-card compact {cls}">'
-            f'<div class="insight-icon">{icon}</div>'
-            f'<div class="insight-body">'
-            f'<div class="insight-title">{title}</div>'
-            f'<div class="insight-text">{finding}</div>'
-            f'<div class="insight-action"><b>Qué hacer:</b> {action}</div>'
-            f'</div></div>'
-        )
+        html = insight_card(finding, title=title, kind=cls, icon=icon, action=action, compact=True)
         cols[i % 2].markdown(html, unsafe_allow_html=True)
 
 
-def render_dashboard(df, dashboard):
-    schema = dashboard["schema"]
-    ex = dashboard.get("executive", {})
-
-    # ── Vista general: lo primero que se ve, sin necesidad de desplegar nada ──
-    st.markdown('<div class="section-intro"><div><span class="eyebrow">RESUMEN EJECUTIVO</span><h2>Qué está pasando</h2></div><span class="data-badge">Todo recalculado con los filtros actuales</span></div>', unsafe_allow_html=True)
-    st.caption(dashboard["summary"])
-
-    # Perfil individual integrado: se abre dentro del mismo dashboard.
-    # Esto evita depender de /pages y mantiene el flujo en una sola pantalla.
-    full_name = schema.get("full_name", {}) if isinstance(schema.get("full_name"), dict) else {}
-    if full_name.get("column") in df.columns:
-        cta1, cta2 = st.columns([1.35, 4])
-        with cta1:
-            if st.button("👤 Analizar perfil individual", type="primary", use_container_width=True, key="open_person_profile_v53"):
-                st.session_state["show_profile_inline"] = True
-        with cta2:
-            st.caption("Abre el análisis completo de una persona sin salir del dashboard.")
-
-        if st.session_state.get("show_profile_inline", False):
-            st.markdown('<div class="decision-panel"><div class="decision-panel-title">Perfil individual</div><div class="decision-panel-subtitle">Todo el análisis disponible para la persona seleccionada, respetando los filtros actuales.</div></div>', unsafe_allow_html=True)
-            if st.button("✕ Cerrar perfil", key="close_person_profile_v53"):
-                st.session_state["show_profile_inline"] = False
-                st.rerun()
-            render_person_profile(df, schema, dashboard)
-
-    _universal_kpi_grid(df, schema, dashboard)
-
-    if dashboard.get("growth") is not None:
-        g = dashboard["growth"]; cls = "positive" if g >= 0 else "negative"; text = "crecimiento" if g >= 0 else "caída"
-        st.markdown(f'<div class="decision-strip {cls}"><span class="decision-dot"></span><b>Lectura rápida:</b> {text} reciente de <strong>{abs(g):.1f}%</strong> frente al periodo anterior.</div>', unsafe_allow_html=True)
-
-    _executive_headline(dashboard)
-
-    # ── Detalle progresivo: nada se elimina, solo se reorganiza en dos
-    # columnas temáticas para que no sea una fila larga de acordeones y se
-    # aproveche mejor el ancho disponible.
-    st.markdown(
-        '<div class="section-intro compact"><div><span class="eyebrow">DETALLE</span>'
-        '<h2>Profundiza cuando lo necesites</h2></div>'
-        '<span class="data-badge">Organizado por tema</span></div>',
-        unsafe_allow_html=True,
-    )
-
-    # Se agrupan por tema en pestañas en vez de apilar 8 expanders uno tras
-    # otro: mismo contenido, mismas funciones, solo más fácil de recorrer.
-    alerts = dashboard.get("alerts", [])
-    insights = dashboard.get("insights", [])[:4]
-    detail_tabs = st.tabs(["📌 Diagnóstico", "🏆 Desempeño", "🗂️ Contexto y acción"])
-
-    with detail_tabs[0]:
-        if ex.get("positive") or ex.get("watch"):
-            st.markdown("#### 📌 Señales positivas y puntos a vigilar")
-            _executive_signals(dashboard)
-            st.divider()
-        if alerts:
-            st.markdown(f"#### 🔔 Alertas inteligentes · {len(alerts[:4])} hallazgos prioritarios")
-            _alerts_panel(df, dashboard)
-            st.divider()
-        if dashboard.get("change_analysis"):
-            st.markdown("#### 🔍 ¿Por qué cambió?")
-            _why_changed(df, dashboard)
-            st.divider()
-        if insights:
-            st.markdown(f"#### 🧭 Hallazgos y líneas de acción ({len(insights)})")
-            _insights_panel(insights)
-        if not (ex.get("positive") or ex.get("watch") or alerts or dashboard.get("change_analysis") or insights):
-            st.info("No hay señales, alertas ni hallazgos suficientes con los datos visibles.")
-
-    with detail_tabs[1]:
-        st.markdown("#### 🏆 Dónde está el mejor y peor resultado")
-        _performance_panel(df, dashboard)
-        st.divider()
-        st.markdown("#### 🔎 Profundizar en el resultado")
-        _drilldown_panel(df, schema, dashboard.get("primary_metric"), dashboard.get("performance",{}).get("dimension"))
-
-    with detail_tabs[2]:
-        st.markdown("#### 🗂️ Perfil del archivo y cómo se interpretó")
-        _profile_panel(df, dashboard)
-        semantic = schema.get("semantic", {})
-        interpretations = semantic.get("columns", [])
-        if interpretations:
-            st.markdown("Cómo interpretó el sistema cada columna")
-            rows = []
-            for item in interpretations:
-                concept = item.get("semantic_type", "unknown")
-                from ui.labels import pretty_technical
-                rows.append({"Columna original": item["column"], "Interpretación": pretty_technical(concept), "Confianza": f'{item["confidence"]*100:.0f}%', "Revisar": "⚠ Sí" if item.get("ambiguous") else "✓ No"})
-            st.dataframe(rows, use_container_width=True, hide_index=True)
-        st.divider()
-        st.markdown("#### ✅ Qué conviene revisar")
-        _recommendations_panel(df, dashboard)
-
-    # Estructura especial: Enero...Diciembre como columnas.
-    # Se conserva la navegación original y se añade una lectura automática.
-    wide = wide_month_chart(df, schema)
-    if wide is not None and not schema.get("dates"):
-        wide_fig, wide_subtitle = wide
-        _chart_card(
-            "Evolución mensual detectada",
-            wide_subtitle,
-            wide_fig,
-            "Se detectaron columnas mensuales, pero no hay valores suficientes.",
-            "El sistema identificó los meses en las columnas y los convirtió automáticamente en una lectura temporal.",
-            key="wide_months_main",
-        )
-
-    controls = _visual_controls(df, schema)
-    m, d = controls["metric"], controls["dimension"]
-    # Última capa de seguridad: si por cualquier motivo (cambio de hoja,
-    # estado viejo de otra sesión, etc.) la métrica o dimensión seleccionada
-    # ya no existe en este dataframe, se descarta en vez de reventar más
-    # abajo con un KeyError al intentar graficarla.
-    if m is not None and m not in df.columns:
-        m = None
-    if d is not None and d not in df.columns:
-        d = None
-
-    st.markdown(
-        '<div class="analysis-toolbar"><div><span class="eyebrow">ÁREA DE ANÁLISIS</span><h2>Informe analítico</h2></div>'
-        '<div class="analysis-toolbar-meta"><span>Filtros activos</span><span>Actualización automática</span></div></div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown('<div class="section-intro compact analysis-section-title"><div><span class="eyebrow">DESEMPEÑO</span><h2>Visión general</h2></div><span class="data-badge">Primero el total · después el detalle</span></div>', unsafe_allow_html=True)
-    # Render only charts supported by the detected structure. A missing date no
-    # longer leaves the user with an empty chart: categorical/numeric sheets get
-    # rankings, distributions or relationships automatically.
-    available_dates = bool(schema.get("dates"))
+def _primary_analysis_section(df, schema, controls, m, d, available_dates):
+    """Gráfico principal (según el tipo elegido) + comparación individual +
+    comparación temporal de los últimos periodos. Antes vivía inline dentro
+    de render_dashboard; se extrajo tal cual (mismo código, mismas claves de
+    widget) para que la pestaña "Visión general" del área de análisis sea
+    autocontenida. Devuelve el tipo de gráfico elegido (o None) para que
+    Diagnóstico no repita el mismo tipo de visual."""
+    selected_kind = None
     if m:
         chart_options=_available_chart_types(df,schema,m,d,available_dates)
         labels=[x[0] for x in chart_options]
@@ -1115,6 +955,15 @@ def render_dashboard(df, dashboard):
     if available_dates and m:
         _chart_card("Comparación temporal", "Últimos periodos disponibles · detecta subidas y caídas entre periodos", comparison(df,schema,m,controls["grain"] if controls["grain"] in {"Mes","Trimestre","Año"} else "Mes"), "No hay suficientes periodos comparables.", explain=explain_chart(df,schema,"comparison",m,d,controls["grain"]), key="explain_comparison_main")
 
+    return selected_kind
+
+
+def _diagnostic_and_smart_charts_section(df, schema, controls, m, d, available_dates, selected_kind):
+    """Ranking de contribución / anterior vs. actual, y los "gráficos
+    inteligentes" que la estructura del Excel permite responder. Evita
+    repetir el mismo tipo de gráfico que ya se eligió en Visión general
+    (antes se detectaba con `"selected_kind" in locals()`; ahora
+    `selected_kind` es un parámetro explícito con el mismo efecto)."""
     st.markdown('<div class="section-intro compact"><div><span class="eyebrow">EXPLORACIÓN</span><h2>Más respuestas, menos interpretación manual</h2></div></div>', unsafe_allow_html=True)
     # Visuales complementarios: solo aparecen cuando aportan una pregunta distinta.
     # No se repite automáticamente la misma métrica en tres gráficos equivalentes.
@@ -1150,7 +999,7 @@ def render_dashboard(df, dashboard):
     # aparece si el Excel tiene la estructura necesaria.
     if m:
         smart_specs=smart_chart_questions(df,schema,m,d)
-        used_smart={selected_kind} if "selected_kind" in locals() else set()
+        used_smart={selected_kind} if selected_kind else set()
         used_smart.update({"ranking","period_compare"} if d else set())
         smart_specs=[spec for spec in smart_specs if spec[2] not in used_smart]
         rendered=[]
@@ -1170,8 +1019,10 @@ def render_dashboard(df, dashboard):
             for i,(title,q,fig,kind) in enumerate(rendered[:4]):
                 with cols[i%2]: _chart_card(title,q,fig,key=f"smart_chart_{kind}_{i}")
 
-    # Geografía inteligente: usa coordenadas si existen; si solo hay ciudad,
-    # intenta geocodificarla y muestra claramente los casos ambiguos.
+
+def _geo_section(df, schema, m):
+    """Mapa e indicadores geográficos, cuando el Excel tiene ciudad, región,
+    país o coordenadas utilizables."""
     st.markdown('<div class="section-intro compact"><div><span class="eyebrow">INTELIGENCIA GEOGRÁFICA</span><h2>Dónde se concentra el resultado</h2></div></div>', unsafe_allow_html=True)
     geo_summary = geographic_summary(df, schema, m)
     geo_meta = geo_summary.get("meta", {})
@@ -1186,7 +1037,7 @@ def render_dashboard(df, dashboard):
             unresolved = geo_meta.get("unresolved_places", 0) + geo_meta.get("ambiguous_places", 0)
             if unresolved:
                 st.warning(f"{unresolved} ubicación(es) no pudieron confirmarse con suficiente confianza. No se colocaron en el mapa para evitar errores geográficos.")
-        a, b = st.columns([1.65, 1])
+        a, b = two_column(1.65, 1)
         with a:
             _chart_card("Mapa geográfico", f"El tamaño del punto representa el valor de la métrica seleccionada. Nivel: {geo_meta.get('level','Ubicación')}.", geo_summary_map(geo_summary), "No se pudieron construir ubicaciones suficientes.", insight=(f"{geo_kpis.get('leader','La ciudad líder')} concentra {geo_kpis.get('leader_share',0):.1f}% del valor analizado." if geo_kpis.get('leader') else None), explain=explain_chart(df, schema, "geo", m, geo_summary.get("meta",{}).get("dimension")), key="explain_geo_main")
         with b:
@@ -1202,6 +1053,9 @@ def render_dashboard(df, dashboard):
         st.info(f"No hay un análisis geográfico disponible todavía. {reason}")
 
 
+def _relationships_and_detail_section(df, schema, m, d):
+    """Relación entre métricas (dispersión + correlación) y la tabla de
+    detalle por dimensión, cuando hay suficientes métricas/dimensión."""
     metrics = metric_candidates(df, schema)
     if len(metrics) >= 2:
         a, b = st.columns(2)
@@ -1218,3 +1072,145 @@ def render_dashboard(df, dashboard):
         table.columns = [_label(schema, d), "Total", "Promedio", "Registros"]
         st.markdown('<div class="section-intro compact"><div><span class="eyebrow">DETALLE</span><h2>Tabla para tomar decisiones</h2></div></div>', unsafe_allow_html=True)
         st.dataframe(table, use_container_width=True, hide_index=True)
+
+
+def render_dashboard(df, dashboard):
+    schema = dashboard["schema"]
+    ex = dashboard.get("executive", {})
+
+    # ── Vista general: lo primero que se ve, sin necesidad de desplegar nada ──
+    st.markdown('<div class="section-intro"><div><span class="eyebrow">RESUMEN EJECUTIVO</span><h2>Qué está pasando</h2></div><span class="data-badge">Todo recalculado con los filtros actuales</span></div>', unsafe_allow_html=True)
+    st.caption(dashboard["summary"])
+
+    # Perfil individual integrado: se abre dentro del mismo dashboard.
+    # Esto evita depender de /pages y mantiene el flujo en una sola pantalla.
+    full_name = schema.get("full_name", {}) if isinstance(schema.get("full_name"), dict) else {}
+    if full_name.get("column") in df.columns:
+        cta1, cta2 = st.columns([1.35, 4])
+        with cta1:
+            if st.button("👤 Analizar perfil individual", type="primary", use_container_width=True, key="open_person_profile_v53"):
+                st.session_state["show_profile_inline"] = True
+        with cta2:
+            st.caption("Abre el análisis completo de una persona sin salir del dashboard.")
+
+        if st.session_state.get("show_profile_inline", False):
+            st.markdown('<div class="decision-panel"><div class="decision-panel-title">Perfil individual</div><div class="decision-panel-subtitle">Todo el análisis disponible para la persona seleccionada, respetando los filtros actuales.</div></div>', unsafe_allow_html=True)
+            if st.button("✕ Cerrar perfil", key="close_person_profile_v53"):
+                st.session_state["show_profile_inline"] = False
+                st.rerun()
+            render_person_profile(df, schema, dashboard)
+
+    _universal_kpi_grid(df, schema, dashboard)
+
+    if dashboard.get("growth") is not None:
+        g = dashboard["growth"]; cls = "positive" if g >= 0 else "negative"; text = "crecimiento" if g >= 0 else "caída"
+        st.markdown(f'<div class="decision-strip {cls}"><span class="decision-dot"></span><b>Lectura rápida:</b> {text} reciente de <strong>{abs(g):.1f}%</strong> frente al periodo anterior.</div>', unsafe_allow_html=True)
+
+    _executive_headline(dashboard)
+
+    # ── Detalle progresivo: nada se elimina, solo se reorganiza en dos
+    # columnas temáticas para que no sea una fila larga de acordeones y se
+    # aproveche mejor el ancho disponible.
+    st.markdown(
+        '<div class="section-intro compact"><div><span class="eyebrow">DETALLE</span>'
+        '<h2>Profundiza cuando lo necesites</h2></div>'
+        '<span class="data-badge">Organizado por tema</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    # Se agrupan por tema en pestañas en vez de apilar 8 expanders uno tras
+    # otro: mismo contenido, mismas funciones, solo más fácil de recorrer.
+    alerts = dashboard.get("alerts", [])
+    insights = dashboard.get("insights", [])[:4]
+    detail_tabs = named_tabs(["📌 Diagnóstico", "🏆 Desempeño", "🗂️ Contexto y acción"])
+
+    with detail_tabs["📌 Diagnóstico"]:
+        if ex.get("positive") or ex.get("watch"):
+            st.markdown("#### 📌 Señales positivas y puntos a vigilar")
+            _executive_signals(dashboard)
+            st.divider()
+        if alerts:
+            st.markdown(f"#### 🔔 Alertas inteligentes · {len(alerts[:4])} hallazgos prioritarios")
+            _alerts_panel(df, dashboard)
+            st.divider()
+        if dashboard.get("change_analysis"):
+            st.markdown("#### 🔍 ¿Por qué cambió?")
+            _why_changed(df, dashboard)
+            st.divider()
+        if insights:
+            st.markdown(f"#### 🧭 Hallazgos y líneas de acción ({len(insights)})")
+            _insights_panel(insights)
+        if not (ex.get("positive") or ex.get("watch") or alerts or dashboard.get("change_analysis") or insights):
+            st.info("No hay señales, alertas ni hallazgos suficientes con los datos visibles.")
+
+    with detail_tabs["🏆 Desempeño"]:
+        st.markdown("#### 🏆 Dónde está el mejor y peor resultado")
+        _performance_panel(df, dashboard)
+        st.divider()
+        st.markdown("#### 🔎 Profundizar en el resultado")
+        _drilldown_panel(df, schema, dashboard.get("primary_metric"), dashboard.get("performance",{}).get("dimension"))
+
+    with detail_tabs["🗂️ Contexto y acción"]:
+        st.markdown("#### 🗂️ Perfil del archivo y cómo se interpretó")
+        _profile_panel(df, dashboard)
+        semantic = schema.get("semantic", {})
+        interpretations = semantic.get("columns", [])
+        if interpretations:
+            st.markdown("Cómo interpretó el sistema cada columna")
+            rows = []
+            for item in interpretations:
+                concept = item.get("semantic_type", "unknown")
+                from ui.labels import pretty_technical
+                rows.append({"Columna original": item["column"], "Interpretación": pretty_technical(concept), "Confianza": f'{item["confidence"]*100:.0f}%', "Revisar": "⚠ Sí" if item.get("ambiguous") else "✓ No"})
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.divider()
+        st.markdown("#### ✅ Qué conviene revisar")
+        _recommendations_panel(df, dashboard)
+
+    # Estructura especial: Enero...Diciembre como columnas.
+    # Se conserva la navegación original y se añade una lectura automática.
+    wide = wide_month_chart(df, schema)
+    if wide is not None and not schema.get("dates"):
+        wide_fig, wide_subtitle = wide
+        _chart_card(
+            "Evolución mensual detectada",
+            wide_subtitle,
+            wide_fig,
+            "Se detectaron columnas mensuales, pero no hay valores suficientes.",
+            "El sistema identificó los meses en las columnas y los convirtió automáticamente en una lectura temporal.",
+            key="wide_months_main",
+        )
+
+    controls = _visual_controls(df, schema)
+    m, d = controls["metric"], controls["dimension"]
+    # Última capa de seguridad: si por cualquier motivo (cambio de hoja,
+    # estado viejo de otra sesión, etc.) la métrica o dimensión seleccionada
+    # ya no existe en este dataframe, se descarta en vez de reventar más
+    # abajo con un KeyError al intentar graficarla.
+    if m is not None and m not in df.columns:
+        m = None
+    if d is not None and d not in df.columns:
+        d = None
+
+    available_dates = bool(schema.get("dates"))
+
+    # ── Área de análisis: antes era una única sección larga (visión
+    # general + comparación individual + diagnóstico + gráficos
+    # inteligentes + geografía + relaciones + tabla de detalle) que se
+    # desplazaba siempre entera. Se agrupa en pestañas — mismo patrón que
+    # "Profundiza cuando lo necesites" arriba — para que solo una parte se
+    # vea a la vez; el contenido y las funciones que lo generan no cambiaron.
+    st.markdown(
+        '<div class="analysis-toolbar"><div><span class="eyebrow">ÁREA DE ANÁLISIS</span><h2>Informe analítico</h2></div>'
+        '<div class="analysis-toolbar-meta"><span>Filtros activos</span><span>Actualización automática</span></div></div>',
+        unsafe_allow_html=True,
+    )
+    analysis_tabs = named_tabs(["📊 Visión general", "🔍 Diagnóstico", "🌍 Geografía", "🔗 Relaciones y detalle"])
+    with analysis_tabs["📊 Visión general"]:
+        selected_kind = _primary_analysis_section(df, schema, controls, m, d, available_dates)
+    with analysis_tabs["🔍 Diagnóstico"]:
+        _diagnostic_and_smart_charts_section(df, schema, controls, m, d, available_dates, selected_kind)
+    with analysis_tabs["🌍 Geografía"]:
+        _geo_section(df, schema, m)
+    with analysis_tabs["🔗 Relaciones y detalle"]:
+        _relationships_and_detail_section(df, schema, m, d)

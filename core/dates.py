@@ -29,6 +29,33 @@ MONTHS = {
     "diciembre": 12, "dic": 12, "december": 12, "dec": 12,
 }
 
+# Nombres de mes para mostrar en pantalla ("Ene 2026" / "Enero 2026"). No se
+# usa strftime("%b"/"%B") para esto: ese formato depende del locale del
+# sistema operativo, y la mayoría de los entornos donde se despliega esta
+# app (contenedores, Streamlit Cloud) no tienen el locale es_ES instalado —
+# strftime("%b") ahí muestra el mes en inglés ("Jan 2026") aunque toda la
+# interfaz esté en español. Un diccionario fijo no depende de nada del
+# entorno de ejecución.
+MONTH_ABBR_ES = {1:"Ene",2:"Feb",3:"Mar",4:"Abr",5:"May",6:"Jun",7:"Jul",8:"Ago",9:"Sep",10:"Oct",11:"Nov",12:"Dic"}
+MONTH_FULL_ES = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+
+
+def format_month_year(value, full: bool = False) -> str:
+    """'Ene 2026' (full=False) o 'Enero 2026' (full=True) a partir de
+    cualquier valor convertible a fecha, en español, sin depender del
+    locale del sistema. Devuelve "—" si el valor es nulo/no es una fecha
+    válida."""
+    if value is None:
+        return "—"
+    try:
+        ts = value if isinstance(value, pd.Timestamp) else pd.Timestamp(value)
+    except (ValueError, TypeError):
+        return "—"
+    if pd.isna(ts):
+        return "—"
+    names = MONTH_FULL_ES if full else MONTH_ABBR_ES
+    return f"{names[ts.month]} {ts.year}"
+
 
 def _norm(v):
     s = "" if v is None else str(v)

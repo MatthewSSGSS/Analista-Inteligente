@@ -13,7 +13,7 @@ from core.dashboard_engine import build_dashboard
 from core.dataset_mode import detect_dataset_mode
 from core.query_engine import answer_question, suggest_questions
 from core.assistant_engine import ask_assistant
-from visualization.charts import metric_candidates, dimension_candidates, _label
+from visualization.charts import metric_candidates, dimension_candidates, _label, _base
 
 
 def _fmt(v) -> str:
@@ -211,7 +211,8 @@ def render_practical_page():
                 fig = go.Figure(go.Scatter(x=chart_spec["x"], y=chart_spec["y"], mode="lines+markers", line=dict(color="#e4002b", width=3), marker=dict(color="#e4002b", size=8)))
             else:
                 fig = go.Figure(go.Bar(x=chart_spec["x"], y=chart_spec["y"], marker_color="#e4002b"))
-            fig.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter,Segoe UI,Arial,sans-serif"), yaxis_title=chart_spec.get("metric_label"))
+            fig.update_yaxes(title=chart_spec.get("metric_label"))
+            fig = _base(fig, height=300, show_xgrid=False)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         table = r.get("table")
         if isinstance(table, pd.DataFrame) and not table.empty:

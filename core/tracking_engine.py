@@ -335,13 +335,20 @@ def project_metric(timeline: pd.DataFrame, target_date) -> dict:
     if len(d) < 3:
         return {"status": "insuficiente", "points": int(len(d))}
     d = d.sort_values("period")
-    t0 = pd.to_datetime(d["period"]).min()
-    x = (pd.to_datetime(d["period"]) - t0).dt.days.to_numpy(dtype=float)
+    # "period" ya llega parseado desde sources_to_long/merge_long, pero se
+    # vuelve a forzar con errors="coerce" (igual que el resto del proyecto)
+    # para no romper la proyección si alguna vez llega un valor sucio.
+    periods = pd.to_datetime(d["period"], errors="coerce")
+    t0 = periods.min()
+    x = (periods - t0).dt.days.to_numpy(dtype=float)
     y = d["_num"].to_numpy(dtype=float)
     if np.ptp(x) == 0:
         return {"status": "insuficiente", "points": int(len(d))}
     slope, intercept = np.polyfit(x, y, 1)
-    target_days = (pd.to_datetime(target_date) - t0).days
+    target_ts = pd.to_datetime(target_date, errors="coerce")
+    if pd.isna(t0) or pd.isna(target_ts):
+        return {"status": "insuficiente", "points": int(len(d))}
+    target_days = (target_ts - t0).days
     projected = slope * target_days + intercept
     y_pred = slope * x + intercept
     ss_res = float(np.sum((y - y_pred) ** 2))
@@ -352,7 +359,7 @@ def project_metric(timeline: pd.DataFrame, target_date) -> dict:
         "points": int(len(d)),
         "current": float(y[-1]),
         "projected": float(projected),
-        "target_date": pd.to_datetime(target_date),
+        "target_date": target_ts,
         "r2": r2,
         "trend": "creciente" if slope > 1e-9 else ("decreciente" if slope < -1e-9 else "estable"),
     }

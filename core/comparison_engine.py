@@ -3,6 +3,7 @@ No presupone nombres de columnas: utiliza el esquema semántico detectado por el
 """
 from __future__ import annotations
 from .numeric import numeric_series, safe_sum, safe_mean
+from .dates import format_month_year
 
 import re
 import unicodedata
@@ -106,7 +107,7 @@ def _period_label(filename: str, df: pd.DataFrame, schema: dict) -> str:
         if not s.empty:
             lo, hi = s.min(), s.max()
             if lo.to_period("M") == hi.to_period("M"):
-                return lo.strftime("%B %Y").capitalize()
+                return format_month_year(lo, full=True)
             return f"{lo.strftime('%d/%m/%Y')} – {hi.strftime('%d/%m/%Y')}"
     stem = re.sub(r"\.(xlsx|xls|csv)$", "", filename, flags=re.I)
     # 2024-enero / enero 2024 / 2024 enero

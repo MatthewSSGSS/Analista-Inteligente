@@ -1,14 +1,10 @@
 import streamlit as st
 from core.assistant_engine import ask_assistant
+from ui.components.section import section_header
 
 
 def render_assistant(df, schema, profile, mode_info, dashboard):
-    st.markdown(
-        '<div class="section-intro"><div><span class="eyebrow">INTELIGENCIA ASISTIDA</span>'
-        '<h2>Asistente de Excel Intelligence</h2></div>'
-        '<span class="data-badge">Datos visibles · lectura y cálculo</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(section_header("Asistente de Excel Intelligence", eyebrow="INTELIGENCIA ASISTIDA", badge="Datos visibles · lectura y cálculo"), unsafe_allow_html=True)
     st.caption("Pregunta sobre lo que está ocurriendo, compara segmentos, busca registros o pide una recomendación. El asistente trabaja sobre la selección actual.")
 
     if "assistant_messages" not in st.session_state:

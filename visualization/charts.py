@@ -1,8 +1,10 @@
 import pandas as pd
 from core.numeric import numeric_series
+from core.dates import format_month_year
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit as st
 
 # Paleta ejecutiva alineada a la identidad de marca de Claro (rojo vivo +
 # blanco). Los colores adicionales se usan solo cuando comunican una
@@ -19,6 +21,43 @@ TEXT = "#1A2233"
 MUTED = "#5B6473"
 GRID = "#E2E6ED"
 CATEGORY_PALETTE = [PRIMARY, TEAL, PURPLE, AMBER, GREEN, ORANGE, "#334155", "#64748B", "#0EA5E9", "#8B5CF6"]
+
+# Plotly no lee variables CSS (var(--text), var(--muted)): cada figura fija su
+# color de texto como un literal en el momento en que se construye. Mientras
+# el fondo del gráfico sea transparente (paper_bgcolor/plot_bgcolor), ese
+# texto se ve directamente sobre la tarjeta (.chart-card, var(--card-solid)),
+# que SÍ cambia entre Light y Dark Mode — así que el texto tiene que elegirse
+# según el tema activo o queda ilegible en uno de los dos modos. Estos son
+# los equivalentes oscuros de TEXT/MUTED/GRID, alineados a los tokens
+# --text/--muted/--line del tema oscuro en ui/styles/theme.py.
+TEXT_DARK = "#E6E9EF"
+MUTED_DARK = "#9AA4B2"
+GRID_DARK = "rgba(230,233,239,.16)"
+
+
+def _dark_mode() -> bool:
+    """True si el tema activo (session_state.theme_mode) es oscuro. Seguro
+    de llamar sin una app Streamlit en ejecución (p. ej. tests/smoke_test.py
+    invoca estas funciones de gráficos directamente): sin contexto de
+    sesión se asume claro, que era el único comportamiento posible antes de
+    esta función."""
+    try:
+        return st.session_state.get("theme_mode") == "dark"
+    except Exception:
+        return False
+
+
+def chart_text_color() -> str:
+    """Color de texto principal para figuras construidas fuera de `_base()`
+    (georeferencing, perfil individual, comparación A/B) que fijan su propio
+    `font=dict(color=...)` sobre un fondo transparente."""
+    return TEXT_DARK if _dark_mode() else TEXT
+
+
+def chart_muted_color() -> str:
+    """Variante atenuada de chart_text_color(), para subtítulos/etiquetas
+    secundarias dentro de una figura (p. ej. la anotación central del donut)."""
+    return MUTED_DARK if _dark_mode() else MUTED
 
 CONCEPT_LABELS = {
     "revenue": "Ingresos", "profit": "Beneficio", "cost": "Costos", "price": "Precio",
@@ -107,17 +146,25 @@ def wide_month_chart(df, schema):
 
 
 def _base(fig, height=350, show_xgrid=False):
-    """Estilo común: limpio, aireado, jerarquía visual y hover consistente."""
+    """Estilo común: limpio, aireado, jerarquía visual y hover consistente.
+    El texto y la grilla se eligen según el tema activo (ver chart_text_color
+    arriba); el fondo transparente y el hover (siempre blanco, siempre
+    legible) no dependen del tema."""
+    dark = _dark_mode()
+    text_color = TEXT_DARK if dark else TEXT
+    muted_color = MUTED_DARK if dark else MUTED
+    xgrid_color = "rgba(230,233,239,.12)" if dark else "rgba(96,112,132,.12)"
+    ygrid_color = GRID_DARK if dark else "rgba(96,112,132,.16)"
     fig.update_layout(
         template="plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, Segoe UI, sans-serif", color=TEXT, size=12),
+        font=dict(family="Inter, Segoe UI, sans-serif", color=text_color, size=12),
         margin=dict(l=10, r=18, t=24, b=24), height=height,
         hoverlabel=dict(bgcolor="#FFFFFF", font=dict(color="#1A2233", size=12), bordercolor="#D7DCE6"),
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-            font=dict(size=10, color=MUTED), bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color=muted_color), bgcolor="rgba(0,0,0,0)",
             itemclick="toggleothers", itemdoubleclick="toggle",
             tracegroupgap=8,
         ),
@@ -127,16 +174,16 @@ def _base(fig, height=350, show_xgrid=False):
         uniformtext=dict(minsize=9, mode="hide"),
     )
     fig.update_xaxes(
-        showgrid=show_xgrid, gridcolor="rgba(96,112,132,.12)", zeroline=False,
-        showline=False, tickfont=dict(color=MUTED, size=10.5), ticks="",
+        showgrid=show_xgrid, gridcolor=xgrid_color, zeroline=False,
+        showline=False, tickfont=dict(color=muted_color, size=10.5), ticks="",
         automargin=True,
-        title_font=dict(color="#475467", size=11),
+        title_font=dict(color=muted_color, size=11),
     )
     fig.update_yaxes(
-        showgrid=True, gridcolor="rgba(96,112,132,.16)", gridwidth=1, zeroline=False,
-        showline=False, tickfont=dict(color=MUTED, size=10.5), ticks="",
+        showgrid=True, gridcolor=ygrid_color, gridwidth=1, zeroline=False,
+        showline=False, tickfont=dict(color=muted_color, size=10.5), ticks="",
         automargin=True,
-        title_font=dict(color="#475467", size=11),
+        title_font=dict(color=muted_color, size=11),
     )
     return fig
 
@@ -637,9 +684,9 @@ def donut(df, schema, metric=None, dimension=None, top_n=6):
     ))
     fig.add_annotation(
         text=f"<b>{_compact_number(total)}</b><br>"
-             f"<span style='font-size:11px;color:{MUTED}'>Total</span>",
+             f"<span style='font-size:11px;color:{chart_muted_color()}'>Total</span>",
         x=.5, y=.5, showarrow=False,
-        font=dict(size=18, color=TEXT),
+        font=dict(size=18, color=chart_text_color()),
     )
     fig.update_layout(
         showlegend=True,
@@ -903,8 +950,8 @@ def period_compare_bar(df, schema, metric=None, dimension=None, grain="Mes", agg
         return None
 
     fig = go.Figure()
-    prev_label = pd.Timestamp(previous).strftime("%b %Y")
-    curr_label = pd.Timestamp(current).strftime("%b %Y")
+    prev_label = format_month_year(previous)
+    curr_label = format_month_year(current)
     fig.add_trace(go.Bar(
         x=y.index.astype(str), y=y[previous], name=f"Anterior · {prev_label}",
         marker_color="#64748B", hovertemplate="<b>%{x}</b><br>Anterior: %{y:,.0f}<extra></extra>"

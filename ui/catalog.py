@@ -3,6 +3,7 @@ import html
 import pandas as pd
 import streamlit as st
 from visualization.charts import ranking, histogram, metric_candidates, dimension_candidates, _label
+from ui.components.section import section_header
 
 def _label(schema, c):
     for x in schema.get("semantic", {}).get("columns", []):
@@ -50,12 +51,7 @@ def _split_points(v):
     return [x.strip() for x in s.split("|") if x.strip()]
 
 def render_catalog(df, schema, mode_info):
-    st.markdown(
-        '<div class="section-intro"><div><span class="eyebrow">MODO ADAPTATIVO</span>'
-        '<h2>Consulta del catálogo</h2></div>'
-        '<span class="data-badge">Análisis simplificado · búsqueda y comparación</span></div>',
-        unsafe_allow_html=True
-    )
+    st.markdown(section_header("Consulta del catálogo", eyebrow="MODO ADAPTATIVO", badge="Análisis simplificado · búsqueda y comparación"), unsafe_allow_html=True)
     st.caption(mode_info.get("reason", "Este archivo se ha identificado como un catálogo o tabla de referencia."))
 
     if df.empty:

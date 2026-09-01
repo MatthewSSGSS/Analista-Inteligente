@@ -48,7 +48,7 @@ def render_landing() -> bool:
         <style>
         .landing-hero{text-align:center;max-width:720px;margin:6vh auto 8px;padding:0 12px}
         .landing-mark{width:64px;height:64px;border-radius:50%;margin:0 auto 20px;
-          background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);
+          background:var(--brand-orb);
           box-shadow:inset 0 -4px 8px rgba(0,0,0,.22),inset 0 3px 4px rgba(255,255,255,.35),0 10px 24px rgba(228,0,43,.22)}
         .landing-hero h1{font-size:32px;font-weight:850;letter-spacing:-.02em;margin:0 0 10px;color:var(--text)}
         .landing-hero p{font-size:14.5px;color:var(--muted);line-height:1.55;margin:0 auto}
@@ -72,6 +72,7 @@ def render_landing() -> bool:
         .landing-step p{margin:3px 0 0;color:#9aa2b8;font-size:11.5px;line-height:1.5}
         .landing-cta{max-width:1180px;margin:0 auto;padding-top:2px}
         @media(max-width:900px){.landing-caps,.landing-steps{grid-template-columns:repeat(2,1fr)}}
+        @media(max-width:560px){.landing-caps,.landing-steps{grid-template-columns:1fr}}
         </style>
         """,
         unsafe_allow_html=True,

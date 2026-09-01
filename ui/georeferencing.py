@@ -7,7 +7,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.geo_engine import geographic_summary
-from visualization.charts import metric_candidates, _label, _compact_number
+from visualization.charts import metric_candidates, _label, _compact_number, chart_text_color
+from ui.components.charts import chart_card
+from ui.components.section import section_header
 
 
 def _fmt(v):
@@ -336,18 +338,7 @@ def _selection_label(event, labels):
 
 
 def _geo_card(title, subtitle, fig, key):
-    st.markdown(
-        f'<div class="chart-card pbi-visual"><div class="chart-head">'
-        f'<div class="chart-head-main"><span class="visual-type">VISUAL</span>'
-        f'<div class="chart-title">{title}</div><div class="chart-subtitle">{subtitle}</div></div>'
-        f'<span class="data-badge visual-badge">Datos de la zona</span></div>',
-        unsafe_allow_html=True,
-    )
-    if fig is None:
-        st.info("No hay datos suficientes para este análisis.")
-    else:
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True}, key=key)
-    st.markdown('</div>', unsafe_allow_html=True)
+    chart_card(title, subtitle, fig, key=key, badge_text="Datos de la zona")
 
 
 def _geo_semantic(schema, col):
@@ -431,7 +422,7 @@ def _detail_panel(enriched: pd.DataFrame, summary: dict, label: str, schema: dic
             fig = px.bar(comp, x="Referencia", y="Valor", color="Referencia", text_auto=".3s",
                          color_discrete_sequence=["#E4002B", "#7D8794"])
             fig.update_layout(height=320, margin=dict(l=10,r=10,t=10,b=10), showlegend=False,
-                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#1A2233"))
+                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color=chart_text_color()))
             fig.update_yaxes(title=_label(schema, metric), showgrid=True, gridcolor="rgba(96,112,132,.16)")
             # Visual comparativo: barras limpias y colores semánticos.
             fig.update_traces(marker_line_width=0)
@@ -449,10 +440,10 @@ def _detail_panel(enriched: pd.DataFrame, summary: dict, label: str, schema: dic
                     hovertemplate="<b>%{label}</b><br>Valor: %{value:,.0f}<br>Participación: %{percent}<extra></extra>",
                 ))
                 share_fig.add_annotation(text=f"<b>{zone_abs/(zone_abs+other_total)*100:.1f}%</b><br><span style='font-size:10px'>participación</span>",
-                                          x=.5,y=.5,showarrow=False,font=dict(size=17,color="#1A2233"))
+                                          x=.5,y=.5,showarrow=False,font=dict(size=17,color=chart_text_color()))
                 share_fig.update_layout(height=300, margin=dict(l=10,r=10,t=8,b=8), showlegend=True,
                                         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                        font=dict(color="#1A2233"), legend=dict(orientation="h",y=-.05,x=.1))
+                                        font=dict(color=chart_text_color()), legend=dict(orientation="h",y=-.05,x=.1))
                 _geo_card("Peso de la zona", f"Qué porcentaje del resultado total representa {label}", share_fig, "geo_zone_share_v45")
 
     # 2) Evolution of the selected zone.
@@ -474,7 +465,7 @@ def _detail_panel(enriched: pd.DataFrame, summary: dict, label: str, schema: dic
                 fig = go.Figure(go.Scatter(x=trend_df["_period"], y=trend_df[metric], mode="lines+markers",
                     line=dict(color="#22C7B4", width=3, shape="spline"), marker=dict(size=7),
                     hovertemplate="%{x|%b %Y}<br>" + _label(schema, metric) + ": <b>%{y:,.0f}</b><extra></extra>"))
-                fig.update_layout(height=320, margin=dict(l=10,r=10,t=10,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#1A2233"))
+                fig.update_layout(height=320, margin=dict(l=10,r=10,t=10,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color=chart_text_color()))
                 fig.update_yaxes(showgrid=True, gridcolor="rgba(96,112,132,.16)"); fig.update_xaxes(showgrid=False)
                 _geo_card("Evolución de la zona", f"Cómo se comportó {_label(schema, metric).lower()} en {label}", fig, "geo_zone_trend_v45")
 
@@ -493,7 +484,7 @@ def _detail_panel(enriched: pd.DataFrame, summary: dict, label: str, schema: dic
                          color_discrete_map={"Sobre promedio zona":"#22C7B4", "Bajo promedio zona":"#E05252"})
             fig.update_traces(marker_line_width=0)
             fig.update_layout(height=max(360, 35*len(agent_df)+100), margin=dict(l=10,r=35,t=10,b=10),
-                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#1A2233"),
+                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color=chart_text_color()),
                               legend=dict(orientation="h", y=1.05, x=0))
             fig.update_xaxes(title=_label(schema, metric), showgrid=True, gridcolor="rgba(96,112,132,.16)"); fig.update_yaxes(title=None)
             _geo_card("Rendimiento de agentes", f"Quién está por encima o por debajo del promedio de la zona · {label}", fig, "geo_agents_v45")
@@ -518,7 +509,7 @@ def _detail_panel(enriched: pd.DataFrame, summary: dict, label: str, schema: dic
             fig = px.bar(mix.sort_values(val_col), x=val_col, y=dim_col, orientation="h", text_auto=".3s")
             fig.update_traces(marker_color="#A67CFF", marker_line_width=0)
             fig.update_layout(height=max(340, 34*len(mix)+100), margin=dict(l=10,r=35,t=10,b=10), showlegend=False,
-                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#1A2233"))
+                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color=chart_text_color()))
             fig.update_xaxes(title=_label(schema, val_col) if val_col in rows.columns else "Registros", showgrid=True, gridcolor="rgba(96,112,132,.16)"); fig.update_yaxes(title=None)
             _geo_card(f"Qué mueve la zona: {_label(schema, dim_col)}", f"Top elementos que explican el resultado de {label}", fig, "geo_zone_mix_v45")
 
@@ -531,22 +522,30 @@ def _detail_panel(enriched: pd.DataFrame, summary: dict, label: str, schema: dic
 
 
 def render_georeferencing(df: pd.DataFrame, schema: dict):
-    """Interactive geographic workspace: map first, then automatic detail."""
-    st.markdown(
-        '<div class="section-intro"><div><span class="eyebrow">UBICACIÓN</span>'
-        '<h2>Georeferenciación</h2></div>'
-        '<span class="data-badge">Mapa interactivo</span></div>',
-        unsafe_allow_html=True,
-    )
+    """Interactive geographic workspace: KPIs compactos, mapa como elemento
+    principal a todo el ancho, y detalle/comparación organizados alrededor
+    (antes/después) sin competir con él en tamaño."""
+    st.markdown(section_header("Georeferenciación", eyebrow="UBICACIÓN", badge="Mapa interactivo"), unsafe_allow_html=True)
     st.caption("Haz clic en un punto para abrir toda la información relacionada con esa ubicación.")
 
-    metrics = metric_candidates(df, schema)
-    metric = st.selectbox(
-        "Métrica del mapa",
-        [None] + metrics,
-        format_func=lambda x: "Número de registros" if x is None else _label(schema, x),
-        key="geo_metric_selector_v43",
-    )
+    # ── Controles compactos: métrica y estilo de mapa en la misma fila,
+    # para que no le resten protagonismo al mapa con dos filas completas.
+    ctrl1, ctrl2 = st.columns([2, 1])
+    with ctrl1:
+        metrics = metric_candidates(df, schema)
+        metric = st.selectbox(
+            "Métrica del mapa",
+            [None] + metrics,
+            format_func=lambda x: "Número de registros" if x is None else _label(schema, x),
+            key="geo_metric_selector_v43",
+        )
+    with ctrl2:
+        map_mode = st.radio(
+            "Estilo de mapa", ["🗺️ Clásico", "🌐 3D"], horizontal=True,
+            key="geo_map_mode_v60",
+            help="El mapa 3D es más vistoso; el clásico permite hacer clic en un punto para ver su detalle completo abajo.",
+        )
+
     summary = geographic_summary(df, schema, metric)
     summary["schema"] = schema
     meta = summary.get("meta", {})
@@ -559,12 +558,15 @@ def render_georeferencing(df: pd.DataFrame, schema: dict):
     enriched = summary.get("data", pd.DataFrame())
     labels = table.sort_values("_geo_metric", ascending=False).reset_index(drop=True)["_geo_label"].astype(str)
 
-    map_mode = st.radio(
-        "Estilo de mapa", ["🗺️ Clásico", "🌐 3D"], horizontal=True,
-        key="geo_map_mode_v60",
-        help="El mapa 3D es más vistoso; el clásico permite hacer clic en un punto para ver su detalle completo abajo.",
-    )
+    # ── KPIs geográficos compactos: contexto rápido antes de entrar al mapa,
+    # sin gráficos ni tarjetas grandes que compitan con él.
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Ubicaciones", f"{len(table):,}")
+    k2.metric("Ubicación líder", str(table.iloc[0]["_geo_label"]))
+    k3.metric("Valor líder", _fmt(table.iloc[0]["_geo_metric"]))
+    k4.metric("Puntos sin resolver", f"{sum(meta.get(k, 0) for k in ('unresolved_places','ambiguous_places')):,}")
 
+    # ── Mapa: el elemento principal, a todo el ancho disponible ─────────────
     if map_mode == "🌐 3D":
         try:
             deck, legend = _map_figure_3d(summary, metric, schema)
@@ -616,34 +618,30 @@ def render_georeferencing(df: pd.DataFrame, schema: dict):
             st.session_state.geo_selected_location_v43 = str(clicked)
             selected = str(clicked)
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Ubicaciones", f"{len(table):,}")
-    k2.metric("Ubicación líder", str(table.iloc[0]["_geo_label"]))
-    k3.metric("Valor líder", _fmt(table.iloc[0]["_geo_metric"]))
-    k4.metric("Puntos sin resolver", f"{sum(meta.get(k, 0) for k in ('unresolved_places','ambiguous_places')):,}")
-
-    # Zone-vs-zone analysis: a direct decision visual, not just a map.
+    # ── Comparación de dos zonas: herramienta secundaria y opcional — se
+    # deja colapsada por defecto para que el mapa siga siendo lo primero
+    # que se ve, sin renunciar a la funcionalidad.
     if len(labels) >= 2 and metric and metric in table.columns:
-        st.markdown("### ⚔️ Comparar dos zonas")
-        z1, z2 = st.columns(2)
-        with z1:
-            zone_a = st.selectbox("Zona A", labels.tolist(), key="geo_zone_a_v52")
-        with z2:
-            zone_b_options = [x for x in labels.tolist() if x != zone_a] or labels.tolist()
-            zone_b = st.selectbox("Zona B", zone_b_options, key="geo_zone_b_v52")
-        va = float(table.loc[table["_geo_label"].astype(str).eq(str(zone_a)), "_geo_metric"].iloc[0])
-        vb = float(table.loc[table["_geo_label"].astype(str).eq(str(zone_b)), "_geo_metric"].iloc[0])
-        delta = va - vb
-        pct = (delta / abs(vb) * 100) if vb else None
-        a,b,c = st.columns(3)
-        a.metric(str(zone_a), _fmt(va))
-        b.metric(str(zone_b), _fmt(vb))
-        c.metric("Diferencia A vs B", _fmt(delta), f"{pct:+.1f}%" if pct is not None else None)
-        comp = pd.DataFrame({"Zona": [str(zone_a), str(zone_b)], "Valor": [va, vb]})
-        fig_cmp = px.bar(comp, x="Zona", y="Valor", color="Zona", text_auto=".3s", color_discrete_sequence=["#E4002B", "#0FA8A0"])
-        fig_cmp.update_layout(height=330, margin=dict(l=10,r=10,t=10,b=20), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#1A2233"))
-        fig_cmp.update_yaxes(title=_label(schema, metric), showgrid=True, gridcolor="rgba(96,112,132,.16)")
-        _geo_card("Comparación directa de zonas", f"¿Cuál de las dos zonas tiene mejor resultado en {_label(schema, metric).lower()}?", fig_cmp, "geo_zone_compare_v52")
+        with st.expander("⚔️ Comparar dos zonas", expanded=False):
+            z1, z2 = st.columns(2)
+            with z1:
+                zone_a = st.selectbox("Zona A", labels.tolist(), key="geo_zone_a_v52")
+            with z2:
+                zone_b_options = [x for x in labels.tolist() if x != zone_a] or labels.tolist()
+                zone_b = st.selectbox("Zona B", zone_b_options, key="geo_zone_b_v52")
+            va = float(table.loc[table["_geo_label"].astype(str).eq(str(zone_a)), "_geo_metric"].iloc[0])
+            vb = float(table.loc[table["_geo_label"].astype(str).eq(str(zone_b)), "_geo_metric"].iloc[0])
+            delta = va - vb
+            pct = (delta / abs(vb) * 100) if vb else None
+            a,b,c = st.columns(3)
+            a.metric(str(zone_a), _fmt(va))
+            b.metric(str(zone_b), _fmt(vb))
+            c.metric("Diferencia A vs B", _fmt(delta), f"{pct:+.1f}%" if pct is not None else None)
+            comp = pd.DataFrame({"Zona": [str(zone_a), str(zone_b)], "Valor": [va, vb]})
+            fig_cmp = px.bar(comp, x="Zona", y="Valor", color="Zona", text_auto=".3s", color_discrete_sequence=["#E4002B", "#0FA8A0"])
+            fig_cmp.update_layout(height=330, margin=dict(l=10,r=10,t=10,b=20), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color=chart_text_color()))
+            fig_cmp.update_yaxes(title=_label(schema, metric), showgrid=True, gridcolor="rgba(96,112,132,.16)")
+            _geo_card("Comparación directa de zonas", f"¿Cuál de las dos zonas tiene mejor resultado en {_label(schema, metric).lower()}?", fig_cmp, "geo_zone_compare_v52")
 
     if selected:
         _detail_panel(enriched, summary, selected, schema, metric)

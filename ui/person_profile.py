@@ -9,7 +9,11 @@ import streamlit as st
 
 from core.numeric import numeric_series
 from core.universal_analysis import semantic_map, ADDITIVE, period_series
-from visualization.charts import metric_candidates, dimension_candidates, _label
+from visualization.charts import metric_candidates, dimension_candidates, _label, chart_text_color
+from ui.components.cards import kpi_card
+from ui.components.charts import chart_card
+from ui.components.section import section_header
+from ui.layouts.columns import two_column
 
 
 def _fmt(v):
@@ -43,22 +47,11 @@ def _person_col(schema, df):
 
 
 def _card(label, value, delta=None):
-    delta_html = f'<div class="kpi-delta neutral">{delta}</div>' if delta else ""
-    return f'<div class="kpi-card"><span class="kpi-label">{label}</span><div class="kpi-value">{value}</div>{delta_html}</div>'
+    return kpi_card(label, value, delta=delta)
 
 
 def _chart(title, subtitle, fig, key):
-    st.markdown(
-        f'<div class="chart-card pbi-visual"><div class="chart-head"><div class="chart-head-main">'
-        f'<span class="visual-type">PERFIL</span><div class="chart-title">{title}</div>'
-        f'<div class="chart-subtitle">{subtitle}</div></div><span class="data-badge visual-badge">Datos del seleccionado</span></div>',
-        unsafe_allow_html=True,
-    )
-    if fig is not None:
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True}, key=key)
-    else:
-        st.info("No hay datos suficientes para este análisis.")
-    st.markdown('</div>', unsafe_allow_html=True)
+    chart_card(title, subtitle, fig, key=key, visual_type="PERFIL", badge_text="Datos del seleccionado")
 
 
 def _apply_current_filters(df):
@@ -95,7 +88,7 @@ def render_person_profile(df, schema, dashboard=None):
         st.info("No hay personas disponibles con los filtros actuales.")
         return
 
-    st.markdown('<div class="section-intro"><div><span class="eyebrow">PERFIL INDIVIDUAL</span><h2>Analizar perfil individual</h2><div class="chart-subtitle">Selecciona una persona y revisa todo lo que el Excel permite conocer sobre ella.</div></div></div>', unsafe_allow_html=True)
+    st.markdown(section_header("Analizar perfil individual", eyebrow="PERFIL INDIVIDUAL", subtitle="Selecciona una persona y revisa todo lo que el Excel permite conocer sobre ella."), unsafe_allow_html=True)
     selected = st.selectbox("Buscar y seleccionar nombre completo", names, key="profile_person_selector_inline", placeholder="Escribe para buscar…")
     rows = data[data[person_col].astype(str).str.strip().eq(str(selected).strip())].copy()
     if rows.empty:
@@ -115,6 +108,7 @@ def render_person_profile(df, schema, dashboard=None):
     st.markdown(f'<div class="decision-strip positive"><b>{selected}</b> · {len(rows):,} registros relacionados encontrados. Todo el análisis de esta pestaña está restringido a esta persona.</div>', unsafe_allow_html=True)
 
     # 1. KPI layer
+    st.markdown(section_header("KPIs", compact=True), unsafe_allow_html=True)
     kpis = [{"label": "Registros relacionados", "value": f"{len(rows):,}"}]
     if primary:
         s = numeric_series(rows[primary]).dropna()
@@ -122,7 +116,10 @@ def render_person_profile(df, schema, dashboard=None):
         val = float(s.sum()) if additive else float(s.mean()) if len(s) else None
         kpis.append({"label": "Total" if additive else "Promedio", "value": _fmt(val)})
         kpis.append({"label": "Máximo", "value": _fmt(s.max()) if len(s) else "—"})
-        kpis.append({"label": "Promedio", "value": _fmt(s.mean()) if len(s) else "—"})
+        # Mínimo, no un "Promedio" repetido: cuando la métrica principal no es
+        # aditiva (precio, calificación, edad...), la 2ª tarjeta ya muestra el
+        # promedio — mostrarlo otra vez en la 4ª no aportaba nada nuevo.
+        kpis.append({"label": "Mínimo", "value": _fmt(s.min()) if len(s) else "—"})
     cols = st.columns(min(4, len(kpis)))
     for i, k in enumerate(kpis[:4]):
         with cols[i]: st.markdown(_card(k["label"], k["value"]), unsafe_allow_html=True)
@@ -130,6 +127,7 @@ def render_person_profile(df, schema, dashboard=None):
     # 2. Temporal performance
     date_cols = [d for d in schema.get("dates", []) if d in rows.columns]
     if primary and date_cols:
+        st.markdown(section_header("Evolución", compact=True), unsafe_allow_html=True)
         ps = period_series(rows, schema, primary, "Mes", "Automático")
         if len(ps) >= 2:
             prev, cur = float(ps.iloc[-2][primary]), float(ps.iloc[-1][primary])
@@ -142,11 +140,15 @@ def render_person_profile(df, schema, dashboard=None):
                 line=dict(color="#E4002B", width=3.5), marker=dict(size=8),
                 hovertemplate="<b>%{x|%b %Y}</b><br>" + _label(schema, primary) + ": <b>%{y:,.0f}</b><extra></extra>",
             ))
-            fig.update_layout(height=380, margin=dict(l=15,r=15,t=20,b=25), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#172033"))
+            fig.update_layout(height=380, margin=dict(l=15,r=15,t=20,b=25), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color=chart_text_color()))
             fig.update_xaxes(showgrid=False); fig.update_yaxes(showgrid=True, gridcolor="rgba(96,112,132,.16)", title=_label(schema, primary))
             _chart("Evolución de la persona", f"Cómo ha cambiado {_label(schema, primary).lower()} por periodo", fig, "profile_person_trend_v52")
 
-    # 3. What explains the person
+    # 3-4. Características: qué explica el resultado + cómo se compara con
+    # el resto. Antes eran dos secciones apiladas siempre a todo el ancho;
+    # ahora, cuando ambas tienen datos, se muestran una junto a la otra
+    # (two_column) para no alargar la página con dos gráficos de ancho
+    # completo que responden preguntas relacionadas.
     dim_candidates = []
     priorities = {"product": 0, "category": 1, "channel": 2, "brand": 3, "segment": 4, "city": 5, "region": 6, "status": 7}
     for c, t in sem.items():
@@ -154,6 +156,8 @@ def render_person_profile(df, schema, dashboard=None):
             n = rows[c].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique()
             if 1 < n <= 30: dim_candidates.append((priorities[t], c))
     dim_candidates = [c for _, c in sorted(dim_candidates)]
+
+    mix_fig = mix_title = mix_subtitle = mix_lead = None
     if dim_candidates:
         dim = dim_candidates[0]
         z = rows[[dim] + ([primary] if primary else [])].copy()
@@ -164,14 +168,16 @@ def render_person_profile(df, schema, dashboard=None):
             agg = z.groupby(dim)[primary].sum() if sem.get(primary) in ADDITIVE else z.groupby(dim)[primary].mean()
             top = agg.sort_values(ascending=False).head(10).reset_index(name=primary)
             if not top.empty:
-                st.markdown(f'**{_label(schema, dim)} que más explica el resultado:** {top.iloc[0][dim]} · {_fmt(top.iloc[0][primary])}')
+                mix_lead = f'**{_label(schema, dim)} que más explica el resultado:** {top.iloc[0][dim]} · {_fmt(top.iloc[0][primary])}'
                 fig = px.bar(top.sort_values(primary), x=primary, y=dim, orientation="h", text_auto=".3s")
                 fig.update_traces(marker_color="#0FA8A0", marker_line_width=0)
-                fig.update_layout(height=max(330, 34*len(top)+90), margin=dict(l=10,r=20,t=15,b=15), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#172033"))
+                fig.update_layout(height=max(330, 34*len(top)+90), margin=dict(l=10,r=20,t=15,b=15), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color=chart_text_color()))
                 fig.update_xaxes(showgrid=True, gridcolor="rgba(96,112,132,.16)"); fig.update_yaxes(showgrid=False)
-                _chart(f"Desglose por {_label(schema, dim)}", "Qué productos, categorías, canales u otras dimensiones mueven el resultado", fig, "profile_person_mix_v52")
+                mix_fig = fig
+                mix_title = f"Desglose por {_label(schema, dim)}"
+                mix_subtitle = "Qué productos, categorías, canales u otras dimensiones mueven el resultado"
 
-    # 4. Compare person against visible population
+    bench_fig = None
     if primary:
         s_person = numeric_series(rows[primary]).dropna()
         s_all = numeric_series(data[primary]).dropna()
@@ -181,12 +187,29 @@ def render_person_profile(df, schema, dashboard=None):
             global_value = float(s_all.mean())
             comp = pd.DataFrame({"Referencia": [selected, "Promedio visible"], "Valor": [person_value, global_value]})
             fig = px.bar(comp, x="Referencia", y="Valor", color="Referencia", text_auto=".3s", color_discrete_sequence=["#E4002B", "#94A3B8"])
-            fig.update_layout(height=320, margin=dict(l=10,r=10,t=15,b=20), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#172033"))
+            fig.update_layout(height=320, margin=dict(l=10,r=10,t=15,b=20), showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color=chart_text_color()))
             fig.update_yaxes(showgrid=True, gridcolor="rgba(96,112,132,.16)")
-            _chart("Persona vs. promedio visible", "Permite saber rápidamente si el resultado está por encima o por debajo del contexto", fig, "profile_person_benchmark_v52")
+            bench_fig = fig
+
+    bench_title = "Persona vs. promedio visible"
+    bench_subtitle = "Permite saber rápidamente si el resultado está por encima o por debajo del contexto"
+    if mix_fig is not None or bench_fig is not None:
+        st.markdown(section_header("Características", compact=True), unsafe_allow_html=True)
+        if mix_fig is not None and bench_fig is not None:
+            main_col, side_col = two_column(1.4, 1)
+            with main_col:
+                if mix_lead: st.markdown(mix_lead)
+                _chart(mix_title, mix_subtitle, mix_fig, "profile_person_mix_v52")
+            with side_col:
+                _chart(bench_title, bench_subtitle, bench_fig, "profile_person_benchmark_v52")
+        elif mix_fig is not None:
+            if mix_lead: st.markdown(mix_lead)
+            _chart(mix_title, mix_subtitle, mix_fig, "profile_person_mix_v52")
+        else:
+            _chart(bench_title, bench_subtitle, bench_fig, "profile_person_benchmark_v52")
 
     # 5. Everything else the workbook knows: compact metadata + raw records
-    st.markdown('<div class="section-intro compact"><div><span class="eyebrow">CONTEXTO COMPLETO</span><h2>Todo lo relacionado con la persona</h2></div></div>', unsafe_allow_html=True)
+    st.markdown(section_header("Todo lo relacionado con la persona", eyebrow="CONTEXTO COMPLETO", compact=True), unsafe_allow_html=True)
     context_rows = []
     for c in rows.columns:
         if str(c).startswith("__") or str(c).startswith("_geo_") or c == person_col:

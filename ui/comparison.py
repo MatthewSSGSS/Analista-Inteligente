@@ -3,6 +3,9 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from ui.labels import pretty_technical
+from ui.components.cards import kpi_card, insight_card
+from ui.components.section import section_header
+from visualization.charts import chart_text_color
 from core.comparison_engine import (
     common_dimension_map,
     dimension_filter_options,
@@ -77,25 +80,83 @@ def _render_filter_panel():
         st.markdown(f'<div class="data-badge" style="display:inline-block;margin-bottom:8px;">Filtros activos en la comparativa: {summary}</div>', unsafe_allow_html=True)
 
 
+def _direct_comparison_chart(metrics, first_label, last_label):
+    """Barras agrupadas horizontales: primero vs. último por indicador, en
+    la misma escala visual — la forma más directa de ver de un vistazo
+    dónde hay una diferencia grande y dónde los archivos se parecen."""
+    if not metrics:
+        return None
+    rows = []
+    for m in metrics:
+        anterior, actual = m.get("anterior"), m.get("actual")
+        if pd.isna(anterior) and pd.isna(actual):
+            continue
+        rows.append({"Indicador": m["nombre"], "Periodo": first_label, "Valor": 0 if pd.isna(anterior) else anterior})
+        rows.append({"Indicador": m["nombre"], "Periodo": last_label, "Valor": 0 if pd.isna(actual) else actual})
+    if not rows:
+        return None
+    long_df = pd.DataFrame(rows)
+    fig = px.bar(
+        long_df, x="Valor", y="Indicador", color="Periodo", orientation="h",
+        barmode="group", text_auto=".3s",
+        color_discrete_sequence=["#7D8794", "#E4002B"],
+    )
+    fig.update_traces(marker_line_width=0)
+    fig.update_layout(
+        height=max(240, 70 * long_df["Indicador"].nunique() + 80),
+        margin=dict(l=10, r=20, t=20, b=20),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", y=1.05, x=0),
+        font=dict(color=chart_text_color()),
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(96,112,132,.16)", title=None)
+    fig.update_yaxes(title=None)
+    return fig
+
+
 def render_comparison(result):
-    st.markdown('<div class="section-intro"><div><div class="eyebrow">COMPARATIVA</div><h2>Qué cambió entre los archivos</h2></div><div class="data-badge">Último vs. anterior · primero vs. último</div></div>', unsafe_allow_html=True)
+    st.markdown(section_header("Qué cambió entre los archivos", eyebrow="COMPARATIVA", badge="Último vs. anterior · primero vs. último"), unsafe_allow_html=True)
     files = result["files"]
     st.caption(" · ".join(f"{i+1}. {f['label']}" for i, f in enumerate(files)))
     _render_filter_panel()
 
-    metrics = result["recent_metrics"]
-    if metrics:
-        cols = st.columns(min(5, len(metrics)))
-        for col, m in zip(cols, metrics[:5]):
-            tone = _tone(m["cambio_pct"])
-            arrow = "↑" if tone == "positive" else "↓" if tone == "negative" else "→"
-            col.markdown(f'''<div class="kpi-card"><div class="kpi-top"><span class="kpi-icon">{arrow}</span><span class="kpi-label">{m['nombre']}</span></div><div class="kpi-value">{_fmt(m['actual'])}</div><div class="kpi-delta {tone}">{_pct(m['cambio_pct'])} · {m['etiqueta_operacion']}</div></div>''', unsafe_allow_html=True)
+    # ── Selección de elementos: por defecto se destacan los primeros 5
+    # indicadores comparables (mismo comportamiento que antes), pero ahora
+    # el usuario puede elegir exactamente cuáles quiere ver en las tarjetas
+    # y en el gráfico de abajo.
+    all_names = [m["nombre"] for m in result["metrics"]]
+    selected_names = st.multiselect(
+        "Métricas a comparar", all_names, default=all_names[:5],
+        key="cmp_selected_metrics",
+        help="Elige qué indicadores destacar en las tarjetas y el gráfico. El resto de las pestañas de abajo siguen mostrando la comparación completa.",
+    ) if all_names else []
+
+    recent_metrics = [m for m in result["recent_metrics"] if not selected_names or m["nombre"] in selected_names]
+    span_metrics = [m for m in result["metrics"] if not selected_names or m["nombre"] in selected_names]
+
+    if all_names and not selected_names:
+        st.info("Selecciona al menos una métrica para ver las tarjetas y el gráfico de comparación directa.")
+    else:
+        if recent_metrics:
+            cols = st.columns(min(5, len(recent_metrics)))
+            for col, m in zip(cols, recent_metrics[:5]):
+                tone = _tone(m["cambio_pct"])
+                arrow = "↑" if tone == "positive" else "↓" if tone == "negative" else "→"
+                delta_text = f"{_pct(m['cambio_pct'])} · {m['etiqueta_operacion']}"
+                col.markdown(kpi_card(m['nombre'], _fmt(m['actual']), delta=delta_text, tone=tone, icon=arrow), unsafe_allow_html=True)
+
+        # ── Comparación visual directa: primero vs. último, mismos
+        # indicadores seleccionados arriba.
+        direct_fig = _direct_comparison_chart(span_metrics, result["first"]["label"], result["last"]["label"])
+        if direct_fig is not None:
+            st.markdown(section_header("Comparación directa", compact=True), unsafe_allow_html=True)
+            st.plotly_chart(direct_fig, use_container_width=True, key="cmp_direct_chart")
 
     if result["signals"]:
         st.markdown('<div class="decision-panel"><div class="decision-panel-title">Lectura ejecutiva</div><div class="decision-panel-subtitle">Cambios detectados automáticamente a partir de variables comparables.</div></div>', unsafe_allow_html=True)
         for s in result["signals"][:5]:
             icon = "↑" if s["tipo"] == "positive" else "↓" if s["tipo"] == "warning" else "i"
-            st.markdown(f'<div class="insight-card {s["tipo"]}"><div class="insight-icon">{icon}</div><div class="insight-body"><div class="insight-label">HALLAZGO COMPARATIVO</div><div class="insight-text">{s["texto"]}</div></div></div>', unsafe_allow_html=True)
+            st.markdown(insight_card(s["texto"], label="HALLAZGO COMPARATIVO", kind=s["tipo"], icon=icon), unsafe_allow_html=True)
 
     tabs = st.tabs(["Resumen", "Ganadores y caídas", "Evolución", "📋 Registros", "Variables comparables"])
     with tabs[0]:
@@ -132,7 +193,7 @@ def render_comparison(result):
         for history_index, h in enumerate(result["history"]):
             series=h["serie"]
             fig=px.line(series,x="periodo",y="valor",markers=True,title=f"{h['metrica']} · {h['operacion']}")
-            fig.update_layout(height=360,margin=dict(l=20,r=20,t=50,b=20),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",xaxis_title="Periodo",yaxis_title="Valor")
+            fig.update_layout(height=360,margin=dict(l=20,r=20,t=50,b=20),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",xaxis_title="Periodo",yaxis_title="Valor",font=dict(color=chart_text_color()))
             st.plotly_chart(fig,use_container_width=True,key=f"comparison_history_{history_index}")
     with tabs[3]:
         st.caption(

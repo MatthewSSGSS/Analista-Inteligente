@@ -22,7 +22,7 @@ def render_mode_choice() -> str | None:
         .mode-card:nth-child(2){animation-delay:.08s}
         .mode-card-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:21px;margin-bottom:14px}
         .mode-card.practico .mode-card-icon{background:var(--blue-soft);color:var(--blue)}
-        .mode-card.avanzado .mode-card-icon{background:#eef1fb;color:#3b4a8f}
+        .mode-card.avanzado .mode-card-icon{background:var(--purple-soft);color:var(--purple)}
         .mode-card h3{margin:0 0 6px;font-size:17px;font-weight:800;font-family:'Sora','Inter',sans-serif}
         .mode-card p{margin:0 0 4px;font-size:13px;color:var(--muted);line-height:1.55;min-height:64px}
         .mode-card ul{margin:10px 0 0;padding-left:18px;font-size:12px;color:var(--muted)}
