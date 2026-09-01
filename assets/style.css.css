@@ -1,0 +1,95 @@
+/* ==========================================
+   1. VARIABLES DE TEMA (DARK / LIGHT)
+   ========================================== */
+.dark-theme {
+    --bg-primary: #0D1117;
+    --bg-secondary: #161B22;
+    --card-bg: rgba(22, 27, 34, 0.85);
+    --card-border: rgba(255, 42, 95, 0.25);
+    --card-border-active: #FF2A5F;
+    --text-main: #F0F6FC;
+    --text-muted: #8B949E;
+    --accent-glow: rgba(255, 42, 95, 0.3);
+    --accent-red: #FF2A5F;
+    --input-bg: #0D1117;
+    --map-style: carto-darkmatter;
+}
+
+.light-theme {
+    --bg-primary: #F8FAFC;
+    --bg-secondary: #FFFFFF;
+    --card-bg: #FFFFFF;
+    --card-border: #E2E8F0;
+    --card-border-active: #E11D48;
+    --text-main: #0F172A;
+    --text-muted: #64748B;
+    --accent-glow: rgba(225, 29, 72, 0.1);
+    --accent-red: #E11D48;
+    --input-bg: #F1F5F9;
+    --map-style: carto-positron;
+}
+
+/* ==========================================
+   2. REESTRUCTURACIÓN GLOBAL DE LA INTERFAZ
+   ========================================== */
+.stApp {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-main) !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Sidebar Limpio y Estructurado */
+[data-testid="stSidebar"] {
+    background-color: var(--bg-secondary) !important;
+    border-right: 1px solid var(--card-border) !important;
+}
+
+/* Tarjetas KPI con Neon Glow */
+div[data-testid="stMetric"], .kpi-card-glow {
+    background: var(--card-bg) !important;
+    border: 1px solid var(--card-border) !important;
+    border-radius: 12px !important;
+    padding: 14px 18px !important;
+    box-shadow: 0 4px 15px var(--accent-glow) !important;
+    transition: all 0.25s ease-in-out !important;
+}
+
+div[data-testid="stMetric"]:hover, .kpi-card-glow:hover {
+    border-color: var(--card-border-active) !important;
+    box-shadow: 0 0 20px var(--accent-glow) !important;
+    transform: translateY(-2px);
+}
+
+div[data-testid="stMetricLabel"] {
+    color: var(--text-muted) !important;
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+div[data-testid="stMetricValue"] {
+    color: var(--text-main) !important;
+    font-weight: 700 !important;
+}
+
+/* Pestañas (Tabs) estilo Cápsula */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 6px;
+    background-color: transparent;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    color: var(--text-muted);
+    padding: 8px 16px;
+    border: 1px solid var(--card-border);
+}
+
+.stTabs [aria-selected="true"] {
+    background-color: var(--accent-red) !important;
+    color: #FFFFFF !important;
+    font-weight: 600;
+    border-color: var(--accent-red) !important;
+}

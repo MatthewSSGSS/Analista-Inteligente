@@ -1,8 +1,26 @@
 import pandas as pd
 from core.numeric import numeric_series
+import streamlit as st
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+
+def apply_dashboard_theme(fig):
+    """Aplica fondo transparente y colores dinámicos al gráfico según el tema elegido."""
+    is_dark = st.session_state.get("theme", "Oscuro") == "Oscuro"
+    
+    text_color = "#F0F6FC" if is_dark else "#0F172A"
+    grid_color = "#21262D" if is_dark else "#E2E8F0"
+    
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color=text_color, family="Inter, sans-serif"),
+        xaxis=dict(gridcolor=grid_color, showgrid=True, zerolinecolor=grid_color),
+        yaxis=dict(gridcolor=grid_color, showgrid=True, zerolinecolor=grid_color),
+        margin=dict(l=20, r=20, t=30, b=20)
+    )
+    return apply_dashboard_theme(fig)
 
 # Paleta ejecutiva alineada a la identidad de marca de Claro (rojo vivo +
 # blanco). Los colores adicionales se usan solo cuando comunican una
