@@ -143,13 +143,13 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .data-badge{font-size:10.5px;font-weight:700;color:var(--red);background:none;border:none;padding:0;box-shadow:none;text-transform:uppercase;letter-spacing:.05em}
 
 /* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white ===== */
-.kpi-card{position:relative;background:rgba(255,255,255,.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  border:1px solid rgba(255,255,255,.75);border-radius:14px;padding:14px 16px;min-height:92px;
-  box-shadow:0 1px 2px rgba(20,26,43,.04),0 10px 26px rgba(20,26,43,.07);
+.kpi-card{position:relative;background:#ffffff;border:1px solid var(--line);border-left:4px solid var(--blue);
+  border-radius:12px;padding:14px 16px 14px 18px;min-height:92px;
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-.kpi-card:hover{transform:translateY(-3px);box-shadow:0 16px 34px rgba(228,0,43,.12),0 2px 6px rgba(20,26,43,.06);border-color:rgba(228,0,43,.28)}
-.kpi-label{display:block;font-size:10.5px;color:var(--muted);letter-spacing:.01em;font-weight:600}
-.kpi-value{font-size:21px;font-weight:800;letter-spacing:-.01em;margin-top:9px;color:var(--text);font-variant-numeric:tabular-nums}
+.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px rgba(20,26,43,.09)}
+.kpi-label{display:block;font-size:10.5px;color:var(--muted);letter-spacing:.02em;font-weight:700;text-transform:uppercase}
+.kpi-value{font-size:22px;font-weight:800;letter-spacing:-.01em;margin-top:9px;color:var(--text);font-variant-numeric:tabular-nums;font-family:'Sora','Inter',sans-serif}
 .kpi-card.negative .kpi-value{color:var(--red)}
 .kpi-card.positive .kpi-value{color:var(--green)}
 .kpi-delta{font-size:10.5px;margin-top:5px;font-weight:700}
@@ -162,9 +162,9 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .decision-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--blue);margin-right:8px}
 
 /* ===== Insight / finding cards ===== */
-.insight-card{display:flex;gap:12px;align-items:flex-start;border:1px solid rgba(255,255,255,.8);border-radius:var(--radius-md);
-  padding:15px;margin:4px 0 8px;background:rgba(255,255,255,.68);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  min-height:88px;box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.06);
+.insight-card{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--radius-md);
+  padding:15px;margin:4px 0 8px;background:#ffffff;
+  min-height:88px;box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
   transition:transform .18s ease,box-shadow .18s ease}
 .insight-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(20,26,43,.09)}
 .insight-card.positive{border-left:4px solid var(--green)}
@@ -189,11 +189,11 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== Chart shells ===== */
 .chart-reading{margin:0 3px 10px;padding:9px 11px;border-radius:var(--radius-sm);background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:11.5px;line-height:1.45}
-.chart-card{background:rgba(255,255,255,.68);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  border:1px solid rgba(255,255,255,.8);border-radius:var(--radius-lg);padding:15px 17px 8px;margin:6px 0 16px;
-  box-shadow:0 1px 2px rgba(20,26,43,.04),0 10px 26px rgba(20,26,43,.07);overflow:hidden;
+.chart-card{background:#ffffff;
+  border:1px solid var(--line);border-radius:var(--radius-lg);padding:15px 17px 8px;margin:6px 0 16px;
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 22px rgba(20,26,43,.06);overflow:hidden;
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-.chart-card:hover{box-shadow:0 16px 34px rgba(228,0,43,.10),0 2px 6px rgba(20,26,43,.06);border-color:rgba(228,0,43,.22)}
+.chart-card:hover{box-shadow:0 14px 28px rgba(20,26,43,.09);border-color:rgba(228,0,43,.18)}
 .chart-card:before{content:"";display:block;width:26px;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--blue),var(--teal));margin:0 0 10px 2px}
 .chart-head{display:flex;justify-content:space-between;align-items:flex-start;padding:2px 3px 0}
 .chart-title{font-size:15px;letter-spacing:-.01em;font-weight:750;color:var(--text)}
@@ -301,9 +301,9 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 .catalog-card li{margin:4px 0}
 
 /* ===== Universal analysis / drill-down ===== */
-.drilldown-card{background:rgba(255,255,255,.68);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  border:1px solid rgba(255,255,255,.8);border-radius:var(--radius-md);padding:12px 14px;
-  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.06);
+.drilldown-card{background:#ffffff;
+  border:1px solid var(--line);border-radius:var(--radius-md);padding:12px 14px;
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 6px 16px rgba(20,26,43,.05);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .drilldown-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(228,0,43,.10);border-color:rgba(228,0,43,.22)}
 .smart-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -339,9 +339,9 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 .analysis-section-title .data-badge{align-self:center}
 
 /* ===== pbi-visual: chart card variant used in the analysis area ===== */
-.pbi-visual{background:rgba(255,255,255,.68);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  border:1px solid rgba(255,255,255,.8);border-radius:13px;padding:12px 13px 9px;
-  box-shadow:0 1px 2px rgba(20,26,43,.04),0 10px 24px rgba(20,26,43,.06);
+.pbi-visual{background:#ffffff;
+  border:1px solid var(--line);border-radius:13px;padding:12px 13px 9px;
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .pbi-visual:hover{box-shadow:0 14px 28px rgba(228,0,43,.10);border-color:rgba(228,0,43,.2)}
 .pbi-visual:before{width:22px;height:3px;margin-bottom:8px;background:linear-gradient(90deg,var(--blue),var(--teal))}

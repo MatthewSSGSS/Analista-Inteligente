@@ -179,13 +179,12 @@ def _map_figure_3d(summary: dict, metric: str | None, schema: dict):
     min_val = float(x["_geo_metric"].min())
     max_val = float(x["_geo_metric"].max()) or 1.0
 
-    # Degradado frío → caliente (teal para lo más bajo, rojo Claro para lo
-    # más alto), en vez de solo variar la intensidad de un mismo rojo — así
-    # se distingue de un vistazo qué punto es mejor y cuál peor, no solo
-    # "todo se ve parecido pero un poco más oscuro".
-    _LOW = (15, 168, 160)   # teal
-    _MID = (245, 166, 35)   # ámbar
-    _HIGH = (228, 0, 43)    # rojo Claro
+    # Degradado frío → caliente, en tonos neón vívidos (no colores apagados)
+    # para que el mapa se sienta con más energía: cian brillante para lo
+    # más bajo, ámbar en medio, rojo intenso para lo más alto.
+    _LOW = (0, 224, 209)    # cian neón
+    _MID = (255, 176, 32)   # ámbar vívido
+    _HIGH = (255, 23, 68)   # rojo intenso (más vívido que el rojo de marca plano)
 
     def _color(v):
         span = (max_val - min_val) or 1.0
@@ -200,12 +199,17 @@ def _map_figure_3d(summary: dict, metric: str | None, schema: dict):
             r = int(_MID[0] + (_HIGH[0] - _MID[0]) * t)
             g = int(_MID[1] + (_HIGH[1] - _MID[1]) * t)
             b = int(_MID[2] + (_HIGH[2] - _MID[2]) * t)
-        return [r, g, b, 205]
+        return [r, g, b, 225]
 
     x["color"] = x["_geo_metric"].apply(_color)
+    x["glow_color"] = x["_geo_metric"].apply(lambda v: _color(v)[:3] + [70])
+    x["glow_color_soft"] = x["_geo_metric"].apply(lambda v: _color(v)[:3] + [30])
     # La altura de cada columna es relativa al máximo, para que el mapa se
     # vea proporcionado sin importar la magnitud real de los números.
     x["elevation"] = (x["_geo_metric"] / max_val * 40000).clip(lower=500)
+    base_radius = max(1200, 22000 / max(len(x), 1))
+    x["halo_radius_1"] = base_radius * 2.6
+    x["halo_radius_2"] = base_radius * 1.6
     metric_label = _label(schema, metric) if metric else "Registros"
 
     center_lat, center_lon = float(x["_geo_lat"].mean()), float(x["_geo_lon"].mean())
@@ -222,36 +226,52 @@ def _map_figure_3d(summary: dict, metric: str | None, schema: dict):
         center_lat, center_lon = 4.57, -74.30
         zoom = 6.6 if span >= 3 else 7.8
 
+    records = x.to_dict("records")
+
+    # Dos capas de "halo" apiladas (una más ancha y tenue, otra más chica y
+    # concentrada) debajo de cada columna — simulan el resplandor/glow que
+    # una sola capa plana no logra, dándole ese aire "futurista" real.
+    halo_outer = pdk.Layer(
+        "ScatterplotLayer", data=records, get_position="[_geo_lon, _geo_lat]",
+        get_radius="halo_radius_1", get_fill_color="glow_color_soft",
+        stroked=False, filled=True, pickable=False,
+    )
+    halo_inner = pdk.Layer(
+        "ScatterplotLayer", data=records, get_position="[_geo_lon, _geo_lat]",
+        get_radius="halo_radius_2", get_fill_color="glow_color",
+        stroked=False, filled=True, pickable=False,
+    )
     layer = pdk.Layer(
         "ColumnLayer",
-        data=x.to_dict("records"),
+        data=records,
         get_position="[_geo_lon, _geo_lat]",
         get_elevation="elevation",
         elevation_scale=1,
-        radius=max(1200, 22000 / max(len(x), 1)),
+        radius=base_radius,
         disk_resolution=6,  # columnas hexagonales: se ve más "data-viz", menos genérico
         get_fill_color="color",
         pickable=True,
         auto_highlight=True,
-        highlight_color=[255, 255, 255, 140],
-        material={"ambient": 0.55, "diffuse": 0.7, "shininess": 28, "specularColor": [255, 235, 230]},
+        highlight_color=[255, 255, 255, 160],
+        material={"ambient": 0.4, "diffuse": 0.55, "shininess": 45, "specularColor": [255, 255, 255]},
     )
-    view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=52, bearing=18)
+    view_state = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=55, bearing=18)
     tooltip = {
         "html": "<b>{_geo_label}</b><br/>" + metric_label + ": <b>{_geo_metric}</b>",
         "style": {"backgroundColor": "#171c29", "color": "#ffffff", "fontSize": "12px", "borderRadius": "8px", "padding": "8px 10px"},
     }
-    # Mapa base con calles y nombres visibles (CARTO_ROAD) en vez del
-    # "dark" plano de antes, que se veía casi negro y sin ninguna
-    # referencia geográfica reconocible.
+    # Mapa base oscuro (con calles/nombres visibles) para que el resplandor
+    # de las columnas contraste de verdad — un mapa demasiado claro apaga el
+    # efecto "glow"; uno completamente negro sin ninguna referencia se
+    # sentía plano. CARTO_DARK es el punto medio: oscuro y con contexto.
     try:
         deck = pdk.Deck(
-            layers=[layer], initial_view_state=view_state,
-            map_style=pdk.map_styles.CARTO_ROAD, map_provider="carto", tooltip=tooltip,
+            layers=[halo_outer, halo_inner, layer], initial_view_state=view_state,
+            map_style=pdk.map_styles.CARTO_DARK, map_provider="carto", tooltip=tooltip,
         )
     except Exception:
         try:
-            deck = pdk.Deck(layers=[layer], initial_view_state=view_state, map_style="light", map_provider="carto", tooltip=tooltip)
+            deck = pdk.Deck(layers=[halo_outer, halo_inner, layer], initial_view_state=view_state, map_style="dark", map_provider="carto", tooltip=tooltip)
         except Exception:
             deck = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip=tooltip)
 
