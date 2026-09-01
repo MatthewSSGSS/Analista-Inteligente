@@ -23,38 +23,38 @@ def render_login():
         <style>
         @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
-        /* Fondo crema con resplandor rojo en las esquinas, como la referencia. */
+        /* Fondo cálido con resplandor de rojo oscuro en las esquinas. */
         [data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid="stMain"],html,body{
           background:
-            radial-gradient(ellipse 900px 500px at 8% 6%, rgba(228,0,43,.20), transparent 60%),
-            radial-gradient(ellipse 900px 550px at 92% 96%, rgba(228,0,43,.16), transparent 60%),
-            radial-gradient(ellipse 700px 500px at 50% 100%, rgba(228,0,43,.10), transparent 65%),
-            #faf6f0 !important;
+            radial-gradient(ellipse 900px 500px at 8% 6%, rgba(140,20,32,.18), transparent 60%),
+            radial-gradient(ellipse 900px 550px at 92% 96%, rgba(140,20,32,.14), transparent 60%),
+            radial-gradient(ellipse 700px 500px at 50% 100%, rgba(140,20,32,.09), transparent 65%),
+            #faf8f5 !important;
         }
         [data-testid="stHeader"]{background:transparent!important}
 
         .login-wrap{max-width:440px;margin:7vh auto 0;padding:0 16px;animation:fadeUp .45s ease both;text-align:center}
-        .login-wordmark{font-family:'Sora','Inter',sans-serif;font-weight:800;font-size:44px;color:#e4002b;
-          letter-spacing:-.03em;line-height:1;margin:0 0 18px;display:inline-block}
-        .login-wordmark sup{color:#e4002b;font-size:22px;position:relative;top:-18px;left:1px}
+        .login-wordmark{font-family:'Sora','Inter',sans-serif;font-weight:800;font-size:38px;color:#8c1420;
+          letter-spacing:-.03em;line-height:1.15;margin:0 0 18px;display:inline-block}
+        .login-wordmark sup{color:#8c1420;font-size:20px;position:relative;top:-14px;left:1px}
         .login-hero{margin-bottom:26px}
-        .login-hero h1{font-size:20px;font-weight:800;font-family:'Sora','Inter',sans-serif;letter-spacing:-.02em;margin:0 0 6px;color:#1a1a1a}
-        .login-hero p{font-size:12.5px;color:#6b6b6b;margin:0}
+        .login-hero h1{font-size:20px;font-weight:800;font-family:'Sora','Inter',sans-serif;letter-spacing:-.02em;margin:0 0 6px;color:#141416}
+        .login-hero p{font-size:12.5px;color:#6b665e;margin:0}
 
         .login-card{background:transparent;padding:0;text-align:left}
 
-        /* Pestañas tipo píldora dividida: activa en rojo, inactiva en negro. */
+        /* Pestañas tipo píldora dividida: activa en rojo oscuro, inactiva en negro. */
         .stTabs [data-baseweb="tab-list"]{background:#161616!important;border:none!important;border-radius:999px!important;
           padding:5px!important;gap:0!important;box-shadow:0 10px 26px rgba(0,0,0,.14)!important}
         .stTabs [data-baseweb="tab"]{flex:1;justify-content:center;border-radius:999px!important;height:42px!important;
           color:#e8e8e8!important;font-weight:700!important;background:transparent!important}
         .stTabs [data-baseweb="tab"] p{color:inherit!important;font-weight:inherit!important}
-        .stTabs [aria-selected="true"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;color:#fff!important;
-          box-shadow:0 4px 12px rgba(228,0,43,.35)!important}
+        .stTabs [aria-selected="true"]{background:linear-gradient(180deg,#a8323d,#8c1420)!important;color:#fff!important;
+          box-shadow:0 4px 12px rgba(140,20,32,.35)!important}
         .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important}
         .stTabs [data-baseweb="tab-panel"]{padding-top:22px!important}
 
-        /* Campos redondeados, blancos, sobre el fondo crema. */
+        /* Campos redondeados, blancos, sobre el fondo cálido. */
         .login-card input{background:#ffffff!important;border:1px solid #e7e2da!important;border-radius:12px!important;
           padding:12px 14px!important;font-size:14px!important;box-shadow:0 1px 2px rgba(20,20,20,.04)!important}
         .login-card label p{color:#3a3a3a!important;font-weight:650!important;font-size:12.5px!important}
@@ -62,7 +62,7 @@ def render_login():
         .login-card button[kind="primary"]{background:linear-gradient(180deg,#8c1420,#6e0f19)!important;
           border:none!important;border-radius:12px!important;height:46px!important;font-weight:750!important;
           font-size:14px!important;box-shadow:0 8px 18px rgba(110,15,25,.28)!important}
-        .login-card button[kind="secondary"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;
+        .login-card button[kind="secondary"]{background:linear-gradient(180deg,#a8323d,#8c1420)!important;
           border:none!important;color:#fff!important;border-radius:12px!important;height:46px!important;font-weight:750!important}
         </style>
         """,
@@ -70,9 +70,9 @@ def render_login():
     )
 
     st.markdown(
-        '<div class="login-wrap"><div class="login-wordmark">Claro<sup>⚡</sup></div>'
-        '<div class="login-hero"><h1>Panel Analítico Universal Claro</h1>'
-        '<p>Inicia sesión para continuar con tu cuenta Claro</p></div></div>',
+        '<div class="login-wrap"><div class="login-wordmark">Excel Intelligence<sup>⚡</sup></div>'
+        '<div class="login-hero"><h1>Panel Analítico Universal</h1>'
+        '<p>Inicia sesión para continuar con tu cuenta</p></div></div>',
         unsafe_allow_html=True,
     )
 

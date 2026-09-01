@@ -36,7 +36,7 @@ def _inject_css():
         <style>
         @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         @keyframes popIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
-        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(228,0,43,.18)}50%{box-shadow:0 0 0 8px rgba(228,0,43,0)}}
+        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(140,20,32,.18)}50%{box-shadow:0 0 0 8px rgba(140,20,32,0)}}
 
         .practico-hero{animation:fadeUp .4s ease both}
         .practico-hero .eyebrow{font-size:11px;font-weight:800;letter-spacing:.11em;color:var(--blue);text-transform:uppercase;display:inline-flex;align-items:center;gap:6px}
@@ -54,7 +54,7 @@ def _inject_css():
         .ask-box{background:linear-gradient(135deg,#ffffff 0%,var(--blue-soft) 130%);border:1px solid var(--line);border-radius:18px;
           padding:20px 22px;margin:18px 0 10px;box-shadow:var(--shadow-lg);animation:fadeUp .5s ease both;position:relative;overflow:hidden}
         .ask-box::before{content:"";position:absolute;top:-30px;right:-30px;width:110px;height:110px;border-radius:50%;
-          background:radial-gradient(circle,rgba(228,0,43,.12),transparent 70%)}
+          background:radial-gradient(circle,rgba(140,20,32,.12),transparent 70%)}
         .ask-box h3{margin:0 0 3px;font-size:17px;font-family:'Sora','Inter',sans-serif;display:flex;align-items:center;gap:8px}
         .ask-box p{margin:0 0 12px;font-size:12.5px;color:var(--muted)}
 
@@ -208,9 +208,9 @@ def render_practical_page():
         if chart_spec:
             import plotly.graph_objects as go
             if chart_spec["type"] == "trend":
-                fig = go.Figure(go.Scatter(x=chart_spec["x"], y=chart_spec["y"], mode="lines+markers", line=dict(color="#e4002b", width=3), marker=dict(color="#e4002b", size=8)))
+                fig = go.Figure(go.Scatter(x=chart_spec["x"], y=chart_spec["y"], mode="lines+markers", line=dict(color="#8c1420", width=3), marker=dict(color="#8c1420", size=8)))
             else:
-                fig = go.Figure(go.Bar(x=chart_spec["x"], y=chart_spec["y"], marker_color="#e4002b"))
+                fig = go.Figure(go.Bar(x=chart_spec["x"], y=chart_spec["y"], marker_color="#8c1420"))
             fig.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter,Segoe UI,Arial,sans-serif"), yaxis_title=chart_spec.get("metric_label"))
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         table = r.get("table")
