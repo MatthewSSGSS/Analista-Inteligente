@@ -1,95 +1,149 @@
-/* ==========================================
-   1. VARIABLES DE TEMA (DARK / LIGHT)
-   ========================================== */
-.dark-theme {
-    --bg-primary: #0D1117;
-    --bg-secondary: #161B22;
-    --card-bg: rgba(22, 27, 34, 0.85);
-    --card-border: rgba(255, 42, 95, 0.25);
-    --card-border-active: #FF2A5F;
-    --text-main: #F0F6FC;
-    --text-muted: #8B949E;
-    --accent-glow: rgba(255, 42, 95, 0.3);
-    --accent-red: #FF2A5F;
-    --input-bg: #0D1117;
-    --map-style: carto-darkmatter;
+/* ==========================================================
+   ESTILOS GLOBALES ENTERPRISE (Glassmorphism & Neon Glow)
+   ========================================================== */
+
+:root {
+  --bg-dark: #0f1319 !important;
+  --card-bg: rgba(22, 27, 34, 0.8) !important;
+  --accent-red: #ff2a5f !important;
+  --accent-glow: rgba(255, 42, 95, 0.4) !important;
+  --text-primary: #f0f6fc !important;
+  --text-secondary: #8b949e !important;
+  --border-color: #21262d !important;
 }
 
-.light-theme {
-    --bg-primary: #F8FAFC;
-    --bg-secondary: #FFFFFF;
-    --card-bg: #FFFFFF;
-    --card-border: #E2E8F0;
-    --card-border-active: #E11D48;
-    --text-main: #0F172A;
-    --text-muted: #64748B;
-    --accent-glow: rgba(225, 29, 72, 0.1);
-    --accent-red: #E11D48;
-    --input-bg: #F1F5F9;
-    --map-style: carto-positron;
+/* 1. FONDO GLOBAL Y BARRA LATERAL */
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+  background-color: var(--bg-dark) !important;
+  color: var(--text-primary) !important;
 }
 
-/* ==========================================
-   2. REESTRUCTURACIÓN GLOBAL DE LA INTERFAZ
-   ========================================== */
-.stApp {
-    background-color: var(--bg-primary) !important;
-    color: var(--text-main) !important;
-    font-family: 'Inter', system-ui, sans-serif !important;
-}
-
-/* Sidebar Limpio y Estructurado */
 [data-testid="stSidebar"] {
-    background-color: var(--bg-secondary) !important;
-    border-right: 1px solid var(--card-border) !important;
+  background-color: #0b0e13 !important;
+  border-right: 1px solid var(--border-color) !important;
 }
 
-/* Tarjetas KPI con Neon Glow */
-div[data-testid="stMetric"], .kpi-card-glow {
-    background: var(--card-bg) !important;
-    border: 1px solid var(--card-border) !important;
-    border-radius: 12px !important;
-    padding: 14px 18px !important;
-    box-shadow: 0 4px 15px var(--accent-glow) !important;
-    transition: all 0.25s ease-in-out !important;
+/* 2. PESTAÑAS (st.tabs) TIPO BOTÓN CON GLOW NEÓN */
+div[data-baseweb="tab-list"] {
+  background-color: transparent !important;
+  gap: 8px !important;
+  border-bottom: none !important;
 }
 
-div[data-testid="stMetric"]:hover, .kpi-card-glow:hover {
-    border-color: var(--card-border-active) !important;
-    box-shadow: 0 0 20px var(--accent-glow) !important;
-    transform: translateY(-2px);
+button[data-baseweb="tab"] {
+  background-color: #161b22 !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  color: var(--text-secondary) !important;
+  padding: 8px 18px !important;
+  font-weight: 600 !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+button[data-baseweb="tab"]:hover {
+  border-color: var(--accent-red) !important;
+  color: var(--text-primary) !important;
+}
+
+button[data-baseweb="tab"][aria-selected="true"] {
+  background-color: var(--accent-red) !important;
+  color: #ffffff !important;
+  border-color: var(--accent-red) !important;
+  box-shadow: 0 0 14px var(--accent-glow) !important;
+}
+
+/* 3. TARJETAS DE MÉTRICAS (st.metric) */
+div[data-testid="stMetric"] {
+  background-color: var(--card-bg) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 10px !important;
+  padding: 16px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+div[data-testid="stMetric"]:hover {
+  border-color: var(--accent-red) !important;
+  box-shadow: 0 0 10px var(--accent-glow) !important;
 }
 
 div[data-testid="stMetricLabel"] {
-    color: var(--text-muted) !important;
-    font-size: 0.78rem !important;
-    font-weight: 600 !important;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+  color: var(--text-secondary) !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
 }
 
 div[data-testid="stMetricValue"] {
-    color: var(--text-main) !important;
-    font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  font-weight: 800 !important;
 }
 
-/* Pestañas (Tabs) estilo Cápsula */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 6px;
-    background-color: transparent;
+/* 4. TARJETAS DE ALERTAS, EXPANDERS Y DIAGNÓSTICO */
+div[data-testid="stExpander"], div.stAlert, [data-testid="stVerticalBlock"] > div[style*="border"] {
+  background: var(--card-bg) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--border-color) !important;
+  border-left: 4px solid var(--accent-red) !important;
+  border-radius: 12px !important;
+  padding: 18px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  margin-bottom: 16px !important;
 }
 
-.stTabs [data-baseweb="tab"] {
-    background-color: var(--bg-secondary);
-    border-radius: 8px;
-    color: var(--text-muted);
-    padding: 8px 16px;
-    border: 1px solid var(--card-border);
+/* 5. CAJAS DE SEÑALES (Positivas y Advertencias) */
+.signal-box-warning {
+  background: rgba(255, 171, 0, 0.1) !important;
+  border: 1px solid rgba(255, 171, 0, 0.3) !important;
+  border-left: 4px solid #FFD600 !important;
+  color: #FFD600 !important;
+  padding: 12px 16px !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
 }
 
-.stTabs [aria-selected="true"] {
-    background-color: var(--accent-red) !important;
-    color: #FFFFFF !important;
-    font-weight: 600;
-    border-color: var(--accent-red) !important;
+.signal-box-positive {
+  background: rgba(0, 230, 118, 0.1) !important;
+  border: 1px solid rgba(0, 230, 118, 0.3) !important;
+  border-left: 4px solid #00E676 !important;
+  color: #00E676 !important;
+  padding: 12px 16px !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+}
+
+/* 6. BOTONES DE ACCIÓN (E.g. "Ver análisis") */
+button[kind="secondary"], button[kind="primary"] {
+  background: linear-gradient(135deg, rgba(255, 42, 95, 0.2), rgba(255, 42, 95, 0.05)) !important;
+  border: 1px solid var(--accent-red) !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  transition: all 0.3s ease !important;
+}
+
+button[kind="secondary"]:hover, button[kind="primary"]:hover {
+  background: var(--accent-red) !important;
+  box-shadow: 0 0 16px var(--accent-glow) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* 7. BADGES DE SEVERIDAD (e.g. ALTA) */
+.badge-alta {
+  background-color: rgba(255, 42, 95, 0.2);
+  color: var(--accent-red);
+  border: 1px solid var(--accent-red);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+/* 8. INPUTS Y CAMPOS DE TEXTO */
+div[data-baseweb="input"] > div {
+  background-color: #161b22 !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+  border-radius: 8px !important;
 }
