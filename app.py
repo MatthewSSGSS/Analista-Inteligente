@@ -1,43 +1,8 @@
 import streamlit as st
-from pathlib import Path
 import pandas as pd
 from datetime import datetime
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
-
-# Inicializar la variable del tema en st.session_state
-if "theme" not in st.session_state:
-    st.session_state.theme = "Oscuro"
-
-# Inyectar el CSS de assets/style.css
-def inject_custom_theme():
-    css_file = Path("assets/style.css")
-    if css_file.exists():
-        with open(css_file, "r", encoding="utf-8") as f:
-            css_content = f.read()
-        theme_class = "dark-theme" if st.session_state.theme == "Oscuro" else "light-theme"
-        st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
-
-# Llama a la función AQUÍ (sin sangría a la izquierda)
-inject_custom_theme()
-
-# Ahora sí abre el bloque del Sidebar
-with st.sidebar:
-    st.markdown("##### 🎨 Apariencia")
-    theme_choice = st.radio(
-        "Modo de fondo:",
-        options=["Oscuro", "Claro"],
-        index=0 if st.session_state.theme == "Oscuro" else 1,
-        horizontal=True
-    )
-    
-    if theme_choice != st.session_state.theme:
-        st.session_state.theme = theme_choice
-        st.rerun()
-
-    st.divider()
-
-    # AQUÍ CONTINÚA EL RESTO DE TU CÓDIGO DEL SIDEBAR QUE YA TIENES
 
 
 @st.cache_data(show_spinner=False, max_entries=12, ttl=1800)

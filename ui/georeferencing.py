@@ -5,7 +5,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from visualization.charts import apply_dashboard_theme
 
 from core.geo_engine import geographic_summary
 from visualization.charts import metric_candidates, _label, _compact_number
@@ -125,22 +124,14 @@ def _map_figure(summary: dict, metric: str | None):
         "Lat: %{lat:.5f} · Lon: %{lon:.5f}<extra>Haz clic para ver el detalle</extra>"
     )
 
-    # --- PASO 2: COLORES DINÁMICOS SEGÚN EL TEMA ---
-    is_dark = st.session_state.get("theme", "Oscuro") == "Oscuro"
-
-    if is_dark:
-    # Colores brillantes/neón para contrastar sobre el mapa oscuro
-        color_map = {"Nivel alto": "#00E676", "Nivel medio": "#FFD600", "Nivel bajo": "#FF2A5F"}
-    else:
-    # Colores mate sobrios para el mapa claro
-        color_map = {"Nivel alto": "#22A06B", "Nivel medio": "#F59E0B", "Nivel bajo": "#E05252"}
+    color_map = {"Nivel alto": "#22A06B", "Nivel medio": "#F59E0B", "Nivel bajo": "#E05252"}
     fig = px.scatter_map(
         x, lat="_geo_lat", lon="_geo_lon", size="marker_size", size_max=11,
         text="label", color="nivel",
         color_discrete_map=color_map,
         category_orders={"nivel": ["Nivel alto", "Nivel medio", "Nivel bajo"]},
         zoom=zoom, center={"lat": center_lat, "lon": center_lon},
-        map_style="carto-darkmatter" if st.session_state.get("theme", "Oscuro") == "Oscuro" else "carto-positron",
+        map_style="open-street-map",
     )
     fig.update_traces(
         marker=dict(opacity=0.92),
@@ -158,8 +149,6 @@ def _map_figure(summary: dict, metric: str | None):
                     bgcolor="#FFFFFF", bordercolor="#344153", borderwidth=1,
                     font=dict(size=10, color="#1A2233")),
     )
-    fig = apply_dashboard_theme(fig)
-
     return fig
 
 
