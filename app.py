@@ -45,36 +45,66 @@ if "view_mode" not in st.session_state:
     st.session_state.view_mode = "Ejecutivo"
 if "app_started" not in st.session_state:
     st.session_state.app_started = False
+if "theme_mode" not in st.session_state:
+    st.session_state.theme_mode = "light"  # el jefe pidió blanco por defecto; oscuro es opcional, elegido por cada quien
 
 st.set_page_config(
     page_title="Panel Analítico Universal", page_icon="📊", layout="wide",
     initial_sidebar_state="collapsed" if not st.session_state.app_started else "auto",
 )
 
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap');
+_DARK = st.session_state.theme_mode == "dark"
 
-:root{
+_theme_vars = """
+  --bg:#0d1117;--panel:#161b22;--panel-2:#1c2129;--panel-3:#222833;
+  --text:#e6e9ef;--muted:#9aa4b2;--soft:#7b8592;--line:#2a313d;--line-soft:#232a34;
+  --blue:#ff3b52;--blue-soft:rgba(255,59,82,.14);--teal:#2dd4c8;--teal-soft:rgba(45,212,200,.14);
+  --green:#3ecf8e;--green-soft:rgba(62,207,142,.14);--amber:#f0a63e;--amber-soft:rgba(240,166,62,.14);
+  --red:#ff5570;--red-soft:rgba(255,85,112,.14);--purple:#9b8cf2;--purple-soft:rgba(155,140,242,.14);
+  --card-solid:#161b22;
+""" if _DARK else """
   --bg:#ffffff;--panel:#ffffff;--panel-2:#f7f9fc;--panel-3:#eef2f8;
   --text:#131826;--muted:#5b6473;--soft:#8792a3;--line:#d8dce6;--line-soft:#e8ebf1;
   --blue:#e4002b;--blue-soft:#fde8ea;--teal:#0fa8a0;--teal-soft:#e6f8f6;
   --green:#189a63;--green-soft:#e7f7ef;--amber:#c8790a;--amber-soft:#fdf2e2;
   --red:#e0223f;--red-soft:#fdeaee;--purple:#6a5bd8;--purple-soft:#efecfc;
+  --card-solid:#ffffff;
+"""
+
+_bg_gradient = """
+    radial-gradient(ellipse 950px 550px at 100% 0%, rgba(255,59,82,.10), transparent 58%),
+    radial-gradient(ellipse 850px 550px at 0% 100%, rgba(255,59,82,.07), transparent 58%),
+    radial-gradient(ellipse 700px 500px at 50% 45%, rgba(255,59,82,.04), transparent 65%),
+    #0d1117!important;
+""" if _DARK else """
+    radial-gradient(ellipse 950px 550px at 100% 0%, rgba(228,0,43,.065), transparent 58%),
+    radial-gradient(ellipse 850px 550px at 0% 100%, rgba(228,0,43,.05), transparent 58%),
+    radial-gradient(ellipse 700px 500px at 50% 45%, rgba(228,0,43,.025), transparent 65%),
+    #ffffff!important;
+"""
+
+st.markdown(f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap');
+
+:root{{
+{_theme_vars}
   --sidebar-bg:#0d1119;--sidebar-panel:#171c29;--sidebar-line:#2a3040;--sidebar-text:#d7dbe6;--sidebar-muted:#8992a8;
   --radius-lg:16px;--radius-md:12px;--radius-sm:9px;
   --shadow-sm:0 1px 2px rgba(20,26,43,.04),0 1px 1px rgba(20,26,43,.03);
   --shadow-md:0 2px 6px rgba(20,26,43,.05),0 10px 24px rgba(20,26,43,.055);
   --shadow-lg:0 8px 20px rgba(20,26,43,.08),0 2px 6px rgba(20,26,43,.05);
-}
-html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid="stMain"],[data-testid="stMainBlockContainer"],.main,.stAppViewContainer{
+}}
+html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid="stMain"],[data-testid="stMainBlockContainer"],.main,.stAppViewContainer{{
   background:
-    radial-gradient(ellipse 950px 550px at 100% 0%, rgba(228,0,43,.065), transparent 58%),
-    radial-gradient(ellipse 850px 550px at 0% 100%, rgba(228,0,43,.05), transparent 58%),
-    radial-gradient(ellipse 700px 500px at 50% 45%, rgba(228,0,43,.025), transparent 65%),
-    #ffffff!important;
-  color:#131826!important;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-[data-testid="stHeader"],[data-testid="stBottomBlockContainer"]{background:#ffffff!important}
+    {_bg_gradient}
+  color:var(--text)!important;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+[data-testid="stHeader"],[data-testid="stBottomBlockContainer"]{background:var(--bg)!important}
 .stApp{background:var(--bg);color:var(--text)}
 * {font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 .block-container{max-width:1540px;padding:1.1rem 1.8rem 4rem}
@@ -123,6 +153,9 @@ section[data-testid="stSidebar"] .mode-confidence{color:#ffb3ba!important;backgr
 .sidebar-logo-text{font-size:14px;font-weight:800;font-family:'Sora','Inter',sans-serif;color:#ffffff;line-height:1.2}
 .sidebar-logo-text small{display:block;font-size:10.5px;font-weight:600;font-family:'Inter',sans-serif;color:var(--sidebar-muted)}
 .sidebar-section-label{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--sidebar-muted)!important;margin:14px 0 6px}
+.sidebar-group-header{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#ffffff!important;
+  margin:22px 0 10px;padding-top:16px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
+.sidebar-group-header:first-of-type{border-top:none;padding-top:0;margin-top:6px}
 /* View-mode selector styled as a dark nav pill row, matching the sidebar */
 section[data-testid="stSidebar"] div[role="radiogroup"]{background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:10px;padding:4px;gap:2px}
 section[data-testid="stSidebar"] div[role="radiogroup"] label{border-radius:7px;padding:6px 10px}
@@ -143,7 +176,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .data-badge{font-size:10.5px;font-weight:700;color:var(--red);background:none;border:none;padding:0;box-shadow:none;text-transform:uppercase;letter-spacing:.05em}
 
 /* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white ===== */
-.kpi-card{position:relative;background:#ffffff;border:1px solid var(--line);border-left:4px solid var(--blue);
+.kpi-card{position:relative;background:var(--card-solid);border:1px solid var(--line);border-left:4px solid var(--blue);
   border-radius:12px;padding:14px 16px 14px 18px;min-height:92px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
@@ -163,7 +196,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== Insight / finding cards ===== */
 .insight-card{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--radius-md);
-  padding:15px;margin:4px 0 8px;background:#ffffff;
+  padding:15px;margin:4px 0 8px;background:var(--card-solid);
   min-height:88px;box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
   transition:transform .18s ease,box-shadow .18s ease}
 .insight-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(20,26,43,.09)}
@@ -189,7 +222,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== Chart shells ===== */
 .chart-reading{margin:0 3px 10px;padding:9px 11px;border-radius:var(--radius-sm);background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:11.5px;line-height:1.45}
-.chart-card{background:#ffffff;
+.chart-card{background:var(--card-solid);
   border:1px solid var(--line);border-radius:var(--radius-lg);padding:15px 17px 8px;margin:6px 0 16px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 22px rgba(20,26,43,.06);overflow:hidden;
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
@@ -236,7 +269,7 @@ section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button{backgro
 section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button:hover{background:rgba(228,0,43,.18);color:#ffffff}
 
 /* ===== Native inputs: keep readable on a light surface, with a real visible border ===== */
-input,textarea{color:var(--text)!important;background:rgba(255,255,255,.75)!important;border:1px solid var(--line)!important;transition:border-color .15s ease,box-shadow .15s ease}
+input,textarea{color:var(--text)!important;background:var(--panel)!important;border:1px solid var(--line)!important;transition:border-color .15s ease,box-shadow .15s ease}
 input:focus,textarea:focus{border-color:rgba(228,0,43,.45)!important;box-shadow:0 0 0 3px rgba(228,0,43,.08)!important}
 input::placeholder,textarea::placeholder{color:var(--soft)!important;opacity:1!important}
 [data-baseweb="select"]>div{background:var(--panel)!important;border:1px solid var(--line)!important;color:var(--text)!important;border-radius:9px!important}
@@ -301,7 +334,7 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 .catalog-card li{margin:4px 0}
 
 /* ===== Universal analysis / drill-down ===== */
-.drilldown-card{background:#ffffff;
+.drilldown-card{background:var(--card-solid);
   border:1px solid var(--line);border-radius:var(--radius-md);padding:12px 14px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 6px 16px rgba(20,26,43,.05);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
@@ -339,7 +372,7 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 .analysis-section-title .data-badge{align-self:center}
 
 /* ===== pbi-visual: chart card variant used in the analysis area ===== */
-.pbi-visual{background:#ffffff;
+.pbi-visual{background:var(--card-solid);
   border:1px solid var(--line);border-radius:13px;padding:12px 13px 9px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
@@ -426,6 +459,14 @@ st.markdown('<div class="hero"><h1>📊 Panel Analítico Universal</h1><p>De Exc
 
 with st.sidebar:
     st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
+    theme_choice = st.radio(
+        "Tema", ["☀️ Claro", "🌙 Oscuro"], horizontal=True, label_visibility="collapsed",
+        index=0 if st.session_state.theme_mode == "light" else 1, key="theme_mode_radio",
+    )
+    new_theme = "light" if theme_choice == "☀️ Claro" else "dark"
+    if new_theme != st.session_state.theme_mode:
+        st.session_state.theme_mode = new_theme
+        st.rerun()
     if st.session_state.get("auth_user"):
         u = st.session_state.auth_user
         col_user, col_out = st.columns([3, 1])
@@ -433,10 +474,11 @@ with st.sidebar:
         if col_out.button("Salir", key="logout_btn", use_container_width=True):
             auth_engine.logout()
             st.rerun()
+
+    st.markdown('<p class="sidebar-group-header">GESTIÓN DE DATOS</p>', unsafe_allow_html=True)
     if st.button("⚡ Cambiar a Análisis Práctico", use_container_width=True, key="switch_to_practico"):
         st.session_state.analysis_mode = "practico"
         st.rerun()
-
     st.markdown('<p class="sidebar-section-label">Tu archivo</p>', unsafe_allow_html=True)
     upload=st.file_uploader("Cargar Excel / CSV",type=["xlsx","xls","xlsb","xlsm","csv"], key="single_upload", label_visibility="collapsed")
     if upload and st.button("Analizar archivo",type="primary",use_container_width=True):
@@ -447,88 +489,6 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"No pudimos procesar este archivo: {e}")
 
-    with st.expander("🧰 Herramientas avanzadas", expanded=False):
-        st.markdown('<p class="sidebar-section-label" style="margin-top:0;">⚖️ Comparar periodos o archivos</p>', unsafe_allow_html=True)
-        compare_uploads=st.file_uploader(
-            "Selecciona 2 o más archivos",
-            type=["xlsx","xls","xlsb","xlsm","csv"],
-            accept_multiple_files=True,
-            key="compare_uploads",
-            help="Ej.: Enero 2024, Enero 2025. También puedes cargar varios periodos."
-        )
-        if compare_uploads and st.button("Comparar archivos", use_container_width=True):
-            if len(compare_uploads) < 2:
-                st.warning("Selecciona al menos dos archivos para comparar.")
-            else:
-                with st.spinner("Buscando variables equivalentes y calculando cambios..."):
-                    try:
-                        workbooks=[load_workbook(f) for f in compare_uploads]
-                        prepared=prepare_comparison(workbooks)
-                        st.session_state.comparison_raw_files=prepared["files"]
-                        st.session_state.comparison_filters={}
-                        st.session_state.comparison_result=build_comparison(prepared)
-                        st.session_state.comparison_error=None
-                    except Exception as e:
-                        st.session_state.comparison_result=None
-                        st.session_state.comparison_error=str(e)
-        if st.session_state.comparison_result:
-            cr=st.session_state.comparison_result
-            st.success(f"Comparativa lista · {len(cr['files'])} archivos")
-        if st.session_state.comparison_error:
-            st.error(f"No pudimos crear la comparativa: {st.session_state.comparison_error}")
-
-        st.divider()
-        st.markdown('<p class="sidebar-section-label">📍 Análisis de seguimiento</p>', unsafe_allow_html=True)
-        if db_engine.is_configured():
-            st.caption("🟢 Conectado a la base de datos compartida — todo el equipo ve la misma información con este link.")
-        else:
-            st.caption("🟡 Sin base de datos conectada todavía — modo manual: exporta el consolidado y vuelve a subirlo la próxima vez.")
-        tracking_new_files = st.file_uploader(
-            "Excel nuevos a procesar",
-            type=["xlsx", "xls", "xlsb", "xlsm", "csv"],
-            accept_multiple_files=True,
-            key="tracking_new_uploads",
-        )
-        tracking_consolidated_file = None
-        if not db_engine.is_configured():
-            tracking_consolidated_file = st.file_uploader(
-                "Historial consolidado (opcional, el que descargaste la vez anterior)",
-                type=["xlsx"],
-                accept_multiple_files=False,
-                key="tracking_consolidated_upload",
-                help="Si no lo subes, se parte de cero solo con los archivos nuevos.",
-            )
-        if tracking_new_files and st.button("Procesar seguimiento", use_container_width=True, key="tracking_process_btn"):
-            with st.spinner("Cruzando funcionarios entre archivos..."):
-                try:
-                    if db_engine.is_configured():
-                        existing = db_engine.load_from_db()
-                    elif tracking_consolidated_file is not None:
-                        existing = read_consolidated(tracking_consolidated_file)
-                    else:
-                        existing = None
-                    batch_label = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    new_long_parts = []
-                    for f in tracking_new_files:
-                        sources = ingest_file(f, batch_label=batch_label)
-                        if not sources:
-                            st.warning(f"'{f.name}' no tiene una columna de ID o nombre reconocible; se omitió del cruce.")
-                            continue
-                        new_long_parts.append(sources_to_long(sources, upload_batch=batch_label))
-                    new_long = pd.concat(new_long_parts, ignore_index=True) if new_long_parts else pd.DataFrame()
-                    combined = merge_long(existing, new_long)
-                    if db_engine.is_configured():
-                        db_engine.save_to_db(combined)
-                    st.session_state.tracking_data = combined
-                    st.session_state.tracking_error = None
-                except Exception as e:
-                    st.session_state.tracking_error = str(e)
-        if st.session_state.tracking_data is not None and not st.session_state.tracking_data.empty:
-            td = st.session_state.tracking_data
-            st.success(f"Seguimiento listo · {td['person_key'].nunique()} funcionarios · {td['source_file'].nunique()} archivos")
-        if st.session_state.tracking_error:
-            st.error(f"No pudimos procesar el seguimiento: {st.session_state.tracking_error}")
-
     wb=st.session_state.workbook
     if wb:
         st.markdown('<p class="sidebar-section-label" style="margin-top:16px;">Hoja activa</p>', unsafe_allow_html=True)
@@ -538,11 +498,8 @@ with st.sidebar:
         df=item["processed"]
         schema=item["profile"]["schema"]
         mode_info=detect_dataset_mode(df, schema)
-        st.markdown(f'<div class="mode-banner"><span class="mode-banner-label">MODO DETECTADO</span><br><b>{mode_info["label"]}</b> <span class="mode-confidence">{mode_info["confidence"]*100:.0f}%</span></div>', unsafe_allow_html=True)
-        with st.expander("🤖 Asistente IA", expanded=False):
-            st.caption("Opcional: conecta una API key para habilitar conversación y análisis asistido.")
-            st.session_state.assistant_api_key = st.text_input("OpenAI API key", value=st.session_state.get("assistant_api_key", ""), type="password", key="sidebar_assistant_key")
-            st.session_state.assistant_model = st.text_input("Modelo", value=st.session_state.get("assistant_model", "gpt-5.5"), key="sidebar_assistant_model")
+
+        st.markdown('<p class="sidebar-group-header">MODO DE VISTA</p>', unsafe_allow_html=True)
         st.markdown('<p class="sidebar-section-label">Vista</p>', unsafe_allow_html=True)
         st.session_state.view_mode = st.radio(
             "Nivel de detalle",
@@ -552,6 +509,8 @@ with st.sidebar:
             help="Ejecutivo prioriza conclusiones y visualizaciones. Analista muestra todas las herramientas y controles.",
             label_visibility="collapsed",
         )
+
+        st.markdown('<p class="sidebar-group-header">SEGMENTACIÓN DE DATOS (FILTROS)</p>', unsafe_allow_html=True)
         st.markdown('<p class="sidebar-section-label">Filtros</p>', unsafe_allow_html=True)
         st.caption("Selecciona una persona o usa los filtros de contexto. Todo el dashboard se actualiza con la selección.")
 
@@ -660,10 +619,100 @@ with st.sidebar:
                         st.session_state.pop(k, None)
                 st.rerun()
             st.caption(f"{active_count} filtro(s) activo(s)")
+        st.markdown(f'<div class="mode-banner"><span class="mode-banner-label">MODO DETECTADO</span><br><b>{mode_info["label"]}</b> <span class="mode-confidence">{mode_info["confidence"]*100:.0f}%</span></div>', unsafe_allow_html=True)
+
+        st.markdown('<p class="sidebar-group-header">ASISTENTE IA</p>', unsafe_allow_html=True)
+        with st.expander("🤖 Asistente IA", expanded=False):
+            st.caption("Opcional: conecta una API key para habilitar conversación y análisis asistido.")
+            st.session_state.assistant_api_key = st.text_input("OpenAI API key", value=st.session_state.get("assistant_api_key", ""), type="password", key="sidebar_assistant_key")
+            st.session_state.assistant_model = st.text_input("Modelo", value=st.session_state.get("assistant_model", "gpt-5.5"), key="sidebar_assistant_model")
         st.divider()
         st.caption(f"{wb['filename']} · {wb['size_mb']:.2f} MB")
         st.caption(f"{len(df):,} registros · {len(df.columns)} columnas")
 
+
+    st.markdown('<p class="sidebar-group-header">HERRAMIENTAS</p>', unsafe_allow_html=True)
+    with st.expander("🧰 Herramientas avanzadas", expanded=False):
+        st.markdown('<p class="sidebar-section-label" style="margin-top:0;">⚖️ Comparar periodos o archivos</p>', unsafe_allow_html=True)
+        compare_uploads=st.file_uploader(
+            "Selecciona 2 o más archivos",
+            type=["xlsx","xls","xlsb","xlsm","csv"],
+            accept_multiple_files=True,
+            key="compare_uploads",
+            help="Ej.: Enero 2024, Enero 2025. También puedes cargar varios periodos."
+        )
+        if compare_uploads and st.button("Comparar archivos", use_container_width=True):
+            if len(compare_uploads) < 2:
+                st.warning("Selecciona al menos dos archivos para comparar.")
+            else:
+                with st.spinner("Buscando variables equivalentes y calculando cambios..."):
+                    try:
+                        workbooks=[load_workbook(f) for f in compare_uploads]
+                        prepared=prepare_comparison(workbooks)
+                        st.session_state.comparison_raw_files=prepared["files"]
+                        st.session_state.comparison_filters={}
+                        st.session_state.comparison_result=build_comparison(prepared)
+                        st.session_state.comparison_error=None
+                    except Exception as e:
+                        st.session_state.comparison_result=None
+                        st.session_state.comparison_error=str(e)
+        if st.session_state.comparison_result:
+            cr=st.session_state.comparison_result
+            st.success(f"Comparativa lista · {len(cr['files'])} archivos")
+        if st.session_state.comparison_error:
+            st.error(f"No pudimos crear la comparativa: {st.session_state.comparison_error}")
+
+        st.divider()
+        st.markdown('<p class="sidebar-section-label">📍 Análisis de seguimiento</p>', unsafe_allow_html=True)
+        if db_engine.is_configured():
+            st.caption("🟢 Conectado a la base de datos compartida — todo el equipo ve la misma información con este link.")
+        else:
+            st.caption("🟡 Sin base de datos conectada todavía — modo manual: exporta el consolidado y vuelve a subirlo la próxima vez.")
+        tracking_new_files = st.file_uploader(
+            "Excel nuevos a procesar",
+            type=["xlsx", "xls", "xlsb", "xlsm", "csv"],
+            accept_multiple_files=True,
+            key="tracking_new_uploads",
+        )
+        tracking_consolidated_file = None
+        if not db_engine.is_configured():
+            tracking_consolidated_file = st.file_uploader(
+                "Historial consolidado (opcional, el que descargaste la vez anterior)",
+                type=["xlsx"],
+                accept_multiple_files=False,
+                key="tracking_consolidated_upload",
+                help="Si no lo subes, se parte de cero solo con los archivos nuevos.",
+            )
+        if tracking_new_files and st.button("Procesar seguimiento", use_container_width=True, key="tracking_process_btn"):
+            with st.spinner("Cruzando funcionarios entre archivos..."):
+                try:
+                    if db_engine.is_configured():
+                        existing = db_engine.load_from_db()
+                    elif tracking_consolidated_file is not None:
+                        existing = read_consolidated(tracking_consolidated_file)
+                    else:
+                        existing = None
+                    batch_label = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    new_long_parts = []
+                    for f in tracking_new_files:
+                        sources = ingest_file(f, batch_label=batch_label)
+                        if not sources:
+                            st.warning(f"'{f.name}' no tiene una columna de ID o nombre reconocible; se omitió del cruce.")
+                            continue
+                        new_long_parts.append(sources_to_long(sources, upload_batch=batch_label))
+                    new_long = pd.concat(new_long_parts, ignore_index=True) if new_long_parts else pd.DataFrame()
+                    combined = merge_long(existing, new_long)
+                    if db_engine.is_configured():
+                        db_engine.save_to_db(combined)
+                    st.session_state.tracking_data = combined
+                    st.session_state.tracking_error = None
+                except Exception as e:
+                    st.session_state.tracking_error = str(e)
+        if st.session_state.tracking_data is not None and not st.session_state.tracking_data.empty:
+            td = st.session_state.tracking_data
+            st.success(f"Seguimiento listo · {td['person_key'].nunique()} funcionarios · {td['source_file'].nunique()} archivos")
+        if st.session_state.tracking_error:
+            st.error(f"No pudimos procesar el seguimiento: {st.session_state.tracking_error}")
 if not st.session_state.workbook:
     if st.session_state.comparison_result:
         render_comparison(st.session_state.comparison_result)

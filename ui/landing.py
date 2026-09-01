@@ -48,8 +48,8 @@ def render_landing() -> bool:
         <style>
         .landing-hero{text-align:center;max-width:720px;margin:6vh auto 8px;padding:0 12px}
         .landing-mark{width:64px;height:64px;border-radius:50%;margin:0 auto 20px;
-          background:radial-gradient(circle at 32% 28%,#c53a44,#8c1420 55%,#5c0d15 100%);
-          box-shadow:inset 0 -4px 8px rgba(0,0,0,.22),inset 0 3px 4px rgba(255,255,255,.35),0 10px 24px rgba(140,20,32,.22)}
+          background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);
+          box-shadow:inset 0 -4px 8px rgba(0,0,0,.22),inset 0 3px 4px rgba(255,255,255,.35),0 10px 24px rgba(228,0,43,.22)}
         .landing-hero h1{font-size:32px;font-weight:850;letter-spacing:-.02em;margin:0 0 10px;color:var(--text)}
         .landing-hero p{font-size:14.5px;color:var(--muted);line-height:1.55;margin:0 auto}
         .landing-caps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;max-width:1180px;margin:34px auto 0}
@@ -61,12 +61,12 @@ def render_landing() -> bool:
         .landing-cap-card p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
         .landing-how{max-width:1180px;margin:22px auto 0;background:var(--sidebar-bg);border-radius:var(--radius-lg);
           padding:26px 28px 22px;box-shadow:var(--shadow-lg)}
-        .landing-how-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#ff9aa3;text-transform:uppercase}
+        .landing-how-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#ff5b6c;text-transform:uppercase}
         .landing-how h2{margin:6px 0 18px;font-size:19px;font-weight:800;color:#fff}
         .landing-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
         .landing-step{display:flex;flex-direction:column;gap:10px;background:rgba(255,255,255,.04);
           border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-md);padding:14px}
-        .landing-step-number{width:24px;height:24px;border-radius:7px;background:#8c1420;color:#fff;
+        .landing-step-number{width:24px;height:24px;border-radius:7px;background:#e4002b;color:#fff;
           font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
         .landing-step b{color:#fff;font-size:13px}
         .landing-step p{margin:3px 0 0;color:#9aa2b8;font-size:11.5px;line-height:1.5}
