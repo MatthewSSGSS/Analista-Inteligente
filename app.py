@@ -138,23 +138,35 @@ with st.sidebar:
             auth_engine.logout()
             st.rerun()
 
-    st.markdown('<p class="sidebar-group-header">GESTIÓN DE DATOS</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sidebar-group-header">ARCHIVO</p>', unsafe_allow_html=True)
     if st.button("⚡ Cambiar a Análisis Práctico", use_container_width=True, key="switch_to_practico"):
         st.session_state.analysis_mode = "practico"
         st.rerun()
-    st.markdown('<p class="sidebar-section-label">Tu archivo</p>', unsafe_allow_html=True)
-    upload=st.file_uploader("Cargar Excel / CSV",type=["xlsx","xls","xlsb","xlsm","csv"], key="single_upload", label_visibility="collapsed")
-    if upload and st.button("Analizar archivo",type="primary",use_container_width=True):
-        with st.spinner("Analizando estructura, fechas, calidad y relaciones..."):
-            try:
-                st.session_state.workbook=load_workbook(upload)
-                st.session_state.filters={}
-            except Exception as e:
-                st.error(f"No pudimos procesar este archivo: {e}")
+    # Una vez hay un archivo cargado, subir uno nuevo pasa a ser la acción
+    # menos frecuente de esta sección (se hace una vez, luego se trabaja
+    # sobre "Hoja activa" el resto de la sesión) — así que el cargador
+    # completo (caja de arrastrar y soltar) se colapsa detrás de un resumen
+    # de una línea con el nombre del archivo, en vez de ocupar ese espacio
+    # siempre. Sigue expandido por defecto mientras no haya ningún archivo.
+    _wb_before = st.session_state.workbook
+    with st.expander(
+        f'📄 {_wb_before["filename"]}' if _wb_before else "📤 Cargar Excel / CSV",
+        expanded=(_wb_before is None),
+    ):
+        upload=st.file_uploader("Cargar Excel / CSV",type=["xlsx","xls","xlsb","xlsm","csv"], key="single_upload", label_visibility="collapsed")
+        if upload and st.button("Analizar archivo",type="primary",use_container_width=True):
+            with st.spinner("Analizando estructura, fechas, calidad y relaciones..."):
+                try:
+                    st.session_state.workbook=load_workbook(upload)
+                    st.session_state.filters={}
+                except Exception as e:
+                    st.error(f"No pudimos procesar este archivo: {e}")
+        if _wb_before:
+            st.caption("¿Otro archivo? Súbelo aquí para reemplazar el actual.")
 
     wb=st.session_state.workbook
     if wb:
-        st.markdown('<p class="sidebar-section-label" style="margin-top:16px;">Hoja activa</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sidebar-section-label" style="margin-top:10px;">Hoja activa</p>', unsafe_allow_html=True)
         sheet=st.selectbox("Hoja",list(wb["sheets"]), label_visibility="collapsed")
         item=wb["sheets"][sheet]
         st.session_state.active_sheet = sheet
@@ -162,8 +174,7 @@ with st.sidebar:
         schema=item["profile"]["schema"]
         mode_info=detect_dataset_mode(df, schema)
 
-        st.markdown('<p class="sidebar-group-header">MODO DE VISTA</p>', unsafe_allow_html=True)
-        st.markdown('<p class="sidebar-section-label">Vista</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sidebar-group-header">VISTA</p>', unsafe_allow_html=True)
         st.session_state.view_mode = st.radio(
             "Nivel de detalle",
             ["Ejecutivo", "Analista"],
@@ -173,7 +184,7 @@ with st.sidebar:
             label_visibility="collapsed",
         )
 
-        st.markdown('<p class="sidebar-group-header">SEGMENTACIÓN DE DATOS (FILTROS)</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sidebar-group-header">FILTROS</p>', unsafe_allow_html=True)
         st.caption("Selecciona una persona o usa los filtros de contexto. Todo el dashboard se actualiza con la selección.")
 
         # ── Búsqueda principal de persona ────────────────────────────────
@@ -301,7 +312,6 @@ with st.sidebar:
             st.caption(f"{active_count} filtro(s) activo(s)")
         st.markdown(f'<div class="mode-banner"><span class="mode-banner-label">MODO DETECTADO</span><br><b>{mode_info["label"]}</b> <span class="mode-confidence">{mode_info["confidence"]*100:.0f}%</span></div>', unsafe_allow_html=True)
 
-        st.markdown('<p class="sidebar-group-header">ASISTENTE IA</p>', unsafe_allow_html=True)
         with st.expander("🤖 Asistente IA", expanded=False):
             st.caption("Opcional: conecta una API key para habilitar conversación y análisis asistido.")
             st.session_state.assistant_api_key = st.text_input("OpenAI API key", value=st.session_state.get("assistant_api_key", ""), type="password", key="sidebar_assistant_key")
@@ -311,7 +321,6 @@ with st.sidebar:
         st.caption(f"{len(df):,} registros · {len(df.columns)} columnas")
 
 
-    st.markdown('<p class="sidebar-group-header">HERRAMIENTAS</p>', unsafe_allow_html=True)
     with st.expander("🧰 Herramientas avanzadas", expanded=False):
         st.markdown('<p class="sidebar-section-label" style="margin-top:0;">⚖️ Comparar periodos o archivos</p>', unsafe_allow_html=True)
         compare_uploads=st.file_uploader(
@@ -451,20 +460,14 @@ if query:
 
 mode_info=detect_dataset_mode(df, schema)
 dashboard=_cached_build_dashboard(df,item["profile"])
-classification = mode_info.get("classification", {})
 geo_enabled, geo_meta = supports_georeferencing(df, schema)
 
-if classification:
-    capabilities = classification.get("capabilities", [])
-    cap_labels = {"evolucion":"evolución", "comparacion_periodos":"comparación de periodos", "ranking":"rankings", "distribucion":"distribuciones", "relaciones":"relaciones entre métricas", "estadisticas":"estadísticas", "grafico_distribucion":"gráficos de distribución", "geografia":"geografía", "catalogo":"consulta de catálogo", "estados":"seguimiento de estados"}
-    readable_caps = ", ".join(cap_labels.get(x, x) for x in capabilities[:6]) or "lectura y tabla"
-    st.markdown(
-        f'<div class="mode-banner"><b>Tipo detectado:</b> {classification.get("label", "Datos generales")}'
-        f'<span class="mode-confidence">confianza {classification.get("confidence",0)*100:.0f}%</span></div>',
-        unsafe_allow_html=True,
-    )
-    with st.expander("¿Por qué este tipo? Ver detalle", expanded=False):
-        st.caption(f'{classification.get("reason", "")} · Herramientas activadas: {readable_caps}.')
+# "Tipo detectado" ya no se repite aquí encima de cada pestaña: esta misma
+# información (label + confianza + por qué + herramientas activadas), con
+# el mismo `mode_info["classification"]`, ya la muestra 🏠 Inicio — que es
+# donde alguien nuevo la ve primero, una sola vez, no arriba de Datos,
+# Exportar, etc. donde no aporta nada. El resumen corto sigue siempre
+# visible en la barra lateral ("MODO DETECTADO").
 
 if st.session_state.get("focus_view"):
     st.info(f"Análisis enfocado: {st.session_state.focus_view}. Revisa los gráficos y filtros visibles para profundizar.")

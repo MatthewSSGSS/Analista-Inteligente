@@ -13,6 +13,7 @@ import re
 from typing import Optional
 
 import pandas as pd
+import streamlit as st
 
 try:
     from geopy.geocoders import ArcGIS
@@ -167,11 +168,21 @@ def geocode_place(city: str, country: str = "", region: str = "") -> dict:
         return {"status": "offline", "query": query, "reason": str(exc)[:160]}
 
 
+@st.cache_data(show_spinner=False, max_entries=16, ttl=1800)
 def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tuple[pd.DataFrame, dict]:
     """Return a copy with _geo_lat/_geo_lon/_geo_status.
 
     If coordinates already exist, they are used directly. If only city exists,
     city names are geocoded. Source columns are never modified.
+
+    Cacheado con `@st.cache_data`: aunque `geocode_place()` ya memoiza la
+    llamada de red por proceso (`@lru_cache` arriba), esta función igual
+    recorre el DataFrame completo fila por fila (`out.iterrows()`, dos
+    veces) para asignar el resultado — en un archivo grande eso es trabajo
+    real que se repetía en cada rerun de Streamlit (cambiar de pestaña,
+    aplicar un filtro) aunque el resultado fuera idéntico al de la vez
+    anterior. Con el mismo (df, schema, max_places) esto ahora es una
+    lectura de caché en vez de recorrer todo el DataFrame de nuevo.
     """
     cols = geo_columns(df, schema)
     out = df.copy()
@@ -305,6 +316,7 @@ def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tu
     }
 
 
+@st.cache_data(show_spinner=False, max_entries=16, ttl=1800)
 def geographic_summary(df: pd.DataFrame, schema: dict, metric: Optional[str] = None) -> dict:
     """Aggregate geographic indicators and return a Plotly-ready table."""
     from visualization.charts import metric_candidates

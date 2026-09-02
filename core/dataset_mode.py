@@ -1,11 +1,13 @@
 
 import re
 import pandas as pd
+import streamlit as st
 from .dataset_classifier import classify_dataset
 
 def _norm(x):
     return re.sub(r"[^a-z0-9]+", " ", str(x).lower()).strip()
 
+@st.cache_data(show_spinner=False, max_entries=24, ttl=1800)
 def detect_dataset_mode(df, schema):
     """Classify the sheet into a useful UI mode without changing source data."""
     cols = list(df.columns)

@@ -43,23 +43,57 @@ BRAND_ORB = "radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%)
 
 
 def _theme_vars(dark: bool) -> str:
-    """Paleta de color: superficie, texto, línea y acentos, para claro/oscuro."""
+    """Paleta de color: superficie, texto, línea y acentos, para claro/oscuro.
+
+    `--*-strong` son variantes de texto pequeño (badges, deltas, tags) que
+    se pintan directamente sobre su propio `--*-soft`: el acento base
+    (`--blue`/`--green`/`--amber`) ya está afinado para verse bien como
+    borde, como texto grande o sobre un panel sólido, pero en texto chico
+    sobre su propio fondo tintado (p. ej. `--blue` sobre `--blue-soft`) el
+    contraste real medido (WCAG) cae a ~4.0–4.3:1 en ambos temas —
+    perceptible sobre todo en Modo Oscuro. `--*-strong` reutiliza tonos que
+    ya existían en algún lugar del CSS (nunca colores inventados) elegidos
+    para que ese mismo texto llegue a ≥4.5:1."""
     if dark:
         return """
   --bg:#0d1117;--panel:#161b22;--panel-2:#1c2129;--panel-3:#222833;
   --text:#e6e9ef;--muted:#9aa4b2;--soft:#7b8592;--line:#2a313d;--line-soft:#232a34;
-  --blue:#ff3b52;--blue-soft:rgba(255,59,82,.14);--teal:#2dd4c8;--teal-soft:rgba(45,212,200,.14);
-  --green:#3ecf8e;--green-soft:rgba(62,207,142,.14);--amber:#f0a63e;--amber-soft:rgba(240,166,62,.14);
+  --blue:#ff3b52;--blue-soft:rgba(255,59,82,.14);--blue-strong:#ff6b7a;
+  --teal:#2dd4c8;--teal-soft:rgba(45,212,200,.14);
+  --green:#3ecf8e;--green-soft:rgba(62,207,142,.14);--green-strong:#3ecf8e;
+  --amber:#f0a63e;--amber-soft:rgba(240,166,62,.14);--amber-strong:#f0a63e;
   --red:#ff5570;--red-soft:rgba(255,85,112,.14);--purple:#9b8cf2;--purple-soft:rgba(155,140,242,.14);
   --card-solid:#161b22;
 """
     return """
   --bg:#ffffff;--panel:#ffffff;--panel-2:#f7f9fc;--panel-3:#eef2f8;
-  --text:#131826;--muted:#5b6473;--soft:#8792a3;--line:#d8dce6;--line-soft:#e8ebf1;
-  --blue:#e4002b;--blue-soft:#fde8ea;--teal:#0fa8a0;--teal-soft:#e6f8f6;
-  --green:#189a63;--green-soft:#e7f7ef;--amber:#c8790a;--amber-soft:#fdf2e2;
+  --text:#131826;--muted:#5b6473;--soft:#5f6b80;--line:#d8dce6;--line-soft:#e8ebf1;
+  --blue:#e4002b;--blue-soft:#fde8ea;--blue-strong:#c8001f;
+  --teal:#0fa8a0;--teal-soft:#e6f8f6;
+  --green:#189a63;--green-soft:#e7f7ef;--green-strong:#0f7a4e;
+  --amber:#c8790a;--amber-soft:#fdf2e2;--amber-strong:#a15c04;
   --red:#e0223f;--red-soft:#fdeaee;--purple:#6a5bd8;--purple-soft:#efecfc;
   --card-solid:#ffffff;
+"""
+
+
+def _sidebar_vars(dark: bool) -> str:
+    """Paleta del sidebar (rail de navegación), separada de `_theme_vars`
+    porque hasta ahora era fija (siempre navy oscuro, sin importar el
+    tema) — ver hallazgo de QA: con el toggle en Claro la app quedaba
+    mitad clara/mitad oscura. En oscuro se preservan los valores exactos
+    que ya corrían en producción (cero cambio visual); en claro se
+    reutilizan los mismos tonos que ya usa `_theme_vars(dark=False)` para
+    el resto del contenido, para que el rail se sienta parte de la misma
+    paleta en vez de inventar colores nuevos."""
+    if dark:
+        return """
+  --sidebar-bg:#0d1119;--sidebar-panel:#171c29;--sidebar-line:#2a3040;
+  --sidebar-text:#d7dbe6;--sidebar-text-strong:#ffffff;--sidebar-muted:#8992a8;
+"""
+    return """
+  --sidebar-bg:#f7f9fc;--sidebar-panel:#ffffff;--sidebar-line:#d8dce6;
+  --sidebar-text:#131826;--sidebar-text-strong:#131826;--sidebar-muted:#5b6473;
 """
 
 
@@ -90,7 +124,7 @@ def base_layer_css(dark: bool) -> str:
 
 :root{{
 {_theme_vars(dark)}
-  --sidebar-bg:#0d1119;--sidebar-panel:#171c29;--sidebar-line:#2a3040;--sidebar-text:#d7dbe6;--sidebar-muted:#8992a8;
+{_sidebar_vars(dark)}
   --radius-lg:16px;--radius-md:12px;--radius-sm:9px;
   --shadow-sm:0 1px 2px rgba(20,26,43,.04),0 1px 1px rgba(20,26,43,.03);
   --shadow-md:0 2px 6px rgba(20,26,43,.05),0 10px 24px rgba(20,26,43,.055);
@@ -124,50 +158,53 @@ header[data-testid="stHeader"]{background:rgba(238,241,246,.86);backdrop-filter:
 h1,h2,h3,h4,h5,h6{color:var(--text);font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
 p,span,div,li,label{color:var(--text)}
 
-/* ===== Sidebar: dark navy nav rail, contrasts with the light content ===== */
+/* ===== Sidebar: nav rail with its own surface tokens (--sidebar-*), navy in
+   Dark Mode and off-white in Light Mode — same tokens, values swapped in
+   _sidebar_vars() so this block never needs to know which mode is active. */
 section[data-testid="stSidebar"]{background:var(--sidebar-bg)!important;border-right:1px solid var(--sidebar-line)!important}
-section[data-testid="stSidebar"] .block-container{padding:1.3rem 1rem 2rem}
-section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.55rem}
+section[data-testid="stSidebar"] .block-container{padding:1rem 1rem 1.5rem}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.5rem}
 section[data-testid="stSidebar"] *{color:var(--sidebar-text)}
-section[data-testid="stSidebar"] h1,section[data-testid="stSidebar"] h2,section[data-testid="stSidebar"] h3{color:#ffffff!important;font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
+section[data-testid="stSidebar"] h1,section[data-testid="stSidebar"] h2,section[data-testid="stSidebar"] h3{color:var(--sidebar-text-strong)!important;font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
 section[data-testid="stSidebar"] .stCaption,section[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{color:var(--sidebar-muted)!important}
 section[data-testid="stSidebar"] hr{border-color:var(--sidebar-line);margin:.75rem 0}
-section[data-testid="stSidebar"] input,section[data-testid="stSidebar"] textarea{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;color:#ffffff!important;border-radius:9px!important}
+section[data-testid="stSidebar"] input,section[data-testid="stSidebar"] textarea{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;color:var(--sidebar-text-strong)!important;border-radius:9px!important}
 section[data-testid="stSidebar"] [data-baseweb="select"]{background:var(--sidebar-panel)!important}
 section[data-testid="stSidebar"] [data-baseweb="select"]>div{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;border-radius:9px!important}
 /* Baseweb nests several layers inside the select (value box, indicator
    separator, dropdown-arrow box) that each carry their own background —
    forcing every descendant transparent is the only reliable way to stop the
    two-tone "dark pill with a white patch near the arrow" look. */
-section[data-testid="stSidebar"] [data-baseweb="select"] *{color:#ffffff!important;background:transparent!important;background-color:transparent!important;fill:#ffffff!important}
+section[data-testid="stSidebar"] [data-baseweb="select"] *{color:var(--sidebar-text-strong)!important;background:transparent!important;background-color:transparent!important;fill:var(--sidebar-text-strong)!important}
 section[data-testid="stSidebar"] [data-baseweb="select"] input::placeholder{color:var(--sidebar-muted)!important;opacity:1!important}
 section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"]{background:rgba(228,0,43,.22)!important;border:1px solid rgba(228,0,43,.4)!important}
-section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] span{color:#ffffff!important}
+section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] span{color:var(--sidebar-text-strong)!important}
 section[data-testid="stSidebar"] [data-baseweb="popover"]{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important}
 section[data-testid="stSidebar"] [data-baseweb="menu"]{background:var(--sidebar-panel)!important}
 section[data-testid="stSidebar"] [data-baseweb="menu"] li:hover{background:rgba(228,0,43,.18)!important}
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"]{background:var(--sidebar-panel)!important;border:1px dashed var(--sidebar-line)!important;border-radius:var(--radius-md)!important}
 section[data-testid="stSidebar"] .stFileUploader small{color:var(--sidebar-muted)!important}
-section[data-testid="stSidebar"] .stButton>button{background:var(--sidebar-panel);color:#ffffff;border:1px solid var(--sidebar-line);border-radius:var(--radius-sm)}
-section[data-testid="stSidebar"] .stButton>button:hover{border-color:var(--blue);color:#ff6b7a;background:rgba(228,0,43,.12)}
+section[data-testid="stSidebar"] .stButton>button{background:var(--sidebar-panel);color:var(--sidebar-text-strong);border:1px solid var(--sidebar-muted);border-radius:var(--radius-sm)}
+section[data-testid="stSidebar"] .stButton>button:hover{border-color:var(--blue);color:var(--blue-strong);background:rgba(228,0,43,.12)}
+section[data-testid="stSidebar"] .stButton>button:active{border-color:var(--blue);color:var(--blue-strong);background:rgba(228,0,43,.18)}
 section[data-testid="stSidebar"] button[kind="primary"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;border-color:#c8001f!important;color:#fff!important}
 section[data-testid="stSidebar"] [data-testid="stExpander"]{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important}
-section[data-testid="stSidebar"] [data-testid="stExpander"] summary{background:var(--sidebar-panel)!important;color:#ffffff!important}
-section[data-testid="stSidebar"] [data-testid="stExpander"] summary:hover{color:#ff6b7a!important}
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary{background:var(--sidebar-panel)!important;color:var(--sidebar-text-strong)!important}
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary:hover{color:var(--blue)!important}
 section[data-testid="stSidebar"] [data-testid="stAlert"]{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;color:var(--sidebar-text)!important}
-section[data-testid="stSidebar"] .mode-banner{background:rgba(228,0,43,.16);border:1px solid rgba(228,0,43,.4);color:#ffffff}
+section[data-testid="stSidebar"] .mode-banner{background:rgba(228,0,43,.16);border:1px solid rgba(228,0,43,.4);color:var(--sidebar-text-strong)}
 section[data-testid="stSidebar"] .mode-banner .mode-banner-label{color:var(--sidebar-muted)}
-section[data-testid="stSidebar"] .mode-banner b{color:#ffffff}
-section[data-testid="stSidebar"] .mode-confidence{color:#ffb3ba!important;background:rgba(255,255,255,.08)!important}
+section[data-testid="stSidebar"] .mode-banner b{color:var(--sidebar-text-strong)}
+section[data-testid="stSidebar"] .mode-confidence{color:var(--sidebar-muted)!important;background:var(--sidebar-panel)!important}
 /* Sidebar logo block, like the reference nav header */
 .sidebar-logo{display:flex;align-items:center;gap:10px;padding:2px 2px 14px;margin-bottom:10px;border-bottom:1px solid var(--sidebar-line)}
 .sidebar-logo-mark{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 34px}
-.sidebar-logo-text{font-size:14px;font-weight:800;font-family:'Sora','Inter',sans-serif;color:#ffffff;line-height:1.2}
+.sidebar-logo-text{font-size:14px;font-weight:800;font-family:'Sora','Inter',sans-serif;color:var(--sidebar-text-strong);line-height:1.2}
 .sidebar-logo-text small{display:block;font-size:10.5px;font-weight:600;font-family:'Inter',sans-serif;color:var(--sidebar-muted)}
-.sidebar-section-label{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--sidebar-muted)!important;margin:14px 0 6px}
-.sidebar-group-header{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#ffffff!important;
-  margin:22px 0 10px;padding-top:16px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
-.sidebar-group-header:first-of-type{border-top:none;padding-top:0;margin-top:6px}
+.sidebar-section-label{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--sidebar-muted)!important;margin:10px 0 5px}
+.sidebar-group-header{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--sidebar-text-strong)!important;
+  margin:14px 0 7px;padding-top:11px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
+.sidebar-group-header:first-of-type{border-top:none;padding-top:0;margin-top:4px}
 /* View-mode selector styled as a dark nav pill row, matching the sidebar */
 section[data-testid="stSidebar"] div[role="radiogroup"]{background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:10px;padding:4px;gap:2px}
 section[data-testid="stSidebar"] div[role="radiogroup"] label{border-radius:7px;padding:6px 10px}
@@ -198,7 +235,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .kpi-card.negative .kpi-value{color:var(--red)}
 .kpi-card.positive .kpi-value{color:var(--green)}
 .kpi-delta{font-size:10.5px;margin-top:5px;font-weight:700}
-.kpi-delta.positive{color:var(--green)}.kpi-delta.negative{color:var(--red)}.kpi-delta.neutral{color:var(--muted)}
+.kpi-delta.positive{color:var(--green-strong)}.kpi-delta.negative{color:var(--red)}.kpi-delta.neutral{color:var(--muted)}
 
 /* ===== Decision strips / trend lines ===== */
 .decision-strip{margin:10px 0 16px;padding:12px 15px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);color:var(--text);box-shadow:var(--shadow-sm);font-size:13px}
@@ -229,7 +266,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .decision-panel-title{font-weight:800;color:var(--text);font-size:13px}
 .decision-panel-subtitle{font-size:11.5px;color:var(--muted);margin-top:3px}
 .action-row{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border-bottom:1px solid var(--line-soft);font-size:12.5px;line-height:1.5}
-.action-number{width:24px;height:24px;border-radius:7px;background:var(--blue-soft);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:800;flex:0 0 24px}
+.action-number{width:24px;height:24px;border-radius:7px;background:var(--blue-soft);color:var(--blue-strong);display:flex;align-items:center;justify-content:center;font-weight:800;flex:0 0 24px}
 .action-row b{color:var(--text)}
 
 /* ===== Chart shells ===== */
@@ -255,16 +292,49 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .stTabs [data-baseweb="tab-highlight"]{display:none!important}
 .stTabs [data-baseweb="tab-border"]{display:none!important}
 
-/* ===== Buttons: quiet by default, only primary CTAs carry visual weight ===== */
+/* Pestañas anidadas (una barra de pestañas que vive DENTRO de otra, p. ej.
+   "🏠 Inicio/Asistente IA/Datos..." dentro de "📋 General") se ven más
+   livianas que la barra de nivel superior — antes ambas usaban el mismo
+   estilo (píldora rellena + gradiente rojo), así que dos filas de pestañas
+   apiladas se veían como dos elecciones de igual peso y no quedaba claro
+   cuál era la sección y cuál la página dentro de ella. El selector
+   ".stTabs .stTabs" alcanza cualquier nivel anidado sin tocar el Python de
+   grouped_nav()/named_tabs() — es "una barra de pestañas dentro de otra",
+   pase lo que pase cuántos niveles haya. */
+.stTabs .stTabs [data-baseweb="tab-list"]{
+  background:transparent;border:none;box-shadow:none;border-radius:0;
+  padding:0 0 2px;gap:20px;border-bottom:1px solid var(--line);
+}
+.stTabs .stTabs [data-baseweb="tab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650}
+.stTabs .stTabs [data-baseweb="tab"]:hover{background:transparent;color:var(--blue-strong)}
+.stTabs .stTabs [aria-selected="true"]{
+  background:transparent!important;box-shadow:none!important;color:var(--text)!important;
+  border-bottom:2px solid var(--blue)!important;
+}
+.stTabs .stTabs [aria-selected="true"] p{color:var(--text)!important;font-weight:800!important}
+
+/* ===== Buttons: quiet by default, only primary CTAs carry visual weight.
+   Border uses --soft (not the fainter --line used for dividers/cards) so a
+   secondary button always reads as a button against its own panel-colored
+   background, in both themes — not just on hover. ===== */
 .stButton>button,[data-testid="stDownloadButton"] button,[data-testid="stFormSubmitButton"] button{
   min-height:40px;padding:0 18px;background:var(--panel);color:var(--muted);
-  border:1px solid var(--line);border-radius:11px;font-weight:650;font-size:13.5px;
+  border:1px solid var(--soft);border-radius:11px;font-weight:650;font-size:13.5px;
   box-shadow:none;transition:border-color .12s ease,color .12s ease,background .12s ease,transform .08s ease;
 }
 .stButton>button:hover,[data-testid="stDownloadButton"] button:hover,[data-testid="stFormSubmitButton"] button:hover{
-  border-color:var(--blue);color:var(--blue);background:var(--blue-soft);
+  border-color:var(--blue);color:var(--blue-strong);background:var(--blue-soft);
 }
 .stButton>button:active,[data-testid="stDownloadButton"] button:active{transform:scale(.98)}
+/* Pressed state for the plain/secondary and form-submit buttons — explicit
+   (not just inherited via :hover) so a touch tap without a hover state
+   still shows a clear "this was clicked" color, not just the scale. The
+   download button keeps its own hover-driven solid-blue treatment below,
+   so it's excluded here to avoid the click briefly dimming it back to the
+   soft tint. */
+.stButton>button:active,[data-testid="stFormSubmitButton"] button:active{
+  border-color:var(--blue);color:var(--blue-strong);background:var(--blue-soft);
+}
 button[kind="primary"],[data-testid="stDownloadButton"] button[kind="primary"]{
   background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;border-color:#e4002b!important;color:#fff!important;
   font-weight:750!important;box-shadow:0 4px 12px rgba(228,0,43,.2)!important;
@@ -275,10 +345,10 @@ button[kind="primary"]:hover,[data-testid="stDownloadButton"] button[kind="prima
 /* Secondary/download buttons that are still an important action (exports)
    get a subtle brand-tinted outline so they read as "do this" without
    competing with the one true primary action on screen. */
-[data-testid="stDownloadButton"] button{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
+[data-testid="stDownloadButton"] button{border-color:var(--blue);color:var(--blue-strong);background:var(--blue-soft)}
 [data-testid="stDownloadButton"] button:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
-section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button{background:var(--sidebar-panel);color:#ff8f97;border-color:rgba(228,0,43,.4)}
-section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button:hover{background:rgba(228,0,43,.18);color:#ffffff}
+section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button{background:var(--sidebar-panel);color:var(--blue);border-color:rgba(228,0,43,.4)}
+section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button:hover{background:rgba(228,0,43,.18);color:var(--sidebar-text-strong)}
 
 /* ===== Native inputs: keep readable on a light surface, with a real visible border ===== */
 input,textarea{color:var(--text)!important;background:var(--panel)!important;border:1px solid var(--line)!important;transition:border-color .15s ease,box-shadow .15s ease}
@@ -289,7 +359,7 @@ input::placeholder,textarea::placeholder{color:var(--soft)!important;opacity:1!i
 [data-baseweb="popover"]{background:var(--panel)!important;border:1px solid var(--line)!important;box-shadow:var(--shadow-md)!important}
 [data-baseweb="menu"]{background:var(--panel)!important}
 .stMultiSelect [data-baseweb="tag"]{background:var(--blue-soft)!important}
-.stMultiSelect [data-baseweb="tag"] span{color:var(--blue)!important}
+.stMultiSelect [data-baseweb="tag"] span{color:var(--blue-strong)!important}
 label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 [data-testid="stMarkdownContainer"] p,[data-testid="stMarkdownContainer"] li{color:inherit}
 [data-testid="stFileUploaderDropzone"]{background:var(--panel-2)!important;border:1px dashed var(--line)!important;border-radius:var(--radius-md)!important}
@@ -318,8 +388,8 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 .executive-detail{font-size:12.5px;color:var(--muted);margin-top:7px;line-height:1.5}
 .mini-list{padding:9px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--text);font-weight:700}
 .mini-positive,.mini-warning{margin-top:6px;padding:9px 11px;border-radius:var(--radius-sm);font-size:12.5px}
-.mini-positive{color:#0f7a4e;background:var(--green-soft);border-left:3px solid var(--green)}
-.mini-warning{color:#a15c04;background:var(--amber-soft);border-left:3px solid var(--amber)}
+.mini-positive{color:var(--green-strong);background:var(--green-soft);border-left:3px solid var(--green)}
+.mini-warning{color:var(--amber-strong);background:var(--amber-soft);border-left:3px solid var(--amber)}
 .alert-row{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow-sm)}
 .alert-row.warning{border-left:4px solid var(--amber)}
 .alert-row.positive{border-left:4px solid var(--green)}

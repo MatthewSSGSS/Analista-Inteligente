@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
+import streamlit as st
 
+@st.cache_data(show_spinner=False, max_entries=24, ttl=1800)
 def detect(df,schema):
     rows=[]
     for c in schema["metrics"]:

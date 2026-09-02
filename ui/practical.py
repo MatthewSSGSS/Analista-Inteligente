@@ -66,7 +66,7 @@ def _inject_css():
           padding:16px 19px;margin-top:12px;box-shadow:var(--shadow-md);animation:popIn .32s ease both}
         .answer-card.ambiguo{border-left-color:var(--amber);background:var(--amber-soft)}
         .answer-card .tag{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--blue);text-transform:uppercase;display:flex;align-items:center;gap:6px}
-        .answer-card.ambiguo .tag{color:#a86000}
+        .answer-card.ambiguo .tag{color:var(--amber-strong)}
         .answer-card .q{color:var(--muted);font-weight:600;font-size:11px;text-transform:none;letter-spacing:0}
         .answer-card .text{font-size:15.5px;margin-top:8px;line-height:1.55;color:var(--text);font-weight:500}
 

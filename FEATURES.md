@@ -271,8 +271,20 @@ vigente hoy:
   ignorando `theme_mode` — revisado y confirmado **intencional**, no un bug: sus propios textos
   (`.login-hero h1/p`) usan grises fijos coherentes con ese mismo fondo fijo, nunca `var(--text)`;
   es una pantalla de splash con identidad de marca propia, igual que el panel `.landing-how` (fondo
-  `var(--sidebar-bg)`, siempre oscuro) o el sidebar (siempre oscuro). El toggle de tema solo es
-  visible dentro de la app ya autenticada, así que esta pantalla nunca necesita reaccionar a él.
+  `#0d1119` fijo, literal, deliberadamente desacoplado de cualquier token de tema — ver el punto
+  siguiente). El toggle de tema solo es visible dentro de la app ya autenticada, así que esta
+  pantalla nunca necesita reaccionar a él.
+- **El sidebar ya no es "siempre oscuro"** (corrección posterior a esta misma tarea de QA, a
+  pedido explícito del usuario): `--sidebar-bg/--sidebar-panel/--sidebar-line/--sidebar-text/
+  --sidebar-muted` pasaron de ser valores fijos a variar con `dark` igual que el resto de la
+  paleta (nuevo helper `_sidebar_vars(dark)` en `ui/styles/theme.py`, más un token nuevo
+  `--sidebar-text-strong` para los pocos elementos —encabezados, inputs— que antes usaban blanco
+  fijo). Efecto colateral detectado y corregido en el mismo cambio: `ui/landing.py`'s
+  `.landing-how` reutilizaba `var(--sidebar-bg)` únicamente porque era un valor oscuro fijo
+  conveniente, con hijos de texto blanco fijo — al volverse `--sidebar-bg` reactivo al tema, ese
+  panel se habría vuelto ilegible en Light Mode; se desacopló dándole su propio literal
+  `#0d1119`, preservando su apariencia exacta en ambos modos (siempre fue, y sigue siendo, un
+  panel oscuro fijo, ahora ya no accidentalmente atado al sidebar).
 - **`BYPASS_AUTH_TEMPORARY` sigue en `True`** ([ui/login.py:17](ui/login.py#L17)) — sin cambios,
   fuera de alcance de esta tarea, tal como advierte el punto 6 de arriba.
 - **Barrido de claves de widget (`key=`) en todo el proyecto**: sin colisiones reales. Las dos

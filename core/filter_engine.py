@@ -1,5 +1,6 @@
 import re
 import pandas as pd
+import streamlit as st
 
 def apply_filters(df,filters):
     out=df
@@ -15,6 +16,7 @@ def apply_filters(df,filters):
         elif op=="lte": out=out[pd.to_numeric(s,errors="coerce")<=float(v)]
     return out
 
+@st.cache_data(show_spinner=False, max_entries=24, ttl=1800)
 def natural_filter(df,q,schema):
     if not q.strip(): return df,{"filters":{},"explanations":[]}
     filters={}; explanations=[]
@@ -34,6 +36,7 @@ def natural_filter(df,q,schema):
     mask=df.astype(str).apply(lambda col:col.str.contains(q,case=False,na=False,regex=False)).any(axis=1)
     return df[mask],{"filters":{},"explanations":[f"búsqueda global: {q}"]}
 
+@st.cache_data(show_spinner=False, max_entries=24, ttl=1800)
 def cascading_options(df, columns, active_filters=None, limit=80):
     """Return valid options for each categorical filter using the other active filters."""
     active_filters = active_filters or {}

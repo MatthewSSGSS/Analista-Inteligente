@@ -54,6 +54,10 @@ def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict) -> None:
             f'· confianza {classification.get("confidence",0)*100:.0f}% · Herramientas activadas: {readable}.'
         )
         st.markdown(decision_strip(text, dot=True), unsafe_allow_html=True)
+        reason = classification.get("reason")
+        if reason:
+            with st.expander("¿Por qué este tipo?", expanded=False):
+                st.caption(reason)
 
     # ── Cómo moverse por la herramienta ────────────────────────────────────
     st.markdown(section_header("Recorrido rápido", eyebrow="CÓMO EMPEZAR", compact=True), unsafe_allow_html=True)

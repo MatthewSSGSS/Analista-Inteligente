@@ -55,11 +55,11 @@ def render_landing() -> bool:
         .landing-caps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;max-width:1180px;margin:34px auto 0}
         .landing-cap-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);
           padding:18px 18px 20px;box-shadow:var(--shadow-sm)}
-        .landing-cap-number{display:inline-block;font-size:11px;font-weight:800;color:var(--blue);
+        .landing-cap-number{display:inline-block;font-size:11px;font-weight:800;color:var(--blue-strong);
           background:var(--blue-soft);border-radius:999px;padding:3px 9px;margin-bottom:12px}
         .landing-cap-card h3{margin:0 0 6px;font-size:15.5px;font-weight:800;color:var(--text)}
         .landing-cap-card p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
-        .landing-how{max-width:1180px;margin:22px auto 0;background:var(--sidebar-bg);border-radius:var(--radius-lg);
+        .landing-how{max-width:1180px;margin:22px auto 0;background:#0d1119;border-radius:var(--radius-lg);
           padding:26px 28px 22px;box-shadow:var(--shadow-lg)}
         .landing-how-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#ff5b6c;text-transform:uppercase}
         .landing-how h2{margin:6px 0 18px;font-size:19px;font-weight:800;color:#fff}
