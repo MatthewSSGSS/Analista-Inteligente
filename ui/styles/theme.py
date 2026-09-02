@@ -162,6 +162,14 @@ html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid=
 # valor computado.
 _COMPONENTS_CSS_RAW = """
 <style>
+/* Entrada suave para las tarjetas del panel — ya existía este mismo
+   keyframe, pero repetido y solo local a login/mode_choice/practical
+   (pantallas de antes de entrar a la app); el dashboard en sí nunca lo
+   tenía. Una sola definición aquí, reutilizada por las tarjetas
+   compartidas de todo el panel — cada vez que se aplica un filtro o se
+   cambia de pestaña, las tarjetas nuevas entran con este mismo gesto en
+   vez de aparecer de golpe. */
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 [data-testid="stHeader"],[data-testid="stBottomBlockContainer"]{background:var(--bg)!important}
 .stApp{background:var(--bg);color:var(--text)}
 * {font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
@@ -244,7 +252,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    sobre un velo oscuro que SIEMPRE está ahí (con opacidad, no con
    var(--panel)) — funciona igual en Claro y Oscuro sin dos versiones. */
 .view-banner{position:relative;border-radius:var(--radius-lg);overflow:hidden;margin:4px 0 22px;
-  height:112px;background-size:cover;background-position:center;
+  height:112px;background-size:cover;background-position:center;animation:fadeUp .4s ease both;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.06),var(--glow-ring)}
 /* La foto sola no basta para que el texto se lea con una imagen tan
    detallada: el ojo pierde el trazo de las letras contra tanto ruido
@@ -263,7 +271,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white ===== */
 .kpi-card{position:relative;background:var(--card-solid);border:1px solid var(--line);border-left:4px solid var(--blue);
-  border-radius:12px;padding:14px 16px 14px 18px;min-height:92px;
+  border-radius:12px;padding:14px 16px 14px 18px;min-height:92px;animation:fadeUp .4s ease both;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring)}
@@ -271,6 +279,14 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .kpi-value{font-size:22px;font-weight:800;letter-spacing:-.01em;margin-top:9px;color:var(--text);font-variant-numeric:tabular-nums;font-family:'Sora','Inter',sans-serif}
 .kpi-card.negative .kpi-value{color:var(--red)}
 .kpi-card.positive .kpi-value{color:var(--green)}
+/* "Líder · X" (quién encabeza una categoría) es un tipo de dato distinto a
+   un total/promedio — antes se veía IGUAL a cualquier otra tarjeta (mismo
+   borde rojo, mismo texto negro), lo que hacía fácil confundir "esta es la
+   tarjeta que destaca a alguien" con "esta es solo una cifra más". Color
+   propio (morado, un tono ya definido en el tema pero sin uso hasta ahora)
+   para que se distinga de un vistazo. */
+.kpi-card.leader{border-left-color:var(--purple)}
+.kpi-card.leader .kpi-value{color:var(--purple)}
 .kpi-delta{font-size:10.5px;margin-top:5px;font-weight:700}
 .kpi-delta.positive{color:var(--green-strong)}.kpi-delta.negative{color:var(--red)}.kpi-delta.neutral{color:var(--muted)}
 
@@ -282,7 +298,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== Insight / finding cards ===== */
 .insight-card{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--radius-md);
-  padding:15px;margin:4px 0 8px;background:var(--card-solid);
+  padding:15px;margin:4px 0 8px;background:var(--card-solid);animation:fadeUp .4s ease both;
   min-height:88px;box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease}
 .insight-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring)}
@@ -316,7 +332,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   border:1px dashed var(--line);border-radius:var(--radius-md);background:var(--panel-2);
   color:var(--muted);font-size:12.5px;line-height:1.5}
 .empty-state .empty-icon{font-size:19px;flex:0 0 auto;opacity:.55}
-.chart-card{background:var(--card-solid);
+.chart-card{background:var(--card-solid);animation:fadeUp .4s ease both;
   border:1px solid var(--line);border-radius:var(--radius-lg);padding:15px 17px 8px;margin:6px 0 16px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 22px rgba(20,26,43,.06),var(--glow-ring);overflow:hidden;
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
@@ -481,7 +497,7 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 [data-testid="stMetricValue"]{color:var(--text)!important;font-size:22px!important;font-variant-numeric:tabular-nums}
 
 /* ===== Executive / alerts / why-changed / factors ===== */
-.executive-card{padding:19px 21px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:var(--shadow-md),var(--glow-ring);border-left:5px solid var(--blue);margin:4px 0 10px}
+.executive-card{padding:19px 21px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:var(--shadow-md),var(--glow-ring);border-left:5px solid var(--blue);margin:4px 0 10px;animation:fadeUp .4s ease both}
 .executive-card.positive{border-left-color:var(--green)}
 .executive-card.negative{border-left-color:var(--red)}
 .executive-status{font-size:10px;text-transform:uppercase;letter-spacing:.11em;font-weight:800;color:var(--soft)}
@@ -554,7 +570,7 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 .analysis-section-title .data-badge{align-self:center}
 
 /* ===== pbi-visual: chart card variant used in the analysis area ===== */
-.pbi-visual{background:var(--card-solid);
+.pbi-visual{background:var(--card-solid);animation:fadeUp .4s ease both;
   border:1px solid var(--line);border-radius:13px;padding:12px 13px 9px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
@@ -576,6 +592,14 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
  .analysis-toolbar-meta{justify-content:flex-start}
  .pbi-visual .visual-badge{display:none}
  .kpi-card{min-height:100px!important}
+}
+
+/* Quien tenga activado "reducir movimiento" a nivel de sistema operativo
+   no pidió ver nada moviéndose — ni las animaciones de entrada de arriba
+   ni ningún hover/transición de toda la hoja de estilos. Estándar de
+   accesibilidad, no algo específico de esta app. */
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
 </style>
 """

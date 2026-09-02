@@ -6,7 +6,7 @@ from core.tracking_engine import project_metric
 from core.dates import format_month_year
 from visualization.charts import trend, ranking, period_compare_bar, donut, histogram, scatter, metric_candidates, dimension_candidates, _label
 from ui.labels import clean_display_text
-from ui.dashboard import _fmt, _chart_insight, _display_kpi_value
+from ui.dashboard import _fmt, _chart_insight, _display_kpi_value, _kpi_style
 from ui.components.cards import kpi_card, insight_card, executive_headline, executive_signals
 from ui.components.charts import chart_card
 from ui.components.section import section_header, banner_header
@@ -50,10 +50,14 @@ def render_executive(df, schema, dashboard):
     # ya usa (comparación de layouts en Georeferenciación, Comparativa).
     main_col, side_col = two_column(gap="medium")
 
+    def _render_kpi(k):
+        label, tone, icon = _kpi_style(k, schema)
+        return kpi_card(label, _display_kpi_value(k), tone=tone, icon=icon)
+
     with main_col:
         kpis=dynamic_kpis(df,schema,dashboard)[:6]
         if kpis:
-            kpi_grid(kpis, render=lambda k: kpi_card(k.get("label","Indicador"), _display_kpi_value(k)), per_row=3)
+            kpi_grid(kpis, render=_render_kpi, per_row=3)
 
         metrics=metric_candidates(df,schema); dims=dimension_candidates(df,schema)
         m=metrics[0] if metrics else None; d=dims[0] if dims else None

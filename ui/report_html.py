@@ -68,6 +68,15 @@ def _kpi_value(k: dict) -> str:
     se mostraba con todos sus decimales en vez de '-2.5%'.
     """
     value = k.get("value")
+    if k.get("kind") == "leader":
+        # Para "Líder · X" el 'value' es el NOMBRE (ej. "Bogotá"), no un
+        # número — antes se mostraba solo ese nombre, sin el "· 61.7M" que
+        # sí llevaba la versión en pantalla: el informe exportado se veía
+        # con menos información que la propia app, no solo distinta.
+        raw = k.get("raw")
+        if isinstance(raw, (int, float, np.integer, np.floating)) and not isinstance(raw, bool):
+            return f"{value} · {_fmt(raw)}"
+        return str(value) if value is not None else "—"
     if isinstance(value, bool):
         return str(value)
     if isinstance(value, (int, float, np.integer, np.floating)):
@@ -75,6 +84,16 @@ def _kpi_value(k: dict) -> str:
             return f"{value:+.1f}%"
         return _fmt(value)
     return str(value) if value is not None else "—"
+
+
+def _kpi_label(k: dict, schema: dict) -> str:
+    """Etiqueta de una tarjeta KPI — "Líder · Ciudad" no decía de qué
+    métrica (¿ingresos? ¿unidades?); se agrega el nombre de la métrica,
+    igual criterio que la versión en pantalla (`ui/dashboard.py::_kpi_style`)."""
+    label = k.get("label", "Indicador")
+    if k.get("kind") == "leader" and k.get("metric"):
+        label = f"{label} · {_label(schema, k['metric'])}"
+    return label
 
 
 def _label(schema: dict, column: str) -> str:
@@ -248,7 +267,7 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     kpis = dashboard.get("kpis") or []
     kpi_html_all = []
     for k in kpis[:8]:
-        kpi_html_all.append(f"<div class='kpi'><div class='kpi-label'>{_esc(k.get('label','Indicador'))}</div><div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>")
+        kpi_html_all.append(f"<div class='kpi'><div class='kpi-label'>{_esc(_kpi_label(k, schema))}</div><div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>")
     kpi_html_top4 = "".join(kpi_html_all[:4])
 
     insights = dashboard.get("insights") or []
@@ -525,7 +544,7 @@ def build_workbook_html_report(workbook: dict) -> str:
 
         kpis = d.get("kpis") or []
         kpi_html_all = [
-            f"<div class='kpi'><div class='kpi-label'>{_esc(k.get('label','Indicador'))}</div><div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>"
+            f"<div class='kpi'><div class='kpi-label'>{_esc(_kpi_label(k, schema))}</div><div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>"
             for k in kpis[:6]
         ]
         kpi_html = "".join(kpi_html_all[:4])

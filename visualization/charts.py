@@ -596,6 +596,69 @@ def ranking(df, schema, metric=None, dimension=None, top_n=10, agg="Suma"):
     return _base(fig, max(330, 34 * len(x) + 100), show_xgrid=True)
 
 
+def heatmap(df, schema, metric=None, dimension=None, grain="Mes", agg="Suma", top_n=15):
+    """Mapa de calor · dimensión × periodo, coloreado por una métrica — para
+    ver de un vistazo dónde se concentra el valor, igual que un mapa de
+    calor de Excel (fila = categoría, columna = mes, color = intensidad).
+
+    Generalización de un patrón que ya existía, pero enterrado dentro de
+    `ui/dashboard.py::_individual_trend` (solo para las categorías elegidas
+    a mano en "Comparar personas"): esta versión no depende de una
+    selección previa — agrupa por la dimensión completa y se queda con las
+    `top_n` categorías de mayor valor, como ya hace `ranking()`.
+    """
+    dates = schema.get("dates", [])
+    dims = dimension_candidates(df, schema)
+    metrics = metric_candidates(df, schema)
+    if not dates or not dims or not metrics:
+        return None
+    d, c, m = dates[0], dimension or dims[0], metric or metrics[0]
+    if d not in df.columns or c not in df.columns or m not in df.columns:
+        return None
+    x = df[[d, c, m]].copy()
+    x[m] = numeric_series(x[m])
+    x = x.dropna(subset=[m])
+    if x.empty:
+        return None
+    p = _periodize(x, d, grain)
+    x = x.loc[p.index].copy()
+    x["_period"] = p["_period"]
+    x[c] = x[c].map(_clean_label)
+
+    # Se queda con las top_n categorías de mayor valor total, igual criterio
+    # que ranking() — un mapa de calor con 200 filas es ilegible, no útil.
+    totals = x.groupby(c)[m].sum().sort_values(ascending=False)
+    top_categories = totals.head(int(top_n)).index.tolist()
+    x = x[x[c].isin(top_categories)]
+    if x.empty:
+        return None
+
+    reducer = "mean" if agg == "Promedio" else "max" if agg == "Máximo" else "min" if agg == "Mínimo" else "sum"
+    grouped = x.groupby(["_period", c])[m].agg(reducer).reset_index()
+    pivot = grouped.pivot(index="_period", columns=c, values=m).reindex(columns=top_categories)
+    if pivot.empty:
+        return None
+
+    fmt = _number_format(grouped[m])
+    dark = _dark_mode()
+    # Misma rampa de marca (claro→rojo→oscuro) que ya usaba el heatmap de
+    # "Comparar personas" — en Oscuro se invierte el extremo claro para que
+    # "poco valor" no se confunda con "fondo de la tarjeta".
+    colorscale = (
+        [[0, "#2a1015"], [0.5, "#ff3b52"], [1, "#ffd9df"]] if dark
+        else [[0, "#fbe4e7"], [0.5, "#e4002b"], [1, "#4b0712"]]
+    )
+    fig = go.Figure(go.Heatmap(
+        z=pivot.values, x=pivot.columns.tolist(), y=pivot.index,
+        colorscale=colorscale,
+        colorbar=dict(title=_label(schema, m), tickfont=dict(color=chart_muted_color())),
+        hovertemplate="<b>%{y|%b %Y}</b><br>%{x}<br>" + _label(schema, m) + ": <b>%{z:" + fmt + "}</b><extra></extra>",
+    ))
+    fig.update_xaxes(title=_label(schema, c), tickangle=-30, showgrid=False)
+    fig.update_yaxes(title="Periodo", tickformat="%b %Y", showgrid=False)
+    return _base(fig, max(360, 30 * len(pivot) + 130), show_xgrid=False)
+
+
 def donut(df, schema, metric=None, dimension=None, top_n=6):
     """Participación adaptativa: evita donas ilegibles cuando hay muchas categorías.
 

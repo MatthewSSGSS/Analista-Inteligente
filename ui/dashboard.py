@@ -18,6 +18,7 @@ import plotly.express as px
 from ui.person_profile import render_person_profile
 from ui.components.cards import kpi_card, insight_card, executive_headline as _shared_executive_headline, executive_signals as _shared_executive_signals
 from ui.components.charts import chart_card as _shared_chart_card
+from ui.components.section import banner_header
 from ui.layouts.columns import kpi_grid as _kpi_grid_layout, two_column
 from ui.layouts.tabs import named_tabs
 
@@ -54,6 +55,25 @@ def _display_kpi_value(k):
     return str(value)
 
 
+def _kpi_style(k, schema=None):
+    """(etiqueta, tono, ícono) para una tarjeta KPI. Antes "Líder · Ciudad"
+    con valor "Bogotá · 61.7M" no decía de qué eran esos 61.7M — ingresos,
+    unidades, lo que fuera — y se veía exactamente igual (mismo borde rojo,
+    mismo texto) que cualquier total o promedio, aunque es un tipo de dato
+    distinto (quién encabeza, no cuánto suma todo). Con el schema a mano se
+    agrega el nombre de la métrica a la etiqueta, y se le da un color/ícono
+    propios (morado + 🏆) para que se reconozca de un vistazo."""
+    label = k.get("label", "Indicador")
+    if k.get("kind") == "leader":
+        if schema is not None and k.get("metric"):
+            label = f"{label} · {_label(schema, k['metric'])}"
+        return label, "leader", "🏆"
+    if k.get("kind") == "growth":
+        tone = "positive" if (k.get("value") or 0) >= 0 else "negative"
+        return label, tone, None
+    return label, "neutral", None
+
+
 def _universal_kpi_grid(df, schema, dashboard):
     kpis=dynamic_kpis(df,schema,dashboard)
     if not kpis: return
@@ -61,13 +81,16 @@ def _universal_kpi_grid(df, schema, dashboard):
     for i,k in enumerate(kpis[:4]):
         with cols[i]:
             delta=None
+            label,tone,icon=_kpi_style(k,schema)
             if k.get("kind")=="growth":
                 delta="Mejora reciente" if k["value"]>=0 else "Caída reciente"
-            st.markdown(_card(k.get("label","Indicador"),_display_kpi_value(k),delta,"positive" if k.get("kind")=="growth" and k["value"]>=0 else "negative" if k.get("kind")=="growth" else "neutral"),unsafe_allow_html=True)
+            st.markdown(_card(label,_display_kpi_value(k),delta,tone,icon),unsafe_allow_html=True)
     if len(kpis)>4:
         cols=st.columns(min(4,len(kpis)-4))
         for i,k in enumerate(kpis[4:8]):
-            with cols[i]: st.markdown(_card(k.get("label","Indicador"),_display_kpi_value(k),None,"neutral"),unsafe_allow_html=True)
+            with cols[i]:
+                label,tone,icon=_kpi_style(k,schema)
+                st.markdown(_card(label,_display_kpi_value(k),None,tone,icon),unsafe_allow_html=True)
 
 
 def _drilldown_panel(df,schema,metric,dimension):
@@ -1079,7 +1102,7 @@ def render_dashboard(df, dashboard):
     ex = dashboard.get("executive", {})
 
     # ── Vista general: lo primero que se ve, sin necesidad de desplegar nada ──
-    st.markdown('<div class="section-intro"><div><span class="eyebrow">RESUMEN EJECUTIVO</span><h2>Qué está pasando</h2></div><span class="data-badge">Todo recalculado con los filtros actuales</span></div>', unsafe_allow_html=True)
+    st.markdown(banner_header("Qué está pasando", "Descripción completa · todo recalculado con los filtros actuales.", "datos1.jpg"), unsafe_allow_html=True)
     st.caption(dashboard["summary"])
 
     # Perfil individual integrado: se abre dentro del mismo dashboard.
