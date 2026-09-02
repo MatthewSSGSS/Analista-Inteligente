@@ -4,7 +4,7 @@ import plotly.express as px
 import streamlit as st
 from ui.labels import pretty_technical
 from ui.components.cards import kpi_card, insight_card
-from ui.components.section import section_header
+from ui.components.section import section_header, banner_header
 from visualization.charts import chart_text_color
 from core.comparison_engine import (
     common_dimension_map,
@@ -115,7 +115,7 @@ def _direct_comparison_chart(metrics, first_label, last_label):
 
 
 def render_comparison(result):
-    st.markdown(section_header("Qué cambió entre los archivos", eyebrow="COMPARATIVA", badge="Último vs. anterior · primero vs. último"), unsafe_allow_html=True)
+    st.markdown(banner_header("Qué cambió entre los archivos", "Último vs. anterior · primero vs. último.", "datos1.jpg"), unsafe_allow_html=True)
     files = result["files"]
     st.caption(" · ".join(f"{i+1}. {f['label']}" for i, f in enumerate(files)))
     _render_filter_panel()

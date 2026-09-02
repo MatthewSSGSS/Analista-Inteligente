@@ -7,13 +7,13 @@ from ui.labels import clean_display_text
 from ui.dashboard import _fmt, _chart_insight, _display_kpi_value
 from ui.components.cards import kpi_card, insight_card, executive_headline, executive_signals
 from ui.components.charts import chart_card
-from ui.components.section import section_header
+from ui.components.section import section_header, banner_header
 from ui.layouts.columns import two_column, kpi_grid
 from ui.person_profile import render_person_profile
 
 
 def render_executive(df, schema, dashboard):
-    st.markdown(section_header("Resumen ejecutivo", eyebrow="DIRECCIÓN", subtitle="Lectura compacta para decidir rápido. El contenido se adapta al tipo de Excel detectado.", badge="Vista ejecutiva"), unsafe_allow_html=True)
+    st.markdown(banner_header("Resumen ejecutivo", "Vista ejecutiva · lectura compacta para decidir rápido. El contenido se adapta al tipo de Excel detectado.", "barras.jpg"), unsafe_allow_html=True)
 
     # ── Veredicto ejecutivo: lo primero que se lee, antes que cualquier KPI
     # o gráfico. dashboard["executive"] ya lo calcula core/executive.py

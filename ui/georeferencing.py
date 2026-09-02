@@ -9,7 +9,7 @@ import streamlit as st
 from core.geo_engine import geographic_summary
 from visualization.charts import metric_candidates, _label, _compact_number, chart_text_color
 from ui.components.charts import chart_card
-from ui.components.section import section_header
+from ui.components.section import banner_header
 
 
 def _fmt(v):
@@ -525,7 +525,7 @@ def render_georeferencing(df: pd.DataFrame, schema: dict):
     """Interactive geographic workspace: KPIs compactos, mapa como elemento
     principal a todo el ancho, y detalle/comparación organizados alrededor
     (antes/después) sin competir con él en tamaño."""
-    st.markdown(section_header("Georeferenciación", eyebrow="UBICACIÓN", badge="Mapa interactivo"), unsafe_allow_html=True)
+    st.markdown(banner_header("Georeferenciación", "Mapa interactivo · dónde está pasando cada cosa.", "mapa.jpg"), unsafe_allow_html=True)
     st.caption("Haz clic en un punto para abrir toda la información relacionada con esa ubicación.")
 
     # ── Controles compactos: métrica y estilo de mapa en la misma fila,

@@ -238,6 +238,21 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .eyebrow{display:none}
 .data-badge{font-size:10.5px;font-weight:700;color:var(--red);background:none;border:none;padding:0;box-shadow:none;text-transform:uppercase;letter-spacing:.05em}
 
+/* ===== View banner: encabezado de vista con foto (ui/components/section.py
+   :: banner_header) — usado en un puñado de vistas donde una de las 4
+   fotos de assets/images/ tiene sentido temático. El texto es blanco fijo
+   sobre un velo oscuro que SIEMPRE está ahí (con opacidad, no con
+   var(--panel)) — funciona igual en Claro y Oscuro sin dos versiones. */
+.view-banner{position:relative;border-radius:var(--radius-lg);overflow:hidden;margin:4px 0 22px;
+  height:112px;background-size:cover;background-position:center;
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.06),var(--glow-ring)}
+.view-banner:before{content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,rgba(9,12,18,.85) 0%,rgba(9,12,18,.45) 45%,rgba(9,12,18,.08) 75%)}
+.view-banner-content{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;justify-content:center;padding:0 26px}
+.view-banner h2{margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;color:#ffffff}
+.view-banner p{margin:5px 0 0;font-size:12px;color:rgba(255,255,255,.82);max-width:600px;line-height:1.5}
+@media(max-width:900px){.view-banner{height:130px}.view-banner:before{background:linear-gradient(180deg,rgba(9,12,18,.35) 0%,rgba(9,12,18,.88) 100%)}.view-banner-content{justify-content:flex-end;padding:0 18px 14px}}
+
 /* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white ===== */
 .kpi-card{position:relative;background:var(--card-solid);border:1px solid var(--line);border-left:4px solid var(--blue);
   border-radius:12px;padding:14px 16px 14px 18px;min-height:92px;
@@ -308,9 +323,15 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:var(--muted)!important;font-weight:700!important;font-size:13.5px;
   transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
   background:transparent;border:1px solid transparent}
-.stTabs [data-baseweb="tab"] p{color:inherit!important;font-weight:inherit!important}
-.stTabs [data-baseweb="tab"]:hover{background:var(--panel);color:var(--text)!important;border-color:var(--line);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
-.stTabs [data-baseweb="tab"]:hover p{color:var(--text)!important}
+/* El color no se deja solo en `inherit` sobre <p> — se repite explícito en
+   TODOS los descendientes (`*`), porque no hay forma de confirmar en este
+   entorno qué elemento exacto envuelve el texto en cada versión de
+   BaseWeb, y un solo selector que no acierte deja el texto invisible en
+   Oscuro sin ningún aviso. Esto es más ancho de lo estrictamente
+   necesario a propósito — mejor una regla de más que un texto ilegible. */
+.stTabs [data-baseweb="tab"],.stTabs [data-baseweb="tab"] *{color:var(--muted)!important;font-weight:700!important}
+.stTabs [data-baseweb="tab"]:hover{background:var(--panel);border-color:var(--line);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.stTabs [data-baseweb="tab"]:hover,.stTabs [data-baseweb="tab"]:hover *{color:var(--text)!important}
 /* Pestaña seleccionada: no es un rectángulo rojo plano — el radial-gradient
    agrega un brillo/reflejo (como una píldora con volumen, no un color
    sólido) encima del degradado de marca, más el mismo --glow-ring que ya
@@ -325,7 +346,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   transform:translateY(-1px);
 }
 .stTabs [aria-selected="true"]:hover{box-shadow:0 6px 18px rgba(228,0,43,.4),var(--glow-ring)!important}
-.stTabs [aria-selected="true"] p{color:#ffffff!important;font-weight:800!important}
+.stTabs [aria-selected="true"],.stTabs [aria-selected="true"] *{color:#ffffff!important;font-weight:800!important}
 .stTabs [data-baseweb="tab-highlight"]{display:none!important}
 .stTabs [data-baseweb="tab-border"]{display:none!important}
 
@@ -348,13 +369,12 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   padding:0 0 2px;gap:20px;border-bottom:1px solid var(--line);
 }
 .stTabs .stTabs [data-baseweb="tab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650}
-.stTabs .stTabs [data-baseweb="tab"]:hover{background:transparent;color:var(--blue-strong)!important}
-.stTabs .stTabs [data-baseweb="tab"]:hover p{color:var(--blue-strong)!important}
+.stTabs .stTabs [data-baseweb="tab"]:hover,.stTabs .stTabs [data-baseweb="tab"]:hover *{background:transparent;color:var(--blue-strong)!important}
 .stTabs .stTabs [aria-selected="true"]{
-  background:transparent!important;box-shadow:none!important;color:var(--text)!important;
+  background:transparent!important;box-shadow:none!important;
   border-bottom:2px solid var(--blue)!important;
 }
-.stTabs .stTabs [aria-selected="true"] p{color:var(--text)!important;font-weight:800!important}
+.stTabs .stTabs [aria-selected="true"],.stTabs .stTabs [aria-selected="true"] *{color:var(--text)!important;font-weight:800!important}
 
 /* ===== Buttons: quiet by default, only primary CTAs carry visual weight.
    Border uses --soft (not the fainter --line used for dividers/cards) so a
