@@ -196,10 +196,12 @@ section[data-testid="stSidebar"] [data-baseweb="menu"]{background:var(--sidebar-
 section[data-testid="stSidebar"] [data-baseweb="menu"] li:hover{background:rgba(228,0,43,.18)!important}
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"]{background:var(--sidebar-panel)!important;border:1px dashed var(--sidebar-line)!important;border-radius:var(--radius-md)!important}
 section[data-testid="stSidebar"] .stFileUploader small{color:var(--sidebar-muted)!important}
-section[data-testid="stSidebar"] .stButton>button{background:var(--sidebar-panel);color:var(--sidebar-text-strong);border:1px solid var(--sidebar-muted);border-radius:var(--radius-sm)}
-section[data-testid="stSidebar"] .stButton>button:hover{border-color:var(--blue);color:var(--blue-strong);background:rgba(228,0,43,.12)}
-section[data-testid="stSidebar"] .stButton>button:active{border-color:var(--blue);color:var(--blue-strong);background:rgba(228,0,43,.18)}
-section[data-testid="stSidebar"] button[kind="primary"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;border-color:#c8001f!important;color:#fff!important}
+section[data-testid="stSidebar"] .stButton>button{background:var(--sidebar-panel);color:var(--sidebar-text-strong);border:1px solid var(--sidebar-muted);border-radius:var(--radius-sm);transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease,color .12s ease,background .12s ease}
+section[data-testid="stSidebar"] .stButton>button:hover{border-color:var(--blue);color:var(--blue-strong);background:rgba(228,0,43,.12);transform:translateY(-1px);box-shadow:0 4px 12px rgba(228,0,43,.18)}
+section[data-testid="stSidebar"] .stButton>button:active{border-color:var(--blue);color:var(--blue-strong);background:rgba(228,0,43,.18);transform:translateY(0) scale(.98)}
+section[data-testid="stSidebar"] button[kind="primary"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;border-color:#c8001f!important;color:#fff!important;transition:transform .12s ease,box-shadow .12s ease!important}
+section[data-testid="stSidebar"] button[kind="primary"]:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(228,0,43,.3)!important}
+section[data-testid="stSidebar"] button[kind="primary"]:active{transform:translateY(0) scale(.98)!important}
 section[data-testid="stSidebar"] [data-testid="stExpander"]{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important}
 section[data-testid="stSidebar"] [data-testid="stExpander"] summary{background:var(--sidebar-panel)!important;color:var(--sidebar-text-strong)!important}
 section[data-testid="stSidebar"] [data-testid="stExpander"] summary:hover{color:var(--blue)!important}
@@ -294,12 +296,35 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .chart-subtitle{font-size:11px;color:var(--muted);margin-top:3px}
 .stPlotlyChart{margin-top:-3px}
 
-/* ===== Tabs ===== */
-.stTabs [data-baseweb="tab-list"]{gap:6px;background:var(--panel-2);border:1px solid var(--line);padding:6px;border-radius:14px;box-shadow:var(--shadow-sm);overflow-x:auto}
-.stTabs [data-baseweb="tab"]{height:40px;border-radius:10px;padding:0 16px;color:var(--muted);font-weight:700;font-size:13.5px;transition:.15s ease;background:transparent}
-.stTabs [data-baseweb="tab"] p{color:inherit;font-weight:inherit}
-.stTabs [data-baseweb="tab"]:hover{background:var(--panel);color:var(--text)}
-.stTabs [aria-selected="true"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;color:#ffffff!important;box-shadow:0 3px 10px rgba(228,0,43,.3)!important}
+/* ===== Tabs =====
+   El texto de la pestaña INACTIVA necesita !important: BaseWeb trae su
+   propio color por defecto con suficiente peso como para ganarle a esta
+   regla sin él. En Modo Claro ese gris por defecto igual se alcanza a
+   leer sobre blanco (por eso el bug no se notaba ahí), pero sobre el
+   fondo oscuro de Modo Oscuro queda casi invisible — la pestaña
+   seleccionada (abajo) ya tenía !important desde el principio; a esta
+   le faltaba. */
+.stTabs [data-baseweb="tab-list"]{gap:6px;background:var(--panel-2);border:1px solid var(--line);padding:6px;border-radius:999px;box-shadow:var(--shadow-sm);overflow-x:auto}
+.stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:var(--muted)!important;font-weight:700!important;font-size:13.5px;
+  transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
+  background:transparent;border:1px solid transparent}
+.stTabs [data-baseweb="tab"] p{color:inherit!important;font-weight:inherit!important}
+.stTabs [data-baseweb="tab"]:hover{background:var(--panel);color:var(--text)!important;border-color:var(--line);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.stTabs [data-baseweb="tab"]:hover p{color:var(--text)!important}
+/* Pestaña seleccionada: no es un rectángulo rojo plano — el radial-gradient
+   agrega un brillo/reflejo (como una píldora con volumen, no un color
+   sólido) encima del degradado de marca, más el mismo --glow-ring que ya
+   usan las tarjetas y los botones, para que se sienta parte del mismo
+   lenguaje visual en vez de un elemento aparte. */
+.stTabs [aria-selected="true"]{
+  background:
+    radial-gradient(circle at 28% 22%,rgba(255,255,255,.4),transparent 55%),
+    linear-gradient(180deg,#ff3b4e,#e4002b)!important;
+  border-color:transparent!important;color:#ffffff!important;
+  box-shadow:0 4px 14px rgba(228,0,43,.35),var(--glow-ring)!important;
+  transform:translateY(-1px);
+}
+.stTabs [aria-selected="true"]:hover{box-shadow:0 6px 18px rgba(228,0,43,.4),var(--glow-ring)!important}
 .stTabs [aria-selected="true"] p{color:#ffffff!important;font-weight:800!important}
 .stTabs [data-baseweb="tab-highlight"]{display:none!important}
 .stTabs [data-baseweb="tab-border"]{display:none!important}
@@ -323,7 +348,8 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   padding:0 0 2px;gap:20px;border-bottom:1px solid var(--line);
 }
 .stTabs .stTabs [data-baseweb="tab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650}
-.stTabs .stTabs [data-baseweb="tab"]:hover{background:transparent;color:var(--blue-strong)}
+.stTabs .stTabs [data-baseweb="tab"]:hover{background:transparent;color:var(--blue-strong)!important}
+.stTabs .stTabs [data-baseweb="tab"]:hover p{color:var(--blue-strong)!important}
 .stTabs .stTabs [aria-selected="true"]{
   background:transparent!important;box-shadow:none!important;color:var(--text)!important;
   border-bottom:2px solid var(--blue)!important;
@@ -333,16 +359,22 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 /* ===== Buttons: quiet by default, only primary CTAs carry visual weight.
    Border uses --soft (not the fainter --line used for dividers/cards) so a
    secondary button always reads as a button against its own panel-colored
-   background, in both themes — not just on hover. ===== */
+   background, in both themes — not just on hover. Every button now has a
+   little real depth at rest (a soft shadow, not "box-shadow:none" like
+   before) plus a lift-on-hover/press-on-active motion — the same
+   language the KPI/chart cards already use (--glow-ring), so a button
+   doesn't feel like a flatter, older element sitting next to them. */
 .stButton>button,[data-testid="stDownloadButton"] button,[data-testid="stFormSubmitButton"] button{
   min-height:40px;padding:0 18px;background:var(--panel);color:var(--muted);
   border:1px solid var(--soft);border-radius:11px;font-weight:650;font-size:13.5px;
-  box-shadow:none;transition:border-color .12s ease,color .12s ease,background .12s ease,transform .08s ease;
+  box-shadow:0 1px 2px rgba(20,26,43,.05),0 2px 6px rgba(20,26,43,.04);
+  transition:border-color .12s ease,color .12s ease,background .12s ease,transform .12s ease,box-shadow .12s ease;
 }
 .stButton>button:hover,[data-testid="stDownloadButton"] button:hover,[data-testid="stFormSubmitButton"] button:hover{
   border-color:var(--blue);color:var(--blue-strong);background:var(--blue-soft);
+  transform:translateY(-1px);box-shadow:0 6px 14px rgba(20,26,43,.09),var(--glow-ring);
 }
-.stButton>button:active,[data-testid="stDownloadButton"] button:active{transform:scale(.98)}
+.stButton>button:active,[data-testid="stDownloadButton"] button:active{transform:translateY(0) scale(.98)}
 /* Pressed state for the plain/secondary and form-submit buttons — explicit
    (not just inherited via :hover) so a touch tap without a hover state
    still shows a clear "this was clicked" color, not just the scale. The
@@ -354,18 +386,21 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 }
 button[kind="primary"],[data-testid="stDownloadButton"] button[kind="primary"]{
   background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;border-color:#e4002b!important;color:#fff!important;
-  font-weight:750!important;box-shadow:0 4px 12px rgba(228,0,43,.2)!important;
+  font-weight:750!important;box-shadow:0 4px 12px rgba(228,0,43,.25),var(--glow-ring)!important;
+  transition:transform .12s ease,box-shadow .12s ease,background .12s ease!important;
 }
 button[kind="primary"]:hover,[data-testid="stDownloadButton"] button[kind="primary"]:hover{
-  background:linear-gradient(180deg,#ff5464,#e4002b)!important;color:#fff!important;box-shadow:0 6px 16px rgba(228,0,43,.28)!important;
+  background:linear-gradient(180deg,#ff5464,#e4002b)!important;color:#fff!important;
+  transform:translateY(-1px);box-shadow:0 8px 20px rgba(228,0,43,.32),var(--glow-ring)!important;
 }
+button[kind="primary"]:active,[data-testid="stDownloadButton"] button[kind="primary"]:active{transform:translateY(0) scale(.98)!important}
 /* Secondary/download buttons that are still an important action (exports)
    get a subtle brand-tinted outline so they read as "do this" without
    competing with the one true primary action on screen. */
-[data-testid="stDownloadButton"] button{border-color:var(--blue);color:var(--blue-strong);background:var(--blue-soft)}
-[data-testid="stDownloadButton"] button:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
+[data-testid="stDownloadButton"] button{border-color:var(--blue);color:var(--blue-strong);background:var(--blue-soft);box-shadow:0 1px 2px rgba(20,26,43,.05),0 2px 8px rgba(228,0,43,.1)}
+[data-testid="stDownloadButton"] button:hover{background:var(--blue);color:#fff;border-color:var(--blue);transform:translateY(-1px);box-shadow:0 6px 16px rgba(228,0,43,.22),var(--glow-ring)}
 section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button{background:var(--sidebar-panel);color:var(--blue);border-color:rgba(228,0,43,.4)}
-section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button:hover{background:rgba(228,0,43,.18);color:var(--sidebar-text-strong)}
+section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button:hover{background:rgba(228,0,43,.18);color:var(--sidebar-text-strong);transform:translateY(-1px)}
 
 /* ===== Native inputs: keep readable on a light surface, with a real visible border ===== */
 input,textarea{color:var(--text)!important;background:var(--panel)!important;border:1px solid var(--line)!important;transition:border-color .15s ease,box-shadow .15s ease}
@@ -373,8 +408,21 @@ input:focus,textarea:focus{border-color:rgba(228,0,43,.45)!important;box-shadow:
 input::placeholder,textarea::placeholder{color:var(--soft)!important;opacity:1!important}
 [data-baseweb="select"]>div{background:var(--panel)!important;border:1px solid var(--line)!important;color:var(--text)!important;border-radius:9px!important}
 [data-baseweb="select"] *{color:var(--text)!important}
-[data-baseweb="popover"]{background:var(--panel)!important;border:1px solid var(--line)!important;box-shadow:var(--shadow-md)!important}
-[data-baseweb="menu"]{background:var(--panel)!important}
+/* El desplegable de opciones (selectbox/multiselect) se abre en un
+   "portal": React lo saca del árbol normal del documento y lo cuelga
+   aparte (típicamente de <body>), así que NO es descendiente de
+   [data-baseweb="select"] ni de section[data-testid="stSidebar"] aunque
+   visualmente aparezca pegado a ellos — las reglas de arriba (y las del
+   sidebar, más abajo) nunca lo alcanzan. Necesita sus propias reglas
+   globales, cubriendo varios nombres de contenedor porque BaseWeb no usa
+   siempre el mismo atributo para la lista de opciones entre versiones —
+   y `!important` en cada uno, porque BaseWeb trae su propio tema por
+   defecto (claro) con el peso suficiente para ganarle a una regla sin él;
+   sin esto, el desplegable se queda con su blanco de fábrica encima de
+   una app en Modo Oscuro, con texto que casi no se distingue. */
+[data-baseweb="popover"],[data-baseweb="menu"],ul[role="listbox"]{background:var(--panel)!important;border:1px solid var(--line)!important;box-shadow:var(--shadow-md)!important}
+[data-baseweb="popover"] *,[data-baseweb="menu"] *,ul[role="listbox"] *{color:var(--text)!important;background:transparent!important}
+[data-baseweb="menu"] li:hover,li[role="option"]:hover{background:var(--panel-2)!important}
 .stMultiSelect [data-baseweb="tag"]{background:var(--blue-soft)!important}
 .stMultiSelect [data-baseweb="tag"] span{color:var(--blue-strong)!important}
 label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
