@@ -53,7 +53,17 @@ def _theme_vars(dark: bool) -> str:
     contraste real medido (WCAG) cae a ~4.0–4.3:1 en ambos temas —
     perceptible sobre todo en Modo Oscuro. `--*-strong` reutiliza tonos que
     ya existían en algún lugar del CSS (nunca colores inventados) elegidos
-    para que ese mismo texto llegue a ≥4.5:1."""
+    para que ese mismo texto llegue a ≥4.5:1.
+
+    `--glow-ring` es un tercer valor de `box-shadow` (se añade con una coma
+    al final del que ya tenía cada tarjeta, nunca lo reemplaza) para las
+    tarjetas más importantes de leer primero — KPI, gráfico, ejecutivo,
+    hallazgo — a pedido de imitar una referencia visual oscura con bordes
+    con resplandor. En Oscuro es un halo de color real (así se ve la
+    referencia); en Claro es solo un anillo de 1px muy sutil — un glow
+    tan fuerte como el de Oscuro sobre fondo blanco se ve sucio, no
+    "vivo", así que se afinó por separado en vez de copiar el mismo
+    valor en los dos temas."""
     if dark:
         return """
   --bg:#0d1117;--panel:#161b22;--panel-2:#1c2129;--panel-3:#222833;
@@ -64,6 +74,7 @@ def _theme_vars(dark: bool) -> str:
   --amber:#f0a63e;--amber-soft:rgba(240,166,62,.14);--amber-strong:#f0a63e;
   --red:#ff5570;--red-soft:rgba(255,85,112,.14);--purple:#9b8cf2;--purple-soft:rgba(155,140,242,.14);
   --card-solid:#161b22;
+  --glow-ring:0 0 0 1px rgba(255,59,82,.32),0 0 26px rgba(255,59,82,.24);
 """
     return """
   --bg:#ffffff;--panel:#ffffff;--panel-2:#f7f9fc;--panel-3:#eef2f8;
@@ -74,6 +85,7 @@ def _theme_vars(dark: bool) -> str:
   --amber:#c8790a;--amber-soft:#fdf2e2;--amber-strong:#a15c04;
   --red:#e0223f;--red-soft:#fdeaee;--purple:#6a5bd8;--purple-soft:#efecfc;
   --card-solid:#ffffff;
+  --glow-ring:0 0 0 1px rgba(228,0,43,.15),0 0 12px rgba(228,0,43,.09);
 """
 
 
@@ -227,9 +239,9 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 /* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white ===== */
 .kpi-card{position:relative;background:var(--card-solid);border:1px solid var(--line);border-left:4px solid var(--blue);
   border-radius:12px;padding:14px 16px 14px 18px;min-height:92px;
-  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px rgba(20,26,43,.09)}
+.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring)}
 .kpi-label{display:block;font-size:10.5px;color:var(--muted);letter-spacing:.02em;font-weight:700;text-transform:uppercase}
 .kpi-value{font-size:22px;font-weight:800;letter-spacing:-.01em;margin-top:9px;color:var(--text);font-variant-numeric:tabular-nums;font-family:'Sora','Inter',sans-serif}
 .kpi-card.negative .kpi-value{color:var(--red)}
@@ -246,9 +258,9 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 /* ===== Insight / finding cards ===== */
 .insight-card{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--radius-md);
   padding:15px;margin:4px 0 8px;background:var(--card-solid);
-  min-height:88px;box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
+  min-height:88px;box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease}
-.insight-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(20,26,43,.09)}
+.insight-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring)}
 .insight-card.positive{border-left:4px solid var(--green)}
 .insight-card.warning{border-left:4px solid var(--amber)}
 .insight-card.info{border-left:4px solid var(--blue)}
@@ -273,9 +285,9 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .chart-reading{margin:0 3px 10px;padding:9px 11px;border-radius:var(--radius-sm);background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:11.5px;line-height:1.45}
 .chart-card{background:var(--card-solid);
   border:1px solid var(--line);border-radius:var(--radius-lg);padding:15px 17px 8px;margin:6px 0 16px;
-  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 22px rgba(20,26,43,.06);overflow:hidden;
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 22px rgba(20,26,43,.06),var(--glow-ring);overflow:hidden;
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-.chart-card:hover{box-shadow:0 14px 28px rgba(20,26,43,.09);border-color:rgba(228,0,43,.18)}
+.chart-card:hover{box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring);border-color:rgba(228,0,43,.18)}
 .chart-card:before{content:"";display:block;width:26px;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--blue),var(--teal));margin:0 0 10px 2px}
 .chart-head{display:flex;justify-content:space-between;align-items:flex-start;padding:2px 3px 0}
 .chart-title{font-size:15px;letter-spacing:-.01em;font-weight:750;color:var(--text)}
@@ -293,14 +305,19 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .stTabs [data-baseweb="tab-border"]{display:none!important}
 
 /* Pestañas anidadas (una barra de pestañas que vive DENTRO de otra, p. ej.
-   "🏠 Inicio/Asistente IA/Datos..." dentro de "📋 General") se ven más
-   livianas que la barra de nivel superior — antes ambas usaban el mismo
-   estilo (píldora rellena + gradiente rojo), así que dos filas de pestañas
-   apiladas se veían como dos elecciones de igual peso y no quedaba claro
-   cuál era la sección y cuál la página dentro de ella. El selector
-   ".stTabs .stTabs" alcanza cualquier nivel anidado sin tocar el Python de
-   grouped_nav()/named_tabs() — es "una barra de pestañas dentro de otra",
-   pase lo que pase cuántos niveles haya. */
+   las pestañas internas de ui/dashboard.py — "📊 Visión general/🔍
+   Diagnóstico/🌍 Geografía/🔗 Relaciones y detalle" — dentro de la pestaña
+   "Descripción" de la fila principal) se ven más livianas que la barra de
+   nivel superior — con el mismo estilo (píldora rellena + gradiente rojo)
+   en los dos niveles, dos filas de pestañas apiladas se veían como dos
+   elecciones de igual peso y no quedaba claro cuál era la sección y cuál
+   la página dentro de ella. El selector ".stTabs .stTabs" alcanza
+   cualquier nivel anidado sin tocar el Python de grouped_nav()/
+   named_tabs() — es "una barra de pestañas dentro de otra", pase lo que
+   pase cuántos niveles haya. La fila principal ya no tiene un segundo
+   nivel propio (grouped_nav() ahora aplana sus grupos en una sola fila),
+   pero esta regla se queda: sigue aplicando a cualquier vista que anide
+   sus propias pestañas internamente. */
 .stTabs .stTabs [data-baseweb="tab-list"]{
   background:transparent;border:none;box-shadow:none;border-radius:0;
   padding:0 0 2px;gap:20px;border-bottom:1px solid var(--line);
@@ -380,7 +397,7 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 [data-testid="stMetricValue"]{color:var(--text)!important;font-size:22px!important;font-variant-numeric:tabular-nums}
 
 /* ===== Executive / alerts / why-changed / factors ===== */
-.executive-card{padding:19px 21px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:var(--shadow-md);border-left:5px solid var(--blue);margin:4px 0 10px}
+.executive-card{padding:19px 21px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:var(--shadow-md),var(--glow-ring);border-left:5px solid var(--blue);margin:4px 0 10px}
 .executive-card.positive{border-left-color:var(--green)}
 .executive-card.negative{border-left-color:var(--red)}
 .executive-status{font-size:10px;text-transform:uppercase;letter-spacing:.11em;font-weight:800;color:var(--soft)}
@@ -455,9 +472,9 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 /* ===== pbi-visual: chart card variant used in the analysis area ===== */
 .pbi-visual{background:var(--card-solid);
   border:1px solid var(--line);border-radius:13px;padding:12px 13px 9px;
-  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-.pbi-visual:hover{box-shadow:0 14px 28px rgba(228,0,43,.10);border-color:rgba(228,0,43,.2)}
+.pbi-visual:hover{box-shadow:0 14px 28px rgba(228,0,43,.10),var(--glow-ring);border-color:rgba(228,0,43,.2)}
 .pbi-visual:before{width:22px;height:3px;margin-bottom:8px;background:linear-gradient(90deg,var(--blue),var(--teal))}
 .pbi-visual .chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-height:42px;padding:0 3px 2px}
 .pbi-visual .chart-head-main{min-width:0}

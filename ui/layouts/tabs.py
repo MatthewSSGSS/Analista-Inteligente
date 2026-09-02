@@ -5,14 +5,16 @@ secciones lógicas.
 tabs[i] for i, name in enumerate(names)}` que estaba repetido tal cual tres
 veces en app.py.
 
-`grouped_nav()` es la navegación de nivel superior de la app (tarea 07):
-en vez de una sola barra de pestañas plana con hasta 14 elementos (Inicio,
-Resumen ejecutivo/Descripción, Comparar personas, Georeferenciación,
-Asistente IA, Datos, Calidad, Analítica, Finanzas, Trabajo, Anomalías,
-Exportar, Comparativa, Análisis Seguimiento — según el modo), agrupa las
-vistas en "General", "Análisis" y "Personas". Ningún grupo aparece si no
-tiene ninguna vista disponible, y ninguna vista deja de estar accesible:
-solo cambia cuántos clics/qué ruta hace falta para llegar a ella.
+`grouped_nav()` es la navegación de nivel superior de la app: recibe las
+vistas ya organizadas en grupos lógicos ("General", "Análisis", "Personas")
+solo para que quien llama pueda seguir pensando en esos términos, pero las
+aplana en una sola fila de pestañas (Inicio, Resumen ejecutivo/Descripción,
+Comparar personas, Georeferenciación, Asistente IA, Datos, Calidad,
+Analítica, Finanzas, Trabajo, Anomalías, Exportar, Comparativa, Análisis
+Seguimiento — según el modo). Un grupo sin ninguna vista disponible no
+aporta nada a esa fila (p. ej. "Personas" cuando el Excel no tiene
+identidad ni seguimiento cargado) — ninguna vista deja de estar accesible,
+solo cambia si hay que desplazarse horizontalmente para llegar a ella.
 """
 from __future__ import annotations
 
@@ -29,32 +31,29 @@ def named_tabs(names: list[str]) -> dict:
 
 
 def grouped_nav(groups: list[tuple[str, list[tuple[str, Callable[[], None]]]]]) -> None:
-    """Navegación por grupos lógicos. `groups` es una lista de
+    """Navegación de nivel superior. `groups` es una lista de
     `(etiqueta_de_grupo, vistas)`, donde `vistas` es una lista de
     `(etiqueta_de_vista, función_sin_argumentos)` que renderiza esa vista
     al llamarla. Los grupos sin ninguna vista disponible se omiten
     automáticamente (p. ej. "Personas" cuando el Excel no tiene identidad
     ni seguimiento cargado) — no se muestra un grupo vacío.
 
-    Dentro de cada grupo:
-    - 1 sola vista: se renderiza directo, sin barra de navegación propia
-      (una pestaña de un solo elemento no aporta nada).
-    - 2 vistas: un selector de dos opciones (`st.radio` horizontal) en vez
-      de una barra de pestañas completa — reduce la dependencia de
-      `st.tabs()` donde una elección binaria no la necesita.
-    - 3 o más vistas: pestañas anidadas (`named_tabs`), apropiadas para un
-      grupo con varias vistas relacionadas entre sí.
+    Todas las vistas de todos los grupos se muestran en UNA sola fila de
+    pestañas (antes había una fila por "grupo" — 📋 General/📊 Análisis/👥
+    Personas — y, al entrar a una, una SEGUNDA fila con sus vistas; dos
+    filas de pestañas apiladas, con el mismo estilo visual, hacían difícil
+    saber en qué nivel se estaba). El nombre del grupo ya no se usa como
+    pestaña propia — solo ayuda a mantener juntas, en el orden de la lista,
+    las vistas que pertenecen al mismo grupo. Si la fila crece mucho (modo
+    Analista con muchas herramientas), se desplaza horizontalmente
+    (`.stTabs [data-baseweb="tab-list"]{overflow-x:auto}`, ya existente)
+    en vez de partirse en niveles.
     """
     groups = [(label, views) for label, views in groups if views]
     if not groups:
         return
-    if len(groups) == 1:
-        _render_views(groups[0][1])
-        return
-    group_map = named_tabs([label for label, _ in groups])
-    for label, views in groups:
-        with group_map[label]:
-            _render_views(views)
+    all_views = [v for _, views in groups for v in views]
+    _render_views(all_views)
 
 
 def _render_views(views: list[tuple[str, Callable[[], None]]]) -> None:
