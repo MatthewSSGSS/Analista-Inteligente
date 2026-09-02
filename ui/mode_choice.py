@@ -43,7 +43,7 @@ def render_mode_choice() -> str | None:
         .mode-card p{margin:0 0 4px;font-size:13px;color:var(--muted);line-height:1.55;min-height:64px}
         .mode-card ul{margin:10px 0 0;padding-left:18px;font-size:12px;color:var(--muted)}
         .mode-card li{margin-bottom:3px}
-        @media(max-width:760px){.mode-cards{grid-template-columns:1fr}}
+        @media(max-width:760px){.mode-cards{grid-template-columns:1fr}.mode-card-cover{height:104px}}
         </style>
         <div class="mode-hero">
           <h1>¿Cómo quieres analizar tu Excel hoy?</h1>

@@ -498,6 +498,17 @@ def trend(df, schema, metric=None, grain="Mes", agg="Suma", comparison=False):
     y = y.sort_values("_period")
     fmt = _number_format(y["_value"])
     fig = go.Figure()
+    # Halo suave detrás del punto más reciente — el mismo lenguaje de
+    # "resplandor" que ya tienen las tarjetas/botones/pestañas del resto
+    # del rediseño, aplicado al gráfico más usado de toda la app. Es una
+    # traza aparte, puramente decorativa (sin hover, fuera de la leyenda):
+    # no toca el color, los datos ni el hover de la línea real de abajo.
+    last_row = y.iloc[-1]
+    fig.add_trace(go.Scatter(
+        x=[last_row["_period"]], y=[last_row["_value"]], mode="markers",
+        marker=dict(size=26, color=PRIMARY, opacity=0.16),
+        showlegend=False, hoverinfo="skip",
+    ))
     fig.add_trace(go.Scatter(
         x=y["_period"], y=y["_value"], mode="lines+markers", name=_label(schema, m),
         line=dict(color=PRIMARY, width=3.5, shape="linear"),

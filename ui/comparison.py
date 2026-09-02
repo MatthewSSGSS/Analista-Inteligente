@@ -35,7 +35,7 @@ def _tone(v):
     return "positive" if v > 0 else "negative"
 
 
-def _render_filter_panel():
+def _render_filter_panel(key_prefix: str = "cmp"):
     """Filtro que se aplica a los N archivos comparados a la vez, usando la
     columna equivalente de cada uno aunque el nombre no sea idéntico entre
     archivos. Recalcula la comparación completa cuando cambia la selección.
@@ -59,11 +59,11 @@ def _render_filter_panel():
         for i, (label, mapping) in enumerate(dim_maps.items()):
             options = dimension_filter_options(raw_files, mapping)
             with cols[i % len(cols)]:
-                sel = st.multiselect(label, options, default=active.get(label, []), key=f"cmp_filter_{label}")
+                sel = st.multiselect(label, options, default=active.get(label, []), key=f"{key_prefix}_filter_{label}")
                 if sel:
                     picked[label] = sel
         c1, c2 = st.columns([1, 1])
-        if c1.button("Aplicar filtros", use_container_width=True, type="primary", key="cmp_apply_filters"):
+        if c1.button("Aplicar filtros", use_container_width=True, type="primary", key=f"{key_prefix}_apply_filters"):
             st.session_state.comparison_filters = picked
             filtered = apply_dimension_filters(raw_files, picked, dim_maps)
             try:
@@ -71,7 +71,7 @@ def _render_filter_panel():
             except Exception as exc:
                 st.error(f"No se pudo recalcular la comparación con ese filtro: {exc}")
             st.rerun()
-        if active and c2.button("Quitar filtros", use_container_width=True, key="cmp_clear_filters"):
+        if active and c2.button("Quitar filtros", use_container_width=True, key=f"{key_prefix}_clear_filters"):
             st.session_state.comparison_filters = {}
             st.session_state.comparison_result = build_comparison({"files": raw_files})
             st.rerun()
@@ -114,11 +114,31 @@ def _direct_comparison_chart(metrics, first_label, last_label):
     return fig
 
 
-def render_comparison(result):
+def render_comparison(result, show_filter_panel: bool = True, key_prefix: str = "cmp"):
+    """`show_filter_panel=False` y `key_prefix` distinto de "cmp" los usa
+    `ui/multi_sheet.py` (comparar 2 hojas de un mismo Excel):
+
+    - `_render_filter_panel()` lee y escribe
+      `st.session_state.comparison_raw_files/comparison_result` — las
+      mismas claves globales que usa "Comparar archivos" en el sidebar. Si
+      alguien ya había comparado archivos en esa sesión y luego usa
+      "Comparar hojas", mostrar ese panel aquí filtraría con los archivos
+      equivocados y sobrescribiría el resultado de la otra comparación.
+    - La navegación principal ahora es una sola fila de pestañas
+      (`grouped_nav`), y Streamlit calcula el contenido de TODAS las
+      pestañas en cada rerun, no solo la visible — así que si hay una
+      comparación de archivos activa Y esta vista también está en la
+      misma fila, `render_comparison()` se llama dos veces en el mismo
+      ciclo. Sin un prefijo distinto, los `key=` fijos (`cmp_selected_metrics`,
+      etc.) chocarían y Streamlit tronaría con un ID de widget duplicado.
+
+    Los 4 llamados existentes (comparación de archivos) no pasan ninguno
+    de los dos argumentos, así que siguen exactamente igual que antes."""
     st.markdown(banner_header("Qué cambió entre los archivos", "Último vs. anterior · primero vs. último.", "datos1.jpg"), unsafe_allow_html=True)
     files = result["files"]
     st.caption(" · ".join(f"{i+1}. {f['label']}" for i, f in enumerate(files)))
-    _render_filter_panel()
+    if show_filter_panel:
+        _render_filter_panel(key_prefix)
 
     # ── Selección de elementos: por defecto se destacan los primeros 5
     # indicadores comparables (mismo comportamiento que antes), pero ahora
@@ -127,7 +147,7 @@ def render_comparison(result):
     all_names = [m["nombre"] for m in result["metrics"]]
     selected_names = st.multiselect(
         "Métricas a comparar", all_names, default=all_names[:5],
-        key="cmp_selected_metrics",
+        key=f"{key_prefix}_selected_metrics",
         help="Elige qué indicadores destacar en las tarjetas y el gráfico. El resto de las pestañas de abajo siguen mostrando la comparación completa.",
     ) if all_names else []
 
@@ -150,7 +170,7 @@ def render_comparison(result):
         direct_fig = _direct_comparison_chart(span_metrics, result["first"]["label"], result["last"]["label"])
         if direct_fig is not None:
             st.markdown(section_header("Comparación directa", compact=True), unsafe_allow_html=True)
-            st.plotly_chart(direct_fig, use_container_width=True, key="cmp_direct_chart")
+            st.plotly_chart(direct_fig, use_container_width=True, key=f"{key_prefix}_direct_chart")
 
     if result["signals"]:
         st.markdown('<div class="decision-panel"><div class="decision-panel-title">Lectura ejecutiva</div><div class="decision-panel-subtitle">Cambios detectados automáticamente a partir de variables comparables.</div></div>', unsafe_allow_html=True)
@@ -194,7 +214,7 @@ def render_comparison(result):
             series=h["serie"]
             fig=px.line(series,x="periodo",y="valor",markers=True,title=f"{h['metrica']} · {h['operacion']}")
             fig.update_layout(height=360,margin=dict(l=20,r=20,t=50,b=20),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",xaxis_title="Periodo",yaxis_title="Valor",font=dict(color=chart_text_color()))
-            st.plotly_chart(fig,use_container_width=True,key=f"comparison_history_{history_index}")
+            st.plotly_chart(fig,use_container_width=True,key=f"{key_prefix}_history_{history_index}")
     with tabs[3]:
         st.caption(
             "Cada fila real de los archivos comparados (ya con tus filtros aplicados), no un "
@@ -213,7 +233,7 @@ def render_comparison(result):
                 "registros_comparados.csv",
                 "text/csv",
                 use_container_width=True,
-                key="cmp_records_csv",
+                key=f"{key_prefix}_records_csv",
             )
     with tabs[4]:
         matches=result["matches"]

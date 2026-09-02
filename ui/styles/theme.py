@@ -246,12 +246,20 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .view-banner{position:relative;border-radius:var(--radius-lg);overflow:hidden;margin:4px 0 22px;
   height:112px;background-size:cover;background-position:center;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.06),var(--glow-ring)}
+/* La foto sola no basta para que el texto se lea con una imagen tan
+   detallada: el ojo pierde el trazo de las letras contra tanto ruido
+   visual, aunque el contraste numérico diera bien. El velo se subió a
+   94%/70% (antes 85%/45%) y se extiende más hacia la derecha, y el texto
+   suma su propia sombra (text-shadow) — dos capas de seguridad, no solo
+   una. Ojo: esto va en `:before` (una capa aparte, detrás del texto por
+   `z-index`), NO en un `filter` sobre `.view-banner` — un filter ahí
+   oscurecería también el texto, que es descendiente del mismo elemento. */
 .view-banner:before{content:"";position:absolute;inset:0;
-  background:linear-gradient(90deg,rgba(9,12,18,.85) 0%,rgba(9,12,18,.45) 45%,rgba(9,12,18,.08) 75%)}
+  background:linear-gradient(90deg,rgba(6,8,13,.94) 0%,rgba(6,8,13,.7) 55%,rgba(6,8,13,.2) 85%)}
 .view-banner-content{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;justify-content:center;padding:0 26px}
-.view-banner h2{margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;color:#ffffff}
-.view-banner p{margin:5px 0 0;font-size:12px;color:rgba(255,255,255,.82);max-width:600px;line-height:1.5}
-@media(max-width:900px){.view-banner{height:130px}.view-banner:before{background:linear-gradient(180deg,rgba(9,12,18,.35) 0%,rgba(9,12,18,.88) 100%)}.view-banner-content{justify-content:flex-end;padding:0 18px 14px}}
+.view-banner h2{margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;color:#ffffff;text-shadow:0 2px 10px rgba(0,0,0,.65)}
+.view-banner p{margin:5px 0 0;font-size:12px;color:rgba(255,255,255,.88);max-width:600px;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+@media(max-width:900px){.view-banner{height:130px}.view-banner:before{background:linear-gradient(180deg,rgba(6,8,13,.45) 0%,rgba(6,8,13,.94) 100%)}.view-banner-content{justify-content:flex-end;padding:0 18px 14px}}
 
 /* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white ===== */
 .kpi-card{position:relative;background:var(--card-solid);border:1px solid var(--line);border-left:4px solid var(--blue);
@@ -300,6 +308,14 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== Chart shells ===== */
 .chart-reading{margin:0 3px 10px;padding:9px 11px;border-radius:var(--radius-sm);background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:11.5px;line-height:1.45}
+/* Estado vacío ("no hay datos suficientes para este gráfico") — antes era
+   un st.info() genérico, la misma caja azul/gris para cualquier mensaje
+   informativo. El borde punteado + ícono lo distingue de un aviso real
+   (algo que SÍ pasó) de "acá simplemente no hay nada que mostrar todavía". */
+.empty-state{display:flex;align-items:center;gap:11px;padding:16px 18px;margin:6px 0;
+  border:1px dashed var(--line);border-radius:var(--radius-md);background:var(--panel-2);
+  color:var(--muted);font-size:12.5px;line-height:1.5}
+.empty-state .empty-icon{font-size:19px;flex:0 0 auto;opacity:.55}
 .chart-card{background:var(--card-solid);
   border:1px solid var(--line);border-radius:var(--radius-lg);padding:15px 17px 8px;margin:6px 0 16px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 22px rgba(20,26,43,.06),var(--glow-ring);overflow:hidden;

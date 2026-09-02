@@ -42,6 +42,7 @@ import core.auth_engine as auth_engine
 from ui.mode_choice import render_mode_choice
 from ui.practical import render_practical_page
 from ui.tracking import render_tracking
+from ui.multi_sheet import render_multi_sheet
 from core.tracking_engine import ingest_file, sources_to_long, merge_long, read_consolidated
 import core.db_engine as db_engine
 
@@ -476,6 +477,15 @@ if st.session_state.get("focus_view"):
 full_name_info = schema.get("full_name", {}) if isinstance(schema.get("full_name"), dict) else {}
 profile_enabled = bool(full_name_info.get("column") and full_name_info.get("column") in df.columns)
 
+# "Varias hojas" (buscar/combinar/comparar hojas del mismo Excel) solo
+# aparece con 2+ hojas que de verdad tengan datos — con una sola hoja no
+# hay nada que buscar en varias, combinar ni comparar.
+usable_sheet_count = sum(
+    1 for _s in wb["sheets"].values()
+    if isinstance(_s, dict) and isinstance(_s.get("processed"), pd.DataFrame) and not _s["processed"].empty
+)
+multi_sheet_enabled = usable_sheet_count >= 2
+
 # La comparativa vive en el mismo producto, pero separada del análisis individual.
 # El perfil individual NO es una pestaña adicional: se abre con su botón dentro del dashboard.
 general_views = [
@@ -485,6 +495,8 @@ general_views = [
     ("Calidad", lambda: render_quality(item["profile"])),
     ("Exportar", lambda: render_exports(df,dashboard,wb["filename"],sheet,full_df=item["processed"],schema=schema,workbook=wb)),
 ]
+if multi_sheet_enabled:
+    general_views.append(("🗂️ Varias hojas", lambda: render_multi_sheet(wb)))
 people_views = []
 if profile_enabled:
     people_views.append(("⚔️ Comparar personas", lambda: render_person_compare(df, schema)))

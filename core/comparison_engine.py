@@ -285,8 +285,16 @@ def prepare_comparison(workbooks: list[dict]) -> dict:
             "schema": schema,
             "label": _period_label(wb["filename"], df, schema),
         })
-    # If every selected file has a usable date, compare chronologically regardless
-    # of upload order. Otherwise preserve the user's upload order.
+    prepared = _chronological_or_original_order(prepared)
+    return {"files": prepared}
+
+
+def _chronological_or_original_order(prepared: list[dict]) -> list[dict]:
+    # If every selected item has a usable date, compare chronologically
+    # regardless of upload/selection order. Otherwise preserve that order.
+    # Factored out of prepare_comparison() so prepare_sheet_comparison()
+    # (misma idea, pero para hojas de UN Excel en vez de archivos distintos)
+    # pueda aplicar exactamente el mismo criterio de orden sin copiarlo.
     date_keys = []
     all_dated = True
     for item in prepared:
@@ -300,8 +308,72 @@ def prepare_comparison(workbooks: list[dict]) -> dict:
             break
         date_keys.append((vals.min(), item))
     if all_dated:
-        prepared = [item for _, item in sorted(date_keys, key=lambda z: z[0])]
+        return [item for _, item in sorted(date_keys, key=lambda z: z[0])]
+    return prepared
+
+
+def prepare_sheet_comparison(workbook: dict, sheet_names: list[str]) -> dict:
+    """Igual que `prepare_comparison()`, pero comparando HOJAS de un mismo
+    Excel en vez de archivos distintos — misma forma de datos exacta que
+    espera `build_comparison()` (y por lo tanto la misma UI de
+    `ui/comparison.py::render_comparison`), solo cambia de dónde salen los
+    "archivos" a comparar: de `workbook["sheets"]` en vez de una lista de
+    workbooks subidos por separado.
+    """
+    prepared = []
+    for name in sheet_names:
+        item = workbook["sheets"].get(name)
+        if not item:
+            continue
+        df = item["processed"]
+        schema = item["profile"]["schema"]
+        prepared.append({
+            "filename": name,
+            "sheet": name,
+            "df": df.copy(),
+            "schema": schema,
+            "label": _period_label(name, df, schema),
+        })
+    prepared = _chronological_or_original_order(prepared)
     return {"files": prepared}
+
+
+def recommend_multi_sheet_tool(workbook: dict) -> dict:
+    """Decide qué herramienta de "varias hojas" tiene más sentido para este
+    Excel en concreto — sin adivinar: cuenta cuántas dimensiones, métricas y
+    fechas conceptualmente iguales comparten TODAS las hojas con datos,
+    reutilizando el mismo emparejamiento que ya usa `combined_records_table`.
+
+    No todas las hojas de un Excel son comparables entre sí (algunas pueden
+    traer información extra sin relación con las demás) — por eso esto es
+    una recomendación explicada ("comparten N campos"), no una regla
+    obligatoria: la persona sigue eligiendo qué herramienta usar.
+    """
+    sheets = {
+        name: item for name, item in (workbook.get("sheets") or {}).items()
+        if isinstance(item, dict) and isinstance(item.get("processed"), pd.DataFrame) and not item["processed"].empty
+    }
+    names = list(sheets.keys())
+    if len(names) < 2:
+        return {"tool": "buscar", "reason": "Solo hay una hoja con datos utilizables; todavía no hay nada que combinar o comparar.", "shared": 0, "sheet_names": names}
+
+    files = [{"filename": n, "df": sheets[n]["processed"], "schema": sheets[n]["profile"]["schema"]} for n in names]
+    shared = len(common_dimension_map(files)) + len(common_metric_map(files)) + len(common_date_map(files))
+    if shared >= 2:
+        tool = "combinar"
+        reason = (
+            f"Tus {len(names)} hojas comparten al menos {shared} campo(s) con el mismo significado "
+            f"(misma fecha, categoría o métrica, aunque el nombre de columna varíe) — se pueden "
+            f"combinar en una sola vista con todas las herramientas del panel."
+        )
+    else:
+        tool = "buscar"
+        reason = (
+            f"Tus {len(names)} hojas no comparten suficientes columnas parecidas como para combinarlas "
+            f"con confianza — puede que traigan información distinta entre sí. Mejor empieza por el "
+            f"buscador para encontrar algo específico en cualquiera de ellas."
+        )
+    return {"tool": tool, "reason": reason, "shared": shared, "sheet_names": names}
 
 
 def _aggregate(df: pd.DataFrame, col: str, schema: dict) -> float:

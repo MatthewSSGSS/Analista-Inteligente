@@ -105,11 +105,20 @@ def _date_range(df: pd.DataFrame, schema: dict) -> str:
 
 def _quality_cards(df: pd.DataFrame, schema: dict) -> list[tuple[str, str, str]]:
     q = assess(df, schema)
+    # Antes solo se mostraban 4 de las 6 métricas que `assess()` ya calcula
+    # — consistencia y validez se computaban pero nunca llegaban al informe.
+    # Se agregan aquí sin ningún cálculo nuevo, solo mostrando lo que ya
+    # existía — AL FINAL de la lista, no intercaladas: build_workbook_html_report
+    # lee `quality[0]`/`[1]`/`[2]` por posición (Calidad global/Completitud/
+    # Duplicados) para su cálculo ponderado; insertarlas en medio corría esos
+    # índices y hacía que "Duplicados" leyera el valor de "Consistencia".
     return [
         ("Calidad global", f"{q['score']:.0f}/100", "Lectura de completitud, consistencia y validez"),
         ("Completitud", f"{q['completeness']:.1f}%", "Campos con información disponible"),
         ("Duplicados", f"{q['duplicate_rows']:,}", "Filas duplicadas detectadas"),
         ("Columnas", f"{len(df.columns):,}", "Campos incluidos en el análisis"),
+        ("Consistencia", f"{q['consistency']:.1f}%", "Qué tan libres de duplicados están los registros"),
+        ("Validez", f"{q['validity']:.1f}%", "Formato de los datos dentro de lo esperado"),
     ]
 
 
@@ -342,8 +351,11 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Resumen analítico — {_esc(filename)}</title>
 <style>
-:root{{--bg:#f5f7fb;--card:#fff;--text:#172033;--muted:#667085;--line:#e1e6ef;--blue:#e4002b;--teal:#10b9a6;--green:#22a06b;--amber:#f59e0b;--red:#e05252;--shadow:0 5px 18px rgba(23,32,51,.06)}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.45;scroll-behavior:smooth}}
+:root{{--bg:#f5f7fb;--card:#fff;--text:#172033;--muted:#667085;--line:#e1e6ef;--blue:#e4002b;--teal:#10b9a6;--green:#22a06b;--amber:#f59e0b;--red:#e05252;--shadow:0 5px 18px rgba(23,32,51,.06);--glow:0 0 0 1px rgba(228,0,43,.08),0 10px 24px rgba(228,0,43,.06)}}
+*{{box-sizing:border-box}}body{{margin:0;background:
+    radial-gradient(ellipse 900px 480px at 100% 0%,rgba(228,0,43,.05),transparent 60%),
+    radial-gradient(ellipse 900px 480px at 0% 100%,rgba(228,0,43,.035),transparent 60%),
+    var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.45;scroll-behavior:smooth}}
 .report-shell{{display:flex;align-items:flex-start;gap:24px;max-width:1500px;margin:0 auto;padding:32px 24px 60px}}
 .side-nav{{width:206px;flex:0 0 206px;position:sticky;top:22px;align-self:flex-start;max-height:calc(100vh - 44px);overflow-y:auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px;box-shadow:var(--shadow)}}
 .side-nav .nav-title{{font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin:0 0 10px}}
@@ -351,18 +363,18 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
 .side-nav a:hover{{background:#f7f9fc;color:var(--blue)}}
 .side-nav a.active{{background:#fde8ea;color:var(--blue);border-left-color:var(--blue);font-weight:700}}
 .wrap{{flex:1;min-width:0}}
-.header{{background:#fff;border:1px solid var(--line);border-top:5px solid #e4002b;border-radius:16px;padding:28px 30px;box-shadow:var(--shadow)}}
+.header{{background:#fff;border:1px solid var(--line);border-top:5px solid #e4002b;border-radius:16px;padding:28px 30px;box-shadow:var(--shadow),var(--glow)}}
 .kicker{{font-size:11px;font-weight:800;letter-spacing:.13em;color:#e4002b;text-transform:uppercase}}h1{{margin:6px 0 5px;font-size:30px;letter-spacing:-.03em}}.subtitle{{color:var(--muted);font-size:14px}}.meta{{display:flex;flex-wrap:wrap;gap:8px;margin-top:17px}}.meta span{{background:#f7f9fc;border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:11px;color:var(--muted)}}
 .section{{margin-top:28px;scroll-margin-top:20px}}.section>h2,.table-card h2{{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}}.section>p,.table-card>p{{margin:0 0 14px;color:var(--muted);font-size:13px}}
-.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}}.kpi{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow)}}.kpi-label{{font-size:11px;color:var(--muted);font-weight:700}}.kpi-value{{font-size:24px;font-weight:800;margin-top:8px}}
-.narrative{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:14px 16px;font-size:13.5px;color:var(--text);margin:0 0 14px}}
+.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}}.kpi{{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:12px;padding:16px;box-shadow:var(--shadow),var(--glow)}}.kpi-label{{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.03em}}.kpi-value{{font-size:25px;font-weight:800;margin-top:8px;letter-spacing:-.01em}}
+.narrative{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:14px 16px;font-size:13.5px;color:var(--text);margin:0 0 14px;box-shadow:var(--shadow)}}
 #detalle{{border-top:2px solid #e4e8ef;padding-top:22px;margin-top:36px}}
-.change-box{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:13px;padding:18px 20px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;gap:4px 18px;scroll-margin-top:20px}}.change-box span{{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--blue)}}.change-box h2{{margin:3px 0 0;font-size:19px}}.change-value{{font-size:30px;font-weight:900;align-self:center;color:var(--blue)}}.change-box p{{grid-column:1/-1;color:var(--muted);margin:6px 0 0}}
+.change-box{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:13px;padding:18px 20px;box-shadow:var(--shadow),var(--glow);display:grid;grid-template-columns:1fr auto;gap:4px 18px;scroll-margin-top:20px}}.change-box span{{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--blue)}}.change-box h2{{margin:3px 0 0;font-size:19px}}.change-value{{font-size:30px;font-weight:900;align-self:center;color:var(--blue)}}.change-box p{{grid-column:1/-1;color:var(--muted);margin:6px 0 0}}
 .insights{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}}.insight{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:15px;box-shadow:var(--shadow)}}.insight.warning{{border-left-color:var(--amber)}}.insight.positive{{border-left-color:var(--green)}}.insight-tag{{font-size:9px;letter-spacing:.11em;font-weight:800;color:var(--muted)}}.insight h3{{margin:5px 0 6px;font-size:14px}}.insight p{{margin:0;font-size:13px}}.action,.implication{{margin-top:9px;background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}}
-.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}.chart-card,.table-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 17px;box-shadow:var(--shadow);margin-top:14px;scroll-margin-top:20px}}.chart-head span{{font-size:9px;color:var(--blue);font-weight:800;letter-spacing:.13em}}.chart-head h3{{margin:4px 0 2px;font-size:15px}}.chart-head p{{margin:0 0 5px;color:var(--muted);font-size:11px}}.table-card table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left}}th{{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}}.muted{{color:var(--muted)}}.severity{{font-size:10px;font-weight:800;padding:4px 7px;border-radius:999px;background:#fff3dc;color:#a86000}}.empty{{padding:24px;background:#fff;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}}.meta-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:15px 0}}.meta-grid div{{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:13px}}.meta-grid b{{display:block;font-size:20px}}.meta-grid span{{color:var(--muted);font-size:11px}}.footer{{margin-top:35px;color:#7a8495;font-size:11px;text-align:center}}
+.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}.chart-card,.table-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 17px;box-shadow:var(--shadow),var(--glow);margin-top:14px;scroll-margin-top:20px}}.chart-head span{{font-size:9px;color:var(--blue);font-weight:800;letter-spacing:.13em}}.chart-head h3{{margin:4px 0 2px;font-size:15px}}.chart-head p{{margin:0 0 5px;color:var(--muted);font-size:11px}}.table-card table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left}}th{{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}}.muted{{color:var(--muted)}}.severity{{font-size:10px;font-weight:800;padding:4px 7px;border-radius:999px;background:#fff3dc;color:#a86000}}.empty{{padding:24px;background:#fff;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}}.meta-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:15px 0}}.meta-grid div{{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:13px}}.meta-grid b{{display:block;font-size:20px}}.meta-grid span{{color:var(--muted);font-size:11px}}.footer{{margin-top:35px;color:#7a8495;font-size:11px;text-align:center}}
 @media(max-width:1000px){{.side-nav{{display:none}}}}
 @media(max-width:850px){{.report-shell{{padding:18px 12px}}h1{{font-size:24px}}.grid2{{grid-template-columns:1fr}}.meta-grid{{grid-template-columns:repeat(2,1fr)}}}}
-@media print{{.side-nav{{display:none}}.report-shell{{padding:0;display:block}}}}
+@media print{{.side-nav{{display:none}}.report-shell{{padding:0;display:block}}body{{background:#fff}}.header,.kpi,.narrative,.change-box,.insight,.chart-card,.table-card{{box-shadow:none!important}}}}
 </style>
 </head>
 <body>
@@ -596,8 +608,11 @@ def build_workbook_html_report(workbook: dict) -> str:
 <html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>Informe general del Excel — {_esc(filename)}</title>
 <style>
-:root{{--bg:#f4f6fa;--card:#fff;--text:#172033;--muted:#667085;--line:#dfe4ec;--blue:#e4002b;--teal:#10b9a6;--green:#1b9a67;--amber:#d88708;--red:#c52a3d;--shadow:0 5px 18px rgba(23,32,51,.06)}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.45;scroll-behavior:smooth}}
+:root{{--bg:#f4f6fa;--card:#fff;--text:#172033;--muted:#667085;--line:#dfe4ec;--blue:#e4002b;--teal:#10b9a6;--green:#1b9a67;--amber:#d88708;--red:#c52a3d;--shadow:0 5px 18px rgba(23,32,51,.06);--glow:0 0 0 1px rgba(228,0,43,.08),0 10px 24px rgba(228,0,43,.06)}}
+*{{box-sizing:border-box}}body{{margin:0;background:
+    radial-gradient(ellipse 900px 480px at 100% 0%,rgba(228,0,43,.05),transparent 60%),
+    radial-gradient(ellipse 900px 480px at 0% 100%,rgba(228,0,43,.035),transparent 60%),
+    var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.45;scroll-behavior:smooth}}
 .report-shell{{display:flex;align-items:flex-start;gap:22px;max-width:1560px;margin:0 auto;padding:30px 22px 60px}}
 .side-nav{{width:216px;flex:0 0 216px;position:sticky;top:20px;align-self:flex-start;max-height:calc(100vh - 40px);overflow-y:auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px;box-shadow:var(--shadow)}}
 .side-nav .nav-title{{font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin:0 0 10px}}
@@ -606,19 +621,19 @@ def build_workbook_html_report(workbook: dict) -> str:
 .side-nav a:hover{{background:#f7f9fc;color:var(--blue)}}
 .side-nav a.active{{background:#fde8ea;color:var(--blue);border-left-color:var(--blue);font-weight:700}}
 .wrap{{flex:1;min-width:0}}
-.header{{background:#fff;border:1px solid var(--line);border-top:6px solid #e4002b;border-radius:17px;padding:28px 30px;box-shadow:var(--shadow)}}.kicker{{font-size:10px;font-weight:900;letter-spacing:.13em;color:#e4002b;text-transform:uppercase}}h1{{margin:6px 0 6px;font-size:31px;letter-spacing:-.03em}}.subtitle{{color:var(--muted);font-size:14px;max-width:900px}}.meta{{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}}.meta span{{background:#f7f9fc;border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:11px;color:var(--muted)}}
+.header{{background:#fff;border:1px solid var(--line);border-top:6px solid #e4002b;border-radius:17px;padding:28px 30px;box-shadow:var(--shadow),var(--glow)}}.kicker{{font-size:10px;font-weight:900;letter-spacing:.13em;color:#e4002b;text-transform:uppercase}}h1{{margin:6px 0 6px;font-size:31px;letter-spacing:-.03em}}.subtitle{{color:var(--muted);font-size:14px;max-width:900px}}.meta{{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}}.meta span{{background:#f7f9fc;border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:11px;color:var(--muted)}}
 .section{{margin-top:28px;scroll-margin-top:20px}}.section>h2{{font-size:21px;margin:0 0 5px}}.section>p{{margin:0 0 14px;color:var(--muted);font-size:13px}}
-.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:11px}}.kpi{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow)}}.kpi-label{{font-size:10px;color:var(--muted);font-weight:800}}.kpi-value{{font-size:23px;font-weight:900;margin-top:7px}}
-.table-card{{background:#fff;border:1px solid var(--line);border-radius:13px;padding:15px;box-shadow:var(--shadow);margin-top:10px}}.table-card h3{{margin:0 0 9px;font-size:15px}}.table-card table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:8px;border-bottom:1px solid var(--line);text-align:left}}th{{font-size:10px;color:var(--muted);text-transform:uppercase}}.muted{{color:var(--muted)}}
-.findings{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:11px}}.finding-mini{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px;box-shadow:var(--shadow)}}.finding-sheet{{font-size:9px;font-weight:900;letter-spacing:.1em;color:var(--blue);text-transform:uppercase;margin-bottom:5px}}.finding-mini b{{font-size:13px}}.finding-mini p{{font-size:12px;color:var(--muted);margin:6px 0 0}}
+.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:11px}}.kpi{{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:12px;padding:14px;box-shadow:var(--shadow),var(--glow)}}.kpi-label{{font-size:10px;color:var(--muted);font-weight:800}}.kpi-value{{font-size:23px;font-weight:900;margin-top:7px}}
+.table-card{{background:#fff;border:1px solid var(--line);border-radius:13px;padding:15px;box-shadow:var(--shadow),var(--glow);margin-top:10px}}.table-card h3{{margin:0 0 9px;font-size:15px}}.table-card table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:8px;border-bottom:1px solid var(--line);text-align:left}}th{{font-size:10px;color:var(--muted);text-transform:uppercase}}.muted{{color:var(--muted)}}
+.findings{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:11px}}.finding-mini{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px;box-shadow:var(--shadow),var(--glow)}}.finding-sheet{{font-size:9px;font-weight:900;letter-spacing:.1em;color:var(--blue);text-transform:uppercase;margin-bottom:5px}}.finding-mini b{{font-size:13px}}.finding-mini p{{font-size:12px;color:var(--muted);margin:6px 0 0}}
 .sheet-section{{margin-top:34px;padding-top:22px;border-top:2px solid #e4e8ef;scroll-margin-top:20px}}.sheet-heading{{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:12px}}.sheet-heading h2{{margin:3px 0;font-size:23px}}.sheet-heading p{{margin:0;color:var(--muted);font-size:12px}}.sheet-primary{{padding:7px 10px;border-radius:999px;background:#fde8ea;color:var(--blue);font-size:10px;font-weight:800}}
 .sheet-grid{{display:grid;grid-template-columns:1.6fr .8fr;gap:14px;margin-top:14px}}.sheet-grid h3{{font-size:15px;margin:0 0 8px}}.insights{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}}.insight{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px;box-shadow:var(--shadow)}}.insight.warning{{border-left-color:var(--amber)}}.insight.positive{{border-left-color:var(--green)}}.insight-tag{{font-size:9px;letter-spacing:.1em;font-weight:900;color:var(--muted)}}.insight h3{{font-size:13px;margin:5px 0}}.insight p{{font-size:12px;margin:0}}
-.narrative{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px 15px;font-size:13px;color:var(--text);margin:10px 0 14px}}
+.narrative{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:13px 15px;font-size:13px;color:var(--text);margin:10px 0 14px;box-shadow:var(--shadow)}}
 .sheet-detail-divider{{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin-top:20px}}
-.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}}.chart-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 15px;box-shadow:var(--shadow);overflow:hidden;scroll-margin-top:20px}}.chart-head span{{font-size:9px;color:var(--blue);font-weight:900;letter-spacing:.12em}}.chart-head h3{{margin:4px 0 2px;font-size:15px}}.chart-head p{{margin:0;color:var(--muted);font-size:11px}}.empty{{padding:18px;background:#fff;border:1px dashed var(--line);border-radius:11px;color:var(--muted);font-size:12px}}.footer{{margin-top:40px;color:#7a8495;font-size:11px;text-align:center}}
+.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}}.chart-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 15px;box-shadow:var(--shadow),var(--glow);overflow:hidden;scroll-margin-top:20px}}.chart-head span{{font-size:9px;color:var(--blue);font-weight:900;letter-spacing:.12em}}.chart-head h3{{margin:4px 0 2px;font-size:15px}}.chart-head p{{margin:0;color:var(--muted);font-size:11px}}.empty{{padding:18px;background:#fff;border:1px dashed var(--line);border-radius:11px;color:var(--muted);font-size:12px}}.footer{{margin-top:40px;color:#7a8495;font-size:11px;text-align:center}}
 @media(max-width:1050px){{.side-nav{{display:none}}}}
 @media(max-width:900px){{.grid2,.sheet-grid,.insights{{grid-template-columns:1fr}}.report-shell{{padding:18px 11px}}.sheet-heading{{flex-direction:column}}}}
-@media print{{.side-nav{{display:none}}.report-shell{{padding:0;display:block}}}}
+@media print{{.side-nav{{display:none}}.report-shell{{padding:0;display:block}}body{{background:#fff}}.header,.kpi,.finding-mini,.narrative,.chart-card,.table-card{{box-shadow:none!important}}}}
 </style></head><body>
 <div class="report-shell">
 <nav class="side-nav"><div class="nav-title">En este informe</div>{nav_html}</nav>

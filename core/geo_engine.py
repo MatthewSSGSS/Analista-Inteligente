@@ -377,6 +377,58 @@ COLOMBIA_PLACE_CENTROIDS = {
     "armenia": (4.5339, -75.6811), "pasto": (1.2136, -77.2811), "monteria": (8.7479, -75.8814), "montería": (8.7479, -75.8814),
     "valledupar": (10.4631, -73.2532), "sincelejo": (9.3047, -75.3978), "popayan": (2.4448, -76.6147), "popayán": (2.4448, -76.6147),
 }
+# Respaldo internacional: ciudades grandes de fuera de Colombia (que ya
+# tiene su propia tabla más detallada arriba, COLOMBIA_PLACE_CENTROIDS).
+# Antes, cualquier Excel que NO fuera de Colombia y se quedara sin conexión
+# (o el geocodificador fallara) perdía la ciudad por completo y caía
+# directo al centroide de todo el país — un solo punto para México
+# entero, por ejemplo. No pretende ser exhaustiva (para eso haría falta
+# una base de datos completa de ciudades del mundo, fuera de alcance
+# aquí): cubre capitales y ciudades grandes con probabilidad real de
+# aparecer en un Excel de negocio, para que la app siga siendo útil sin
+# conexión sin importar de qué país sea el archivo, no solo Colombia.
+WORLD_CITY_CENTROIDS = {
+    # México
+    "ciudad de mexico": (19.4326, -99.1332), "ciudad de méxico": (19.4326, -99.1332), "cdmx": (19.4326, -99.1332), "mexico city": (19.4326, -99.1332),
+    "guadalajara": (20.6597, -103.3496), "monterrey": (25.6866, -100.3161), "puebla": (19.0414, -98.2063),
+    "tijuana": (32.5149, -117.0382), "cancun": (21.1619, -86.8515), "cancún": (21.1619, -86.8515),
+    # Argentina
+    "buenos aires": (-34.6037, -58.3816), "rosario": (-32.9468, -60.6393), "mendoza": (-32.8908, -68.8272), "la plata": (-34.9215, -57.9545),
+    # Perú
+    "lima": (-12.0464, -77.0428), "arequipa": (-16.4090, -71.5375), "cusco": (-13.5319, -71.9675), "trujillo peru": (-8.1116, -79.0290),
+    # Chile
+    "santiago": (-33.4489, -70.6693), "valparaiso": (-33.0472, -71.6127), "valparaíso": (-33.0472, -71.6127), "concepcion chile": (-36.8201, -73.0444),
+    # Ecuador
+    "quito": (-0.1807, -78.4678), "guayaquil": (-2.1894, -79.8891), "cuenca ecuador": (-2.9001, -79.0059),
+    # Venezuela
+    "caracas": (10.4806, -66.9036), "maracaibo": (10.6427, -71.6125), "valencia venezuela": (10.1621, -68.0077),
+    # Brasil
+    "sao paulo": (-23.5505, -46.6333), "são paulo": (-23.5505, -46.6333), "rio de janeiro": (-22.9068, -43.1729),
+    "brasilia": (-15.7975, -47.8919), "brasília": (-15.7975, -47.8919), "salvador": (-12.9714, -38.5014),
+    "belo horizonte": (-19.9167, -43.9345), "curitiba": (-25.4284, -49.2733),
+    # Panamá / Centroamérica
+    "ciudad de panama": (8.9824, -79.5199), "ciudad de panamá": (8.9824, -79.5199), "panama city": (8.9824, -79.5199),
+    "san jose": (9.9281, -84.0907), "san josé": (9.9281, -84.0907), "san salvador": (13.6929, -89.2182),
+    "ciudad de guatemala": (14.6349, -90.5069), "tegucigalpa": (14.0723, -87.1921), "managua": (12.1364, -86.2514),
+    "santo domingo": (18.4861, -69.9312),
+    # Bolivia / Paraguay / Uruguay
+    "la paz": (-16.5000, -68.1500), "santa cruz de la sierra": (-17.8146, -63.1561), "asuncion": (-25.2637, -57.5759), "asunción": (-25.2637, -57.5759),
+    "montevideo": (-34.9011, -56.1645),
+    # España
+    "madrid": (40.4168, -3.7038), "barcelona": (41.3874, 2.1686), "valencia": (39.4699, -0.3763),
+    "sevilla": (37.3891, -5.9845), "bilbao": (43.2630, -2.9350),
+    # Estados Unidos
+    "nueva york": (40.7128, -74.0060), "new york": (40.7128, -74.0060), "los angeles": (34.0522, -118.2437),
+    "miami": (25.7617, -80.1918), "chicago": (41.8781, -87.6298), "houston": (29.7604, -95.3698),
+    "san francisco": (37.7749, -122.4194), "washington": (38.9072, -77.0369),
+    # Europa
+    "londres": (51.5074, -0.1278), "london": (51.5074, -0.1278), "paris": (48.8566, 2.3522), "parís": (48.8566, 2.3522),
+    "berlin": (52.5200, 13.4050), "berlín": (52.5200, 13.4050), "roma": (41.9028, 12.4964), "rome": (41.9028, 12.4964),
+    "lisboa": (38.7223, -9.1393), "lisbon": (38.7223, -9.1393),
+    # Canadá
+    "toronto": (43.6532, -79.3832), "vancouver": (49.2827, -123.1207), "montreal": (45.5017, -73.5673), "montréal": (45.5017, -73.5673),
+}
+
 COUNTRY_CENTROIDS = {
     "colombia": (4.5709, -74.2973), "ecuador": (-1.8312, -78.1834), "peru": (-9.1900, -75.0152), "perú": (-9.1900, -75.0152),
     "argentina": (-38.4161, -63.6167), "chile": (-35.6751, -71.5430), "brasil": (-14.2350, -51.9253), "brazil": (-14.2350, -51.9253),
@@ -385,6 +437,22 @@ COUNTRY_CENTROIDS = {
     "españa": (40.4637, -3.7492), "spain": (40.4637, -3.7492), "francia": (46.2276, 2.2137), "france": (46.2276, 2.2137),
     "alemania": (51.1657, 10.4515), "germany": (51.1657, 10.4515), "italia": (41.8719, 12.5674), "italy": (41.8719, 12.5674),
     "reino unido": (55.3781, -3.4360), "united kingdom": (55.3781, -3.4360), "canada": (56.1304, -106.3468), "canadá": (56.1304, -106.3468),
+    # Resto de Latinoamérica que antes solo tenía cobertura de ciudad (arriba)
+    # pero no de país — un archivo que solo trae "País" sin ciudad se
+    # quedaba sin ubicar.
+    "bolivia": (-16.2902, -63.5887), "paraguay": (-23.4425, -58.4438), "uruguay": (-32.5228, -55.7658),
+    "republica dominicana": (18.7357, -70.1627), "república dominicana": (18.7357, -70.1627), "dominican republic": (18.7357, -70.1627),
+    "costa rica": (9.7489, -83.7534), "guatemala": (15.7835, -90.2308), "honduras": (15.2000, -86.2419),
+    "el salvador": (13.7942, -88.8965), "nicaragua": (12.8654, -85.2072), "cuba": (21.5218, -77.7812),
+    # Europa / resto del mundo — cobertura amplia pero no exhaustiva.
+    "portugal": (39.3999, -8.2245), "paises bajos": (52.1326, 5.2913), "países bajos": (52.1326, 5.2913), "holanda": (52.1326, 5.2913), "netherlands": (52.1326, 5.2913),
+    "belgica": (50.5039, 4.4699), "bélgica": (50.5039, 4.4699), "belgium": (50.5039, 4.4699),
+    "suiza": (46.8182, 8.2275), "switzerland": (46.8182, 8.2275), "austria": (47.5162, 14.5501),
+    "irlanda": (53.4129, -8.2439), "ireland": (53.4129, -8.2439), "suecia": (60.1282, 18.6435), "sweden": (60.1282, 18.6435),
+    "noruega": (60.4720, 8.4689), "norway": (60.4720, 8.4689), "dinamarca": (56.2639, 9.5018), "denmark": (56.2639, 9.5018),
+    "china": (35.8617, 104.1954), "japon": (36.2048, 138.2529), "japón": (36.2048, 138.2529), "japan": (36.2048, 138.2529),
+    "corea del sur": (35.9078, 127.7669), "south korea": (35.9078, 127.7669), "india": (20.5937, 78.9629),
+    "australia": (-25.2744, 133.7751), "sudafrica": (-30.5595, 22.9375), "sudáfrica": (-30.5595, 22.9375), "south africa": (-30.5595, 22.9375),
 }
 def _fallback_place(city: str = "", region: str = "", country: str = "") -> Optional[dict]:
     for value in (city, region):
@@ -392,6 +460,9 @@ def _fallback_place(city: str = "", region: str = "", country: str = "") -> Opti
         if key in COLOMBIA_PLACE_CENTROIDS:
             lat, lon = COLOMBIA_PLACE_CENTROIDS[key]
             return {"status":"ok", "lat":lat, "lon":lon, "address":str(value), "score":88, "fallback":True}
+        if key in WORLD_CITY_CENTROIDS:
+            lat, lon = WORLD_CITY_CENTROIDS[key]
+            return {"status":"ok", "lat":lat, "lon":lon, "address":str(value), "score":86, "fallback":True}
     key = _norm(country).lower()
     if key in COUNTRY_CENTROIDS:
         lat, lon = COUNTRY_CENTROIDS[key]

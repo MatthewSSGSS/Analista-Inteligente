@@ -51,11 +51,15 @@ def chart_card(
             if st.button("💡 Explicar gráfico", key=button_key, use_container_width=False):
                 st.markdown(f'<div class="chart-reading"><b>Interpretación:</b> {explain}</div>', unsafe_allow_html=True)
     else:
-        st.info(empty)
+        empty_state(empty)
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-def empty_state(message: str = "No hay datos suficientes para este análisis.") -> None:
-    """Estado vacío de una sola línea, para usar fuera de una tarjeta de
-    gráfico (chart_card ya incluye el suyo cuando `fig` es None)."""
-    st.info(message)
+def empty_state(message: str = "No hay datos suficientes para este análisis.", icon: str = "📭") -> None:
+    """Estado vacío (`.empty-state`) — antes un `st.info()` genérico, la
+    misma caja para cualquier mensaje informativo. Con borde punteado e
+    ícono apagado se distingue de un aviso real: esto no es algo que
+    pasó, es que sencillamente no hay nada que mostrar todavía.
+    `chart_card()` ya lo usa cuando `fig` es None; también sirve suelto
+    fuera de una tarjeta de gráfico."""
+    st.markdown(f'<div class="empty-state"><span class="empty-icon">{icon}</span><span>{message}</span></div>', unsafe_allow_html=True)

@@ -36,6 +36,34 @@ def natural_filter(df,q,schema):
     mask=df.astype(str).apply(lambda col:col.str.contains(q,case=False,na=False,regex=False)).any(axis=1)
     return df[mask],{"filters":{},"explanations":[f"búsqueda global: {q}"]}
 
+@st.cache_data(show_spinner=False, max_entries=8, ttl=1800)
+def search_across_sheets(workbook: dict, query: str, max_rows_per_sheet: int = 200) -> dict:
+    """Busca `query` (texto libre) en TODAS las hojas con datos de un Excel
+    a la vez — para encontrar algo (un cliente, un producto, un ID) sin
+    tener que cambiar de "Hoja activa" una por una. Reutiliza el mismo
+    patrón de búsqueda de texto libre que ya usa `natural_filter()` cuando
+    no logra interpretar la consulta como un filtro estructurado, solo que
+    aplicado a cada hoja del libro en vez de a una hoja ya elegida.
+
+    Devuelve {nombre_hoja: DataFrame con las filas que coinciden}; una hoja
+    sin coincidencias no aparece en el resultado.
+    """
+    results: dict[str, pd.DataFrame] = {}
+    if not query or not query.strip():
+        return results
+    for name, item in (workbook.get("sheets") or {}).items():
+        if not isinstance(item, dict):
+            continue
+        df = item.get("processed")
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        mask = df.astype(str).apply(lambda col: col.str.contains(query, case=False, na=False, regex=False)).any(axis=1)
+        matches = df[mask]
+        if not matches.empty:
+            results[name] = matches.head(max_rows_per_sheet)
+    return results
+
+
 @st.cache_data(show_spinner=False, max_entries=24, ttl=1800)
 def cascading_options(df, columns, active_filters=None, limit=80):
     """Return valid options for each categorical filter using the other active filters."""

@@ -1,7 +1,9 @@
 from __future__ import annotations
 import pandas as pd
 import streamlit as st
-from core.universal_analysis import dynamic_kpis, smart_chart_questions
+from core.universal_analysis import dynamic_kpis, smart_chart_questions, period_series
+from core.tracking_engine import project_metric
+from core.dates import format_month_year
 from visualization.charts import trend, ranking, period_compare_bar, donut, histogram, scatter, metric_candidates, dimension_candidates, _label
 from ui.labels import clean_display_text
 from ui.dashboard import _fmt, _chart_insight, _display_kpi_value
@@ -88,6 +90,38 @@ def render_executive(df, schema, dashboard):
         if ex.get("positive") or ex.get("watch"):
             st.markdown(section_header("Señales", compact=True), unsafe_allow_html=True)
             executive_signals(dashboard)
+
+        # ── Proyección: "a este ritmo, ¿a cuánto llegarías?" ────────────────
+        # Reutiliza project_metric() (regresión lineal simple), que ya existía
+        # pero solo se usaba en Análisis de Seguimiento — nunca en el
+        # Resumen ejecutivo normal, que es donde la mayoría de la gente
+        # primero se pregunta esto. Nada de cálculo nuevo: solo se le da a
+        # period_series() (ya usada en toda esta vista) la forma de columnas
+        # que project_metric() espera ("period"/"_num").
+        if m and schema.get("dates"):
+            ps = period_series(df, schema, m, "Mes", "Automático")
+            if len(ps) >= 3:
+                timeline = ps.rename(columns={m: "_num"})
+                last_period = pd.to_datetime(ps["period"]).max()
+                target = last_period + pd.DateOffset(months=3)
+                proj = project_metric(timeline, target)
+                if proj.get("status") == "ok":
+                    r2 = proj.get("r2", 0) or 0
+                    # Se informa la confianza en vez de mostrar el número
+                    # pelado: un r² bajo significa que la tendencia es
+                    # ruidosa, y presentarlo con el mismo peso que una
+                    # proyección confiable sería engañoso.
+                    confidence = "alta" if r2 >= 0.6 else "media" if r2 >= 0.3 else "baja"
+                    trend_word = {"creciente": "creciente", "decreciente": "decreciente", "estable": "estable"}.get(proj.get("trend"), "reciente")
+                    st.markdown(section_header("Proyección", compact=True), unsafe_allow_html=True)
+                    metric_label = _label(schema, m)
+                    text = (
+                        f"Si la tendencia {trend_word} de los últimos {proj['points']} periodos se mantiene, "
+                        f"<b>{metric_label}</b> llegaría a aproximadamente "
+                        f"<b>{_fmt(proj['projected'])}</b> para {format_month_year(target, full=True)} "
+                        f"(confianza {confidence}, basada en {proj['points']} periodos de historia)."
+                    )
+                    st.markdown(insight_card(text, title="A este ritmo...", kind="info"), unsafe_allow_html=True)
 
         insights=dashboard.get("insights",[]) if isinstance(dashboard,dict) else []
         if insights:
