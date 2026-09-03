@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ui.assets import image_data_uri
+from ui.assets import image_data_uri, background_data_uri
 
 # ---------------------------------------------------------------------------
 # Tokens compartidos. Los breakpoints existen como constantes de Python (y no
@@ -184,6 +184,42 @@ _COMPONENTS_CSS_RAW = """
    vez de aparecer de golpe. */
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 [data-testid="stHeader"],[data-testid="stBottomBlockContainer"]{background:var(--bg)!important}
+/* ===== PASO 1 de la nueva foto de fondo general (pidió explícitamente NO
+   preocuparse todavía por legibilidad — eso es el paso siguiente).
+
+   Va en [data-testid="stAppViewContainer"], no en .block-container: ese
+   último solo mide lo que mide su contenido (por eso los intentos
+   anteriores dejaban la foto como una franja arriba); stAppViewContainer
+   es el contenedor de más afuera, cubre sidebar + contenido a pantalla
+   completa. background-attachment:fixed la deja quieta al hacer scroll
+   sin importar qué tan largo sea el contenido de abajo.
+
+   !important en cada propiedad porque esta MISMA regla ya existe una vez
+   en base_layer_css() (el degradado rojo sutil + color sólido de fondo,
+   ver _bg_gradient()) — ese bloque se inyecta ANTES que este
+   (inject_theme() llama primero base_layer_css(), después
+   components_css()), así que en igualdad de !important, este gana por
+   orden de aparición. No se borró esa regla vieja: se queda ahí, por si
+   en algún momento se quita esta foto y hay que volver al fondo anterior. */
+[data-testid="stAppViewContainer"]{
+  background-image:url("__APP_BG__")!important;
+  background-size:cover!important;
+  background-position:center!important;
+  background-attachment:fixed!important;
+  background-repeat:no-repeat!important;
+}
+/* El header nativo de Streamlit (arriba del todo) tenía fondo sólido
+   opaco (regla de arriba, `[data-testid="stHeader"]{background:var(--bg)
+   !important}`) — se vuelve transparente aquí, DESPUÉS de esa regla en el
+   mismo bloque de texto (misma especificidad + !important en ambas: gana
+   la que aparece después), para que se vea la foto detrás. Esto
+   CONTRADICE a propósito una decisión de una tarea anterior ("nada de
+   glassmorphism", header opaco) — es la primera mitad de un cambio de
+   diseño que el usuario pidió hacer en dos pasos: primero que la foto se
+   vea en toda la app (este paso, sin preocuparse por legibilidad),
+   después arreglar el contraste del texto encima suyo (paso siguiente,
+   todavía no hecho). */
+[data-testid="stHeader"]{background:rgba(0,0,0,0)!important}
 .stApp{background:var(--bg);color:var(--text)}
 * {font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 .block-container{max-width:1540px;padding:1.1rem 1.2rem 4rem;position:relative;z-index:0}
@@ -847,6 +883,7 @@ def components_css() -> str:
     # llaves {} de selectores propias (mismo motivo que ui/login.py) — un
     # solo .replace() al final evita escaparlas todas a mano.
     css = css.replace("__HERO_BG__", image_data_uri("ciudad_red.jpg"))
+    css = css.replace("__APP_BG__", background_data_uri("fondo.jpg"))
     return css
 
 
