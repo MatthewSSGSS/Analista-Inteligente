@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ui.assets import image_data_uri, background_data_uri
+from ui.assets import background_data_uri
 
 # ---------------------------------------------------------------------------
 # Tokens compartidos. Los breakpoints existen como constantes de Python (y no
@@ -365,12 +365,17 @@ _COMPONENTS_CSS_RAW = """
    existe ningún `.hero-band`, así que ahí `:has()` no matchea y la franja
    simplemente no se pinta — cada pantalla vuelve a depender solo de su
    propio fondo, sin pisarse. */
-[data-testid="stMain"] .block-container:has(.hero-band):before{content:"";position:absolute;top:0;left:0;right:0;height:300px;z-index:-1;
-  border-radius:0 0 var(--radius-lg) var(--radius-lg);
-  background-image:
-    linear-gradient(120deg,rgba(8,4,7,.95) 0%,rgba(110,8,20,.62) 38%,rgba(20,4,8,.24) 68%,transparent 90%),
-    url(__HERO_BG__);
-  background-size:cover,cover;background-position:center,center;background-repeat:no-repeat,no-repeat}
+/* Pedido explícito: "quita toda imagen de la parte analítica, deja solo
+   el fondo" — esta franja tenía su PROPIA foto (ciudad_red.jpg), aparte
+   de la foto general de toda la app (stAppViewContainer). Con el hero y
+   la fila de pestañas ya en sus propias cajas sólidas (.hero-band,
+   .stTabs [role="tablist"]), esta segunda foto ya no sumaba nada —
+   ahora era, literalmente, "una imagen que se sobrepone" en los huecos
+   entre esas cajas. `content:none` apaga el ::before por completo (no
+   solo la imagen — la caja entera deja de generarse), así que en ese
+   tramo se ve exactamente el mismo fondo general (foto tenue + velo)
+   que en el resto de la página, no una franja aparte. */
+[data-testid="stMain"] .block-container:has(.hero-band):before{content:none}
 /* La barra nativa de Streamlit (arriba del todo, íconos de compartir/menú)
    tenía un fondo translúcido con blur — glassmorphism real. En la
    práctica ya perdía siempre contra la regla `!important` de más arriba
@@ -523,50 +528,20 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .view-banner p{margin:5px 0 0;font-size:12px;color:var(--muted);max-width:600px;line-height:1.5;text-shadow:none}
 @media(max-width:900px){.view-banner{height:130px}.view-banner-content{justify-content:flex-end;padding:0 18px 14px}}
 
-/* ===== Franja de foto propia de Inicio (ui/home.py): extiende la misma
-   foto/velo de la franja compartida de arriba, pero SOLO por el alto del
-   hero de bienvenida + la fila de 4 tarjetas "Qué se cargó" — no la
-   fila de tarjetas completa de la pestaña. `st.container(key="home_hero_
-   band")` (Streamlit ≥1.36) envuelve exactamente ese tramo con una clase
-   estable (`st-key-home_hero_band`), así que este fondo puede ir
-   directo en el propio contenedor (no hace falta el truco de ::before con
-   z-index negativo de la franja de arriba — acá el texto blanco SÍ es
-   descendiente real de este mismo elemento, no un hermano flotando al
-   lado). Es un container SEPARADO de la franja compartida (no la misma
-   alargada) a propósito: la franja de arriba vive una sola vez en
-   .block-container y la comparten TODAS las pestañas — alargarla ahí
-   habría puesto esta misma foto detrás de Resumen ejecutivo, Descripción,
-   etc., cuyo texto no está preparado para eso. Con un container propio,
-   el efecto queda contenido 100% a Inicio.
+/* ===== ui/home.py — st.container(key="home_hero_band"): agrupaba el hero
+   de bienvenida + la fila de 4 tarjetas "Qué se cargó" bajo su PROPIA foto
+   (ciudad_red.jpg), aparte de la foto general de toda la app. Pedido
+   explícito: "quita toda imagen de la parte analítica, deja solo el
+   fondo". Ya no hace falta ningún tratamiento especial acá: el hero()
+   de adentro lleva band=True → ya es una caja sólida propia
+   (.hero-band, ver arriba) y "Qué se cargó" ya es una caja sólida por
+   default (.section-intro, ver arriba) — este contenedor vuelve a ser
+   un simple agrupador sin fondo ni padding extra, el fondo general
+   (foto tenue + velo) se ve en los huecos como en el resto de la app. */
 
-   El alto no es un número fijo — crece con el padding + el contenido de
-   adentro (hero + fila de tarjetas), así que termina justo después de la
-   última tarjeta sin necesitar calibrar ningún píxel a mano; el siguiente
-   contenido ("Tipo detectado en...") queda automáticamente fuera, sobre
-   fondo normal otra vez.
-
-   Aviso honesto (no hay navegador en este entorno para afinarlo a ojo):
-   esta franja usa la MISMA foto que la de arriba pero en una caja de
-   alto distinto — "cover" recorta cada una por separado, así que el
-   empalme entre las dos puede no ser perfectamente continuo (un salto
-   sutil en el encuadre de la imagen en la costura). Minimizado alineando
-   ambas a "top" y sin redondear la esquina superior (mismo truco que ya
-   usa la franja de arriba: solo se redondean las esquinas de abajo, para
-   que la pila se lea como un solo bloque). */
-[data-testid="stMain"] .st-key-home_hero_band{
-  position:relative;margin:-6px 0 18px;padding:16px 22px 22px;
-  border-radius:0 0 var(--radius-lg) var(--radius-lg);
-  background-image:
-    linear-gradient(90deg,rgba(6,8,13,.94) 0%,rgba(6,8,13,.8) 45%,rgba(6,8,13,.35) 78%,rgba(6,8,13,.12) 100%),
-    url(__HERO_BG__);
-  background-size:cover,cover;background-position:top,top;background-repeat:no-repeat,no-repeat;
-}
-/* "Qué se cargó" es un section_header() normal (texto oscuro por defecto,
-   pensado para fondo blanco) — se sobreescribe SOLO dentro de esta franja,
-   sin tocar la regla general que usa el resto de la app. Las 4 tarjetas
-   (kpi_card()) no se tocan: ya son fondo sólido opaco (--card-solid), se
-   siguen leyendo bien encima tal cual estaban. */
-[data-testid="stMain"] .st-key-home_hero_band .section-intro h2{color:#ffffff!important;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+/* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white =====
+   clamp(mínimo, preferido-en-vw, máximo): el mínimo es EXACTAMENTE el
+   valor fijo que ya tenía cada propiedad (así en pantallas normales/chicas
 
 /* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white =====
    clamp(mínimo, preferido-en-vw, máximo): el mínimo es EXACTAMENTE el
@@ -649,39 +624,38 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .stPlotlyChart{margin-top:-3px}
 
 /* ===== Tabs =====
-   La fila de pestañas de nivel superior (Inicio/Asistente IA/Datos/.../
-   Georeferenciación) tuvo 3 versiones por lo mismo — vivía sobre una foto
-   sin nada detrás que garantizara contraste: fondo transparente + texto
-   blanco (fallaba donde el velo diagonal se desvanecía), luego un fondo
-   oscuro semi-translúcido, luego un oscuro sólido fijo (#161616, ganaba
-   siempre pero no respetaba el tema Claro).
-
-   ahora hay un velo semitranslúcido propio del tema entre la foto de
-   stAppViewContainer y TODO el contenido (::before + var(--overlay-veil),
-   ver más abajo) — con eso ya no hace falta que la pestaña "compita" sola
-   contra una foto sin filtrar: vuelve a un fondo sólido normal del tema
-   (var(--panel-2) — blanco en Claro, panel oscuro en Oscuro) con
-   !important, porque BaseWeb trae su propio fondo con peso suficiente
-   para ganarle a una regla sin él (ese SÍ era un bug real, no cosmético:
-   sin !important la pestaña quedaba prácticamente transparente encima de
-   cualquier fondo, no solo de una foto).
+   BUG RAÍZ encontrado con un navegador real (Playwright + Edge del
+   sistema — no había podido probarlo hasta ahora): todo este bloque
+   apuntaba a `[data-baseweb="tab-list"]`/`[data-baseweb="tab"]`, atributos
+   que YA NO EXISTEN en el DOM de esta versión de Streamlit (1.50 —
+   confirmado inspeccionando la página real). Streamlit ahora renderiza
+   las pestañas con `[role="tablist"]` y `[data-testid="stTab"]` (con
+   `role="tab"`), sin ningún `data-baseweb`. Todas las reglas de abajo
+   NUNCA hicieron match — ni una sola vez — así que la pestaña activa se
+   veía bien solo porque `[aria-selected="true"]` SÍ es un atributo real
+   (no depende de data-baseweb), pero las inactivas dependían 100% de
+   selectores muertos: fondo transparente de fábrica + el color de texto
+   por defecto de React, nunca `var(--muted)`. Esto explica por qué el
+   `!important` "no funcionaba" en las últimas 3 rondas: no es que
+   perdiera la pelea de especificidad, es que el selector nunca
+   coincidía con nada.
 
    Las pestañas ANIDADAS (dentro de otra pestaña, p. ej. las internas de
    Descripción) tienen su propio bloque más abajo (".stTabs .stTabs"), sin
    tocar. */
-.stTabs [data-baseweb="tab-list"]{gap:6px;background:var(--panel-2)!important;border:1px solid var(--line)!important;padding:6px;border-radius:999px;box-shadow:var(--shadow-sm)!important;overflow-x:auto}
-.stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:var(--muted)!important;font-weight:700!important;font-size:13.5px;
+.stTabs [role="tablist"]{gap:6px;background:var(--panel-2)!important;border:1px solid var(--line)!important;padding:6px;border-radius:999px;box-shadow:var(--shadow-sm)!important;overflow-x:auto}
+.stTabs [data-testid="stTab"]{height:40px;border-radius:999px;padding:0 18px;color:var(--muted)!important;font-weight:700!important;font-size:13.5px;
   transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
   background:transparent;border:1px solid transparent}
 /* El color no se deja solo en `inherit` sobre <p> — se repite explícito en
    TODOS los descendientes (`*`), porque no hay forma de confirmar en este
    entorno qué elemento exacto envuelve el texto en cada versión de
-   BaseWeb, y un solo selector que no acierte deja el texto invisible sin
+   Streamlit, y un solo selector que no acierte deja el texto invisible sin
    ningún aviso. Esto es más ancho de lo estrictamente necesario a
    propósito — mejor una regla de más que un texto ilegible. */
-.stTabs [data-baseweb="tab"],.stTabs [data-baseweb="tab"] *{color:var(--muted)!important;font-weight:700!important}
-.stTabs [data-baseweb="tab"]:hover{background:var(--panel);border-color:var(--line);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
-.stTabs [data-baseweb="tab"]:hover,.stTabs [data-baseweb="tab"]:hover *{color:var(--text)!important}
+.stTabs [data-testid="stTab"],.stTabs [data-testid="stTab"] *{color:var(--muted)!important;font-weight:700!important}
+.stTabs [data-testid="stTab"]:hover{background:var(--panel);border-color:var(--line);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.stTabs [data-testid="stTab"]:hover,.stTabs [data-testid="stTab"]:hover *{color:var(--text)!important}
 /* Pestaña seleccionada: no es un rectángulo rojo plano — el radial-gradient
    agrega un brillo/reflejo (como una píldora con volumen, no un color
    sólido) encima del degradado de marca, más el mismo --glow-ring que ya
@@ -697,8 +671,6 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 }
 .stTabs [aria-selected="true"]:hover{box-shadow:0 6px 18px rgba(228,0,43,.4),var(--glow-ring)!important}
 .stTabs [aria-selected="true"],.stTabs [aria-selected="true"] *{color:#ffffff!important;font-weight:800!important}
-.stTabs [data-baseweb="tab-highlight"]{display:none!important}
-.stTabs [data-baseweb="tab-border"]{display:none!important}
 
 /* Pestañas anidadas (una barra de pestañas que vive DENTRO de otra, p. ej.
    las pestañas internas de ui/dashboard.py — "📊 Visión general/🔍
@@ -722,18 +694,18 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    de texto — sigue siendo más liviana que la barra de nivel superior
    (sin píldora, solo el subrayado inferior) para que se note la
    jerarquía entre las dos filas. */
-.stTabs .stTabs [data-baseweb="tab-list"]{
+.stTabs .stTabs [role="tablist"]{
   background:var(--card-solid)!important;border:1px solid var(--line-soft);box-shadow:var(--shadow-sm);border-radius:var(--radius-sm);
   padding:2px 8px 0;gap:20px;border-bottom:1px solid var(--line);
 }
-.stTabs .stTabs [data-baseweb="tab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650;text-shadow:none}
+.stTabs .stTabs [data-testid="stTab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650;text-shadow:none}
 /* Estas viven sobre la caja sólida de arriba (ya no sobre la foto
    directamente) — recuperan var(--muted)/sin sombra de texto por encima
    del texto claro fijo que la regla de nivel superior les habría
    heredado. Doble ".stTabs" pesa más que uno solo, así que esto gana sin
    necesitar tocar la regla de arriba. */
-.stTabs .stTabs [data-baseweb="tab"],.stTabs .stTabs [data-baseweb="tab"] *{color:var(--muted)!important;font-weight:650!important;text-shadow:none}
-.stTabs .stTabs [data-baseweb="tab"]:hover,.stTabs .stTabs [data-baseweb="tab"]:hover *{background:transparent;color:var(--blue-strong)!important}
+.stTabs .stTabs [data-testid="stTab"],.stTabs .stTabs [data-testid="stTab"] *{color:var(--muted)!important;font-weight:650!important;text-shadow:none}
+.stTabs .stTabs [data-testid="stTab"]:hover,.stTabs .stTabs [data-testid="stTab"]:hover *{background:transparent;color:var(--blue-strong)!important}
 .stTabs .stTabs [aria-selected="true"]{
   background:transparent!important;box-shadow:none!important;
   border-bottom:2px solid var(--blue)!important;
@@ -928,7 +900,6 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 
 @media (max-width:900px){
  .block-container{padding-left:.8rem;padding-right:.8rem}
- [data-testid="stMain"] .block-container:has(.hero-band):before{height:360px}
  .hero{padding:20px}.hero h1{font-size:23px}
  .analysis-toolbar{align-items:flex-start;flex-direction:column;padding:15px 16px}
  .analysis-toolbar-meta{justify-content:flex-start}
@@ -972,7 +943,9 @@ def components_css() -> str:
     # Marcador de texto, no f-string: _COMPONENTS_CSS_RAW tiene decenas de
     # llaves {} de selectores propias (mismo motivo que ui/login.py) — un
     # solo .replace() al final evita escaparlas todas a mano.
-    css = css.replace("__HERO_BG__", image_data_uri("ciudad_red.jpg"))
+    # (ciudad_red.jpg / __HERO_BG__ ya no se usa en ningún selector — se
+    # quitó junto con las 2 franjas de foto propias del header/Inicio,
+    # pedido explícito de "quita toda imagen de la parte analítica".)
     css = css.replace("__APP_BG__", background_data_uri("fondo.jpg"))
     return css
 

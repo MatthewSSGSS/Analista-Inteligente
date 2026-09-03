@@ -63,16 +63,19 @@ def render_login():
 
         .login-card{background:transparent;padding:0;text-align:left}
 
-        /* Pestañas tipo píldora dividida: activa en rojo, inactiva en negro. */
-        .stTabs [data-baseweb="tab-list"]{background:#161616!important;border:none!important;border-radius:999px!important;
+        /* Pestañas tipo píldora dividida: activa en rojo, inactiva en negro.
+           `[data-baseweb="tab-list"/"tab"/"tab-panel"]` ya no existen en el
+           DOM de Streamlit 1.50+ (confirmado con un navegador real) — estas
+           reglas nunca hacían match. Selectores reales: [role="tablist"],
+           [data-testid="stTab"], [role="tabpanel"]. */
+        .stTabs [role="tablist"]{background:#161616!important;border:none!important;border-radius:999px!important;
           padding:5px!important;gap:0!important;box-shadow:0 10px 26px rgba(0,0,0,.14)!important}
-        .stTabs [data-baseweb="tab"]{flex:1;justify-content:center;border-radius:999px!important;height:42px!important;
+        .stTabs [data-testid="stTab"]{flex:1;justify-content:center;border-radius:999px!important;height:42px!important;
           color:#e8e8e8!important;font-weight:700!important;background:transparent!important}
-        .stTabs [data-baseweb="tab"] p{color:inherit!important;font-weight:inherit!important}
+        .stTabs [data-testid="stTab"] p{color:inherit!important;font-weight:inherit!important}
         .stTabs [aria-selected="true"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;color:#fff!important;
           box-shadow:0 4px 12px rgba(228,0,43,.35)!important}
-        .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important}
-        .stTabs [data-baseweb="tab-panel"]{padding-top:22px!important}
+        .stTabs [role="tabpanel"]{padding-top:22px!important}
 
         /* Campos redondeados, blancos, sobre el fondo crema. */
         .login-card input{background:#ffffff!important;border:1px solid #e7e2da!important;border-radius:12px!important;
