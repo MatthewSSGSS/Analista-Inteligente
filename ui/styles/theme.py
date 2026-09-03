@@ -65,16 +65,27 @@ def _theme_vars(dark: bool) -> str:
     referencia); en Claro es solo un anillo de 1px muy sutil — un glow
     tan fuerte como el de Oscuro sobre fondo blanco se ve sucio, no
     "vivo", así que se afinó por separado en vez de copiar el mismo
-    valor en los dos temas."""
+    valor en los dos temas.
+
+    Los `--*-soft` de Oscuro eran `rgba(...,.14)` — translúcidos de
+    verdad, no un color plano: se mezclaban con lo que hubiera detrás
+    (glassmorphism, literal). En Claro esto nunca fue un problema porque
+    esos mismos tokens ya eran hex opacos (`#fde8ea` etc.) — la
+    inconsistencia era solo de Oscuro. Los valores de abajo son el
+    resultado de componer cada rgba(...,.14) sobre `--panel` (#161b22): el
+    mismo tinte de color, a simple vista indistinguible del original, pero
+    ahora un color plano — sólido y opaco de verdad, para que cualquier
+    tarjeta/panel que lo use quede separada del fondo con texto legible,
+    sin importar qué haya detrás (incluida la foto del header)."""
     if dark:
         return """
   --bg:#0d1117;--panel:#161b22;--panel-2:#1c2129;--panel-3:#222833;
   --text:#e6e9ef;--muted:#9aa4b2;--soft:#7b8592;--line:#2a313d;--line-soft:#232a34;
-  --blue:#ff3b52;--blue-soft:rgba(255,59,82,.14);--blue-strong:#ff6b7a;
-  --teal:#2dd4c8;--teal-soft:rgba(45,212,200,.14);
-  --green:#3ecf8e;--green-soft:rgba(62,207,142,.14);--green-strong:#3ecf8e;
-  --amber:#f0a63e;--amber-soft:rgba(240,166,62,.14);--amber-strong:#f0a63e;
-  --red:#ff5570;--red-soft:rgba(255,85,112,.14);--purple:#9b8cf2;--purple-soft:rgba(155,140,242,.14);
+  --blue:#ff3b52;--blue-soft:#372129;--blue-strong:#ff6b7a;
+  --teal:#2dd4c8;--teal-soft:#193539;
+  --green:#3ecf8e;--green-soft:#1c3431;--green-strong:#3ecf8e;
+  --amber:#f0a63e;--amber-soft:#352e26;--amber-strong:#f0a63e;
+  --red:#ff5570;--red-soft:#37232d;--purple:#9b8cf2;--purple-soft:#292b3f;
   --card-solid:#161b22;
   --glow-ring:0 0 0 1px rgba(255,59,82,.32),0 0 26px rgba(255,59,82,.24);
 """
@@ -175,7 +186,57 @@ _COMPONENTS_CSS_RAW = """
 [data-testid="stHeader"],[data-testid="stBottomBlockContainer"]{background:var(--bg)!important}
 .stApp{background:var(--bg);color:var(--text)}
 * {font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-.block-container{max-width:1540px;padding:1.1rem 1.8rem 4rem;position:relative;z-index:0}
+.block-container{max-width:1540px;padding:1.1rem 1.2rem 4rem;position:relative;z-index:0}
+/* ===== Contenedor principal (todo lo que va a la derecha del sidebar):
+   antes tenía un tope fijo de 1540px heredado del `.block-container` de
+   arriba — en un monitor de escritorio normal (1920px+) eso dejaba
+   franjas vacías grandes a los lados y hacía sentir el dashboard como una
+   página web angosta, no como una app de escritorio.
+
+   Va en un selector aparte, prefijado con `[data-testid="stMain"]`, en
+   vez de tocar la regla `.block-container` de arriba directamente: el
+   sidebar TIENE su propio `.block-container` (ver
+   `section[data-testid="stSidebar"] .block-container` más abajo, sin
+   tocar) y un `max-width:100%`/`min-height:100vh` puesto en el selector
+   genérico se habría colado ahí también. Con este prefijo, el tope de
+   1540px de la regla de arriba se queda intacto para el sidebar (no le
+   afecta en la práctica — su ancho real lo define el propio panel de
+   Streamlit, no este max-width — pero así queda explícitamente sin
+   tocar) y solo el contenido principal gana el ancho completo. */
+[data-testid="stMain"] .block-container{width:100%!important;max-width:100%!important;min-height:100vh}
+/* Espacio vertical ENTRE elementos del contenido principal (el "hueco" que
+   Streamlit deja por defecto entre cada st.markdown/gráfico/tabla propios,
+   no el padding interno de cada tarjeta — eso no se toca aquí). El
+   sidebar ya tenía su propia reducción (`gap:.5rem`, ver más abajo); el
+   contenido principal no tenía ninguna, así que se apoyaba en el valor
+   por defecto de Streamlit, más grande de lo necesario. */
+[data-testid="stMain"] [data-testid="stVerticalBlock"]{gap:.75rem}
+/* ===== Filas de tarjetas/KPIs (kpi_grid(), y cualquier fila de 3+
+   st.columns() usada para tarjetas — Resumen ejecutivo, Descripción,
+   Georeferenciación, Inicio, Comparar personas, Calidad...): Streamlit las
+   arma como columnas de ancho fijo entre sí (flex, sin wrap), así que en
+   pantalla angosta se aprietan hasta verse minúsculas, y en pantalla ancha
+   simplemente se estiran sin ganar densidad visual real (eso ya lo
+   resuelven los clamp() de cada tarjeta, arriba). Este selector las
+   convierte en una grilla flexible tipo CSS Grid/minmax: cada tarjeta
+   pide un ancho "cómodo" (el segundo valor de clamp) pero puede encogerse
+   hasta un mínimo legible o envolver a la fila siguiente si no caben —
+   eso es el breakpoint responsive, continuo en vez de un punto de quiebre
+   fijo. Solo apunta a filas de 3 COLUMNAS O MÁS (`:has(> ... :nth-child(3))`)
+   para no tocar los layouts de 2 columnas con proporciones intencionales
+   (contenido principal + panel lateral, botón + descripción, etc.) — esos
+   ya funcionan bien y no son "una fila de tarjetas". */
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)){
+  flex-wrap:wrap;row-gap:clamp(10px,1vw,20px);
+}
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"]{
+  flex:1 1 clamp(215px,22vw,360px);min-width:0;
+}
+@media (max-width:640px){
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"]{
+    flex-basis:100%;
+  }
+}
 /* ===== Franja de foto de toda la app: la misma ciudad_red.jpg de los
    banners de cada vista (ui/components/section.py::banner_header), pero
    detrás del hero + el buscador + la fila de pestañas — lo único que se
@@ -217,14 +278,33 @@ _COMPONENTS_CSS_RAW = """
     linear-gradient(120deg,rgba(8,4,7,.95) 0%,rgba(110,8,20,.62) 38%,rgba(20,4,8,.24) 68%,transparent 90%),
     url(__HERO_BG__);
   background-size:cover,cover;background-position:center,center;background-repeat:no-repeat,no-repeat}
-header[data-testid="stHeader"]{background:rgba(238,241,246,.86);backdrop-filter:blur(6px)}
+/* La barra nativa de Streamlit (arriba del todo, íconos de compartir/menú)
+   tenía un fondo translúcido con blur — glassmorphism real. En la
+   práctica ya perdía siempre contra la regla `!important` de más arriba
+   (`[data-testid="stHeader"]{background:var(--bg)!important}`), así que
+   era peso muerto sin efecto visible, pero se deja explícita y sólida
+   para que no quede ningún rastro de transparencia en el código. */
+header[data-testid="stHeader"]{background:var(--bg)!important}
 h1,h2,h3,h4,h5,h6{color:var(--text);font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
 p,span,div,li,label{color:var(--text)}
 
 /* ===== Sidebar: nav rail with its own surface tokens (--sidebar-*), navy in
    Dark Mode and off-white in Light Mode — same tokens, values swapped in
-   _sidebar_vars() so this block never needs to know which mode is active. */
-section[data-testid="stSidebar"]{background:var(--sidebar-bg)!important;border-right:1px solid var(--sidebar-line)!important}
+   _sidebar_vars() so this block never needs to know which mode is active.
+
+   Ancho: antes no tenía ninguna regla propia, así que usaba el ancho por
+   defecto/redimensionable de Streamlit (bastante más ancho de lo que su
+   contenido — un logo, dos botones de tema, un dropdown, filtros — de
+   verdad necesita). 270px alcanza para que el rango de fechas
+   ("2025/01/01 – 2025/06/30") y el nombre del archivo sigan leyéndose sin
+   verse forzados, dejando el resto de la pantalla para el contenido
+   principal. Todo el contenido sigue siendo el mismo — nada se quitó ni
+   se reordenó, solo el ancho del panel que lo contiene. Con !important
+   porque Streamlit redimensiona el sidebar con su propio estilo inline;
+   esto también fija el ancho, así que el tirador para arrastrarlo y
+   cambiarlo a mano deja de tener efecto. */
+section[data-testid="stSidebar"]{width:270px!important;min-width:270px!important;max-width:270px!important;background:var(--sidebar-bg)!important;border-right:1px solid var(--sidebar-line)!important}
+section[data-testid="stSidebar"]>div{width:270px!important}
 section[data-testid="stSidebar"] .block-container{padding:1rem 1rem 1.5rem}
 section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.5rem}
 section[data-testid="stSidebar"] *{color:var(--sidebar-text)}
@@ -240,7 +320,10 @@ section[data-testid="stSidebar"] [data-baseweb="select"]>div{background:var(--si
    two-tone "dark pill with a white patch near the arrow" look. */
 section[data-testid="stSidebar"] [data-baseweb="select"] *{color:var(--sidebar-text-strong)!important;background:transparent!important;background-color:transparent!important;fill:var(--sidebar-text-strong)!important}
 section[data-testid="stSidebar"] [data-baseweb="select"] input::placeholder{color:var(--sidebar-muted)!important;opacity:1!important}
-section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"]{background:rgba(228,0,43,.22)!important;border:1px solid rgba(228,0,43,.4)!important}
+/* var(--blue-soft), no un rgba() propio — mismo motivo que el mode-banner
+   de más arriba: mismo tinte, ya opaco. El borde se queda translúcido
+   (no afecta legibilidad del texto de adentro). */
+section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"]{background:var(--blue-soft)!important;border:1px solid rgba(228,0,43,.4)!important}
 section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] span{color:var(--sidebar-text-strong)!important}
 section[data-testid="stSidebar"] [data-baseweb="popover"]{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important}
 section[data-testid="stSidebar"] [data-baseweb="menu"]{background:var(--sidebar-panel)!important}
@@ -257,7 +340,11 @@ section[data-testid="stSidebar"] [data-testid="stExpander"]{background:var(--sid
 section[data-testid="stSidebar"] [data-testid="stExpander"] summary{background:var(--sidebar-panel)!important;color:var(--sidebar-text-strong)!important}
 section[data-testid="stSidebar"] [data-testid="stExpander"] summary:hover{color:var(--blue)!important}
 section[data-testid="stSidebar"] [data-testid="stAlert"]{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;color:var(--sidebar-text)!important}
-section[data-testid="stSidebar"] .mode-banner{background:rgba(228,0,43,.16);border:1px solid rgba(228,0,43,.4);color:var(--sidebar-text-strong)}
+/* var(--blue-soft), no un rgba() propio: mismo tinte, pero ya sólido y
+   opaco (ver la nota sobre los tokens --*-soft en _theme_vars) — el
+   borde sí se queda translúcido, un borde con transparencia no afecta
+   la legibilidad del texto de adentro como sí lo hace un fondo. */
+section[data-testid="stSidebar"] .mode-banner{background:var(--blue-soft);border:1px solid rgba(228,0,43,.4);color:var(--sidebar-text-strong)}
 section[data-testid="stSidebar"] .mode-banner .mode-banner-label{color:var(--sidebar-muted)}
 section[data-testid="stSidebar"] .mode-banner b{color:var(--sidebar-text-strong)}
 section[data-testid="stSidebar"] .mode-confidence{color:var(--sidebar-muted)!important;background:var(--sidebar-panel)!important}
@@ -322,14 +409,20 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .view-banner p{margin:5px 0 0;font-size:12px;color:rgba(255,255,255,.88);max-width:600px;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 @media(max-width:900px){.view-banner{height:130px}.view-banner:before{background:linear-gradient(180deg,rgba(6,8,13,.45) 0%,rgba(6,8,13,.94) 100%)}.view-banner-content{justify-content:flex-end;padding:0 18px 14px}}
 
-/* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white ===== */
+/* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white =====
+   clamp(mínimo, preferido-en-vw, máximo): el mínimo es EXACTAMENTE el
+   valor fijo que ya tenía cada propiedad (así en pantallas normales/chicas
+   no cambia nada), el máximo es un tope razonable — entre ambos, crece de
+   forma continua con el ancho de la ventana en vez de quedarse siempre en
+   el mismo tamaño chico aunque sobre media pantalla vacía alrededor. */
 .kpi-card{position:relative;background:var(--card-solid);border:1px solid var(--line);border-left:4px solid var(--blue);
-  border-radius:12px;padding:14px 16px 14px 18px;min-height:92px;animation:fadeUp .4s ease both;
+  border-radius:12px;padding:clamp(14px,1vw,22px) clamp(16px,1.15vw,26px) clamp(14px,1vw,22px) clamp(18px,1.25vw,28px);
+  min-height:clamp(92px,7vw,132px);animation:fadeUp .4s ease both;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring)}
-.kpi-label{display:block;font-size:10.5px;color:var(--muted);letter-spacing:.02em;font-weight:700;text-transform:uppercase}
-.kpi-value{font-size:22px;font-weight:800;letter-spacing:-.01em;margin-top:9px;color:var(--text);font-variant-numeric:tabular-nums;font-family:'Sora','Inter',sans-serif}
+.kpi-label{display:block;font-size:clamp(10.5px,.75vw,13px);color:var(--muted);letter-spacing:.02em;font-weight:700;text-transform:uppercase}
+.kpi-value{font-size:clamp(22px,1.65vw,34px);font-weight:800;letter-spacing:-.01em;margin-top:9px;color:var(--text);font-variant-numeric:tabular-nums;font-family:'Sora','Inter',sans-serif}
 .kpi-card.negative .kpi-value{color:var(--red)}
 .kpi-card.positive .kpi-value{color:var(--green)}
 /* "Líder · X" (quién encabeza una categoría) es un tipo de dato distinto a
@@ -340,7 +433,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    para que se distinga de un vistazo. */
 .kpi-card.leader{border-left-color:var(--purple)}
 .kpi-card.leader .kpi-value{color:var(--purple)}
-.kpi-delta{font-size:10.5px;margin-top:5px;font-weight:700}
+.kpi-delta{font-size:clamp(10.5px,.75vw,13px);margin-top:5px;font-weight:700}
 .kpi-delta.positive{color:var(--green-strong)}.kpi-delta.negative{color:var(--red)}.kpi-delta.neutral{color:var(--muted)}
 
 /* ===== Decision strips / trend lines ===== */
@@ -351,16 +444,16 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== Insight / finding cards ===== */
 .insight-card{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:var(--radius-md);
-  padding:15px;margin:4px 0 8px;background:var(--card-solid);animation:fadeUp .4s ease both;
-  min-height:88px;box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
+  padding:clamp(15px,1.1vw,24px);margin:4px 0 8px;background:var(--card-solid);animation:fadeUp .4s ease both;
+  min-height:clamp(88px,6.5vw,124px);box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease}
 .insight-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring)}
 .insight-card.positive{border-left:4px solid var(--green)}
 .insight-card.warning{border-left:4px solid var(--amber)}
 .insight-card.info{border-left:4px solid var(--blue)}
 .insight-icon{width:28px;height:28px;flex:0 0 28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--panel-3);color:var(--muted);font-weight:800}
-.insight-title{font-size:10px;color:var(--soft);text-transform:uppercase;letter-spacing:.09em;margin-bottom:5px;font-weight:800}
-.insight-text{font-size:13px;line-height:1.45;color:var(--text)}
+.insight-title{font-size:clamp(10px,.7vw,12px);color:var(--soft);text-transform:uppercase;letter-spacing:.09em;margin-bottom:5px;font-weight:800}
+.insight-text{font-size:clamp(13px,.95vw,16px);line-height:1.45;color:var(--text)}
 .insight-text.secondary{color:var(--muted)}
 .insight-card small{display:block;color:var(--soft);margin-top:6px}
 .insight-body{flex:1}
@@ -386,14 +479,14 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   color:var(--muted);font-size:12.5px;line-height:1.5}
 .empty-state .empty-icon{font-size:19px;flex:0 0 auto;opacity:.55}
 .chart-card{background:var(--card-solid);animation:fadeUp .4s ease both;
-  border:1px solid var(--line);border-radius:var(--radius-lg);padding:15px 17px 8px;margin:6px 0 16px;
+  border:1px solid var(--line);border-radius:var(--radius-lg);padding:clamp(15px,1.1vw,24px) clamp(17px,1.25vw,26px) clamp(8px,.6vw,14px);margin:6px 0 16px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 22px rgba(20,26,43,.06),var(--glow-ring);overflow:hidden;
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .chart-card:hover{box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring);border-color:rgba(228,0,43,.18)}
 .chart-card:before{content:"";display:block;width:26px;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--blue),var(--teal));margin:0 0 10px 2px}
 .chart-head{display:flex;justify-content:space-between;align-items:flex-start;padding:2px 3px 0}
-.chart-title{font-size:15px;letter-spacing:-.01em;font-weight:750;color:var(--text)}
-.chart-subtitle{font-size:11px;color:var(--muted);margin-top:3px}
+.chart-title{font-size:clamp(15px,1.05vw,19px);letter-spacing:-.01em;font-weight:750;color:var(--text)}
+.chart-subtitle{font-size:clamp(11px,.8vw,13px);color:var(--muted);margin-top:3px}
 .stPlotlyChart{margin-top:-3px}
 
 /* ===== Tabs =====
@@ -410,17 +503,18 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    hacia la derecha — justo donde vive la mayoría de las pestañas. Ahí el
    texto quedaba flotando sobre la foto sin ningún respaldo oscuro debajo,
    y un text-shadow no basta cuando detrás hay rojo saturado, no negro.
-   Corrección: la píldora vuelve a tener su propio fondo, pero ahora fijo
-   y oscuro semi-translúcido (no var(--panel-2) del tema, que era blanco
-   en Claro) — un respaldo constante para el texto sin importar en qué
-   punto del degradado de la franja caiga cada pestaña, dejando ver la
-   foto de fondo a través suyo en vez de taparla del todo.
+   Segundo intento: un respaldo oscuro semi-translúcido — mejor, pero
+   seguía siendo transparencia real. Ahora es sólido y opaco de verdad
+   (el mismo #161616 que ya usa la píldora de pestañas del login, para
+   que ambas compartan el mismo lenguaje) — la foto queda completamente
+   detrás de esta píldora, no se transparenta a través de ella, y el
+   texto queda garantizado legible sin importar qué haya en la foto.
 
    Las pestañas ANIDADAS (dentro de otra pestaña, p. ej. las internas de
    Descripción) NUNCA están sobre la foto — más abajo, el bloque
    ".stTabs .stTabs" les devuelve explícitamente los colores normales del
    tema con selectores más específicos, así que este cambio no las toca. */
-.stTabs [data-baseweb="tab-list"]{gap:6px;background:rgba(8,6,10,.62)!important;border:1px solid rgba(255,255,255,.09)!important;padding:6px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.35)!important;overflow-x:auto}
+.stTabs [data-baseweb="tab-list"]{gap:6px;background:#161616!important;border:1px solid rgba(255,255,255,.09)!important;padding:6px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.35)!important;overflow-x:auto}
 .stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:rgba(255,255,255,.86)!important;font-weight:700!important;font-size:13.5px;
   text-shadow:0 1px 4px rgba(0,0,0,.5);
   transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
@@ -573,12 +667,12 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 [data-testid="stMetricValue"]{color:var(--text)!important;font-size:22px!important;font-variant-numeric:tabular-nums}
 
 /* ===== Executive / alerts / why-changed / factors ===== */
-.executive-card{padding:19px 21px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:var(--shadow-md),var(--glow-ring);border-left:5px solid var(--blue);margin:4px 0 10px;animation:fadeUp .4s ease both}
+.executive-card{padding:clamp(19px,1.4vw,30px) clamp(21px,1.5vw,32px);border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:var(--shadow-md),var(--glow-ring);border-left:5px solid var(--blue);margin:4px 0 10px;animation:fadeUp .4s ease both}
 .executive-card.positive{border-left-color:var(--green)}
 .executive-card.negative{border-left-color:var(--red)}
 .executive-status{font-size:10px;text-transform:uppercase;letter-spacing:.11em;font-weight:800;color:var(--soft)}
-.executive-headline{font-size:21px;font-weight:800;color:var(--text);margin-top:6px}
-.executive-detail{font-size:12.5px;color:var(--muted);margin-top:7px;line-height:1.5}
+.executive-headline{font-size:clamp(21px,1.55vw,30px);font-weight:800;color:var(--text);margin-top:6px}
+.executive-detail{font-size:clamp(12.5px,.9vw,15px);color:var(--muted);margin-top:7px;line-height:1.5}
 .mini-list{padding:9px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--text);font-weight:700}
 .mini-positive,.mini-warning{margin-top:6px;padding:9px 11px;border-radius:var(--radius-sm);font-size:12.5px}
 .mini-positive{color:var(--green-strong);background:var(--green-soft);border-left:3px solid var(--green)}
@@ -647,7 +741,7 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 
 /* ===== pbi-visual: chart card variant used in the analysis area ===== */
 .pbi-visual{background:var(--card-solid);animation:fadeUp .4s ease both;
-  border:1px solid var(--line);border-radius:13px;padding:12px 13px 9px;
+  border:1px solid var(--line);border-radius:13px;padding:clamp(12px,.9vw,19px) clamp(13px,1vw,20px) clamp(9px,.65vw,14px);
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .pbi-visual:hover{box-shadow:0 14px 28px rgba(228,0,43,.10),var(--glow-ring);border-color:rgba(228,0,43,.2)}
@@ -655,8 +749,8 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 .pbi-visual .chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-height:42px;padding:0 3px 2px}
 .pbi-visual .chart-head-main{min-width:0}
 .pbi-visual .visual-type{display:block;color:var(--blue);font-size:8px;font-weight:800;letter-spacing:.15em;margin-bottom:4px}
-.pbi-visual .chart-title{font-size:14px;font-weight:800;line-height:1.2}
-.pbi-visual .chart-subtitle{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.35}
+.pbi-visual .chart-title{font-size:clamp(14px,1vw,17px);font-weight:800;line-height:1.2}
+.pbi-visual .chart-subtitle{font-size:clamp(10px,.72vw,12px);color:var(--muted);margin-top:3px;line-height:1.35}
 .pbi-visual .visual-badge{white-space:nowrap;margin-top:1px;background:var(--panel-2);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 8px;font-size:8px}
 .pbi-visual .chart-reading{margin-top:4px;font-size:10.5px}
 [data-testid="stHorizontalBlock"]:has(.pbi-visual){align-items:stretch}
