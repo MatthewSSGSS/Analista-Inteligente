@@ -376,16 +376,26 @@ _COMPONENTS_CSS_RAW = """
    255,255,.20) general) — el salto de encuadre Y de tono es justo el
    "parece que hay 2 imágenes".
 
-   Arreglo: se quita la imagen duplicada de esta franja — la foto que se
-   ve aquí ahora es la MISMA, única, del fondo general (ya visible a
-   través del .block-container transparente de abajo), sin un segundo
-   recorte propio. Lo que queda es solo un degradado (sin imagen) que
-   parte de un tono más oscuro (para el título) y termina EXACTAMENTE en
-   var(--overlay-veil) — el mismo color/opacidad del velo general — así
-   la transición hacia el resto de la página es continua, no un corte. */
+   Arreglo (1ª parte): se quita la imagen duplicada de esta franja — la
+   foto que se ve aquí ahora es la MISMA, única, del fondo general (ya
+   visible a través del .block-container transparente de abajo), sin un
+   segundo recorte propio.
+
+   Ajuste fino (2ª parte, revisado después de seguir viéndose un corte):
+   la primera versión de este degradado terminaba en var(--overlay-veil)
+   — pero eso lo hacía IGUAL al velo general solo en el color, no en el
+   efecto: como este ::before se pinta ENCIMA del velo general (que ya
+   cubre toda la página, incluida esta franja), el resultado real cerca
+   de los 300px era velo general + este degradado = doble oscurecido,
+   más oscuro que justo un pixel más abajo (donde solo hay un velo). Esa
+   diferencia, aunque más sutil que el bug original, seguía siendo un
+   salto visible. Ahora el degradado termina en transparent bien ANTES
+   de los 300px (60% del alto) — deja de aportar NADA en el último
+   tramo, así que ahí coincide exactamente con lo que hay justo debajo:
+   un único velo general, sin doble capa ni salto de ningún tipo. */
 [data-testid="stMain"] .block-container:has(.hero-band):before{content:"";position:absolute;top:0;left:0;right:0;height:300px;z-index:-1;
   border-radius:0 0 var(--radius-lg) var(--radius-lg);
-  background-image:linear-gradient(180deg,rgba(8,4,7,.72) 0%,rgba(20,6,10,.4) 45%,var(--overlay-veil) 85%);
+  background-image:linear-gradient(180deg,rgba(8,4,7,.6) 0%,rgba(15,5,8,.28) 35%,transparent 60%);
   background-size:100% 100%;background-position:center;background-repeat:no-repeat}
 /* La barra nativa de Streamlit (arriba del todo, íconos de compartir/menú)
    tenía un fondo translúcido con blur — glassmorphism real. En la
