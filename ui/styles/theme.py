@@ -88,7 +88,7 @@ def _theme_vars(dark: bool) -> str:
   --red:#ff5570;--red-soft:#37232d;--purple:#9b8cf2;--purple-soft:#292b3f;
   --card-solid:#161b22;
   --glow-ring:0 0 0 1px rgba(255,59,82,.32),0 0 26px rgba(255,59,82,.24);
-  --overlay-veil:rgba(13,17,23,.90);
+  --overlay-veil:rgba(13,17,23,.22);
 """
     return """
   --bg:#ffffff;--panel:#ffffff;--panel-2:#f7f9fc;--panel-3:#eef2f8;
@@ -100,7 +100,7 @@ def _theme_vars(dark: bool) -> str:
   --red:#e0223f;--red-soft:#fdeaee;--purple:#6a5bd8;--purple-soft:#efecfc;
   --card-solid:#ffffff;
   --glow-ring:0 0 0 1px rgba(228,0,43,.15),0 0 12px rgba(228,0,43,.09);
-  --overlay-veil:rgba(255,255,255,.88);
+  --overlay-veil:rgba(255,255,255,.20);
 """
 
 
@@ -210,11 +210,15 @@ _COMPONENTS_CSS_RAW = """
   background-attachment:fixed!important;
   background-repeat:no-repeat!important;
 }
-/* ===== PASO 2: velo semitranslúcido entre la foto y el contenido — sin
-   esto el texto competía directo contra los colores de la foto y era
-   ilegible (pestañas, título de Inicio, párrafos...). `var(--overlay-veil)`
-   está definido por tema en _theme_vars() (arriba): blanco 88% en Claro,
-   panel oscuro 90% en Oscuro — cambia solo con eso, sin duplicar la regla.
+/* ===== PASO 2 → PASO 3: este velo empezó como el mecanismo PRINCIPAL de
+   legibilidad (88%/90% de opacidad, tapaba casi toda la foto). Cambio de
+   estrategia explícito: ahora la legibilidad la da que cada bloque de
+   contenido tenga su propia caja opaca (ver .hero-band, .section-intro,
+   tarjetas, tablas, expanders... más abajo) — este velo baja a un tinte
+   MUY sutil (22%/20%, tope pedido de 0.25) solo para unificar un poco el
+   tono de la foto con la paleta de la app, sin taparla. `var(--overlay-veil)`
+   sigue definido por tema en _theme_vars() (arriba), mismo mecanismo,
+   valores nuevos.
 
    `position:fixed;inset:0` en vez de absolute: no depende de que
    stAppViewContainer tenga position propio, siempre cubre el viewport
@@ -453,24 +457,42 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label p{color:var(--side
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:linear-gradient(180deg,#ff3b4e,#e4002b)}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#ffffff!important;font-weight:750}
 
-/* ===== Hero / page header: minimal and flat, like the reference report header ===== */
-.hero{padding:6px 2px 14px;margin:0 0 6px;border:none;background:transparent;box-shadow:none;border-bottom:1px solid var(--line)}
+/* ===== Hero / page header =====
+   Era transparente + un borde inferior fino (pensado para fondo plano
+   normal). Con la foto ahora detrás de TODA la app (.block-container es
+   transparent!important en toda vista, no solo en el header), cualquier
+   .hero — incluido el de ui/tracking.py, que nunca llevó .hero-band —
+   necesita su propia caja opaca igual que las demás. */
+.hero{padding:12px 20px;margin:0 0 14px;border:1px solid var(--line);background:var(--card-solid);
+  box-shadow:var(--shadow-md);border-radius:var(--radius-lg)}
 .hero h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.01em;color:var(--text)}
 .hero p{color:var(--muted);margin:4px 0 0;font-size:12.5px;max-width:900px}
-/* Único hero que se sienta sobre la franja de foto de .block-container:before
-   (ver arriba) — texto blanco fijo, igual que .view-banner, porque debajo
-   siempre hay una foto oscura sin importar si el tema activo es Claro u
-   Oscuro. Los otros dos hero() de la app (Inicio, perfil individual) no
-   llevan esta clase y se quedan con var(--text) normal. */
-.hero-band{border-bottom:none}
-.hero-band h1{color:#ffffff!important;text-shadow:0 2px 10px rgba(0,0,0,.65)}
-.hero-band p{color:rgba(255,255,255,.9)!important;text-shadow:0 1px 6px rgba(0,0,0,.6)}
-.hero-band-meta{color:#ffffff!important;text-shadow:0 1px 6px rgba(0,0,0,.6);font-size:13.5px;margin:0 0 10px}
-.hero-band-meta b{color:#ffffff!important}
+/* El hero que se sienta sobre la franja de foto (.block-container:before,
+   .st-key-home_hero_band) usaba texto blanco fijo + text-shadow porque el
+   texto flotaba directo sobre la foto, sin nada opaco detrás. Cambio de
+   estrategia: ahora es una caja sólida propia (fondo del tema, borde,
+   sombra) — vuelve a var(--text)/var(--muted) normales, como cualquier
+   .hero, porque ya no hay foto directamente detrás del texto, hay esta
+   caja. La foto sigue viéndose alrededor, en el espacio que la caja no
+   ocupa (ese "aire" es justo lo que se pidió). */
+.hero-band{border-bottom:none;background:var(--card-solid);border:1px solid var(--line);
+  border-radius:var(--radius-lg);padding:14px 22px;box-shadow:var(--shadow-md)}
+.hero-band h1{color:var(--text)!important;text-shadow:none}
+.hero-band p{color:var(--muted)!important;text-shadow:none}
+.hero-band-meta{background:var(--card-solid);border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:8px 14px;color:var(--text)!important;text-shadow:none;font-size:13.5px;margin:10px 0}
+.hero-band-meta b{color:var(--text)!important}
 
-/* ===== Section headers: bold title with a quiet subtitle directly beneath, no pill chrome ===== */
-.section-intro{display:flex;align-items:flex-start;justify-content:space-between;margin:26px 0 6px;flex-wrap:wrap;gap:8px}
-.section-intro.compact{margin-top:26px}
+/* ===== Section headers: bold title with a quiet subtitle directly beneath =====
+   Antes flotaba suelto sobre el fondo (sin caja) — con la foto detrás de
+   TODA la app (no solo el header), un título de sección sin nada opaco
+   detrás quedaba directo sobre la imagen. Caja sólida propia, más angosta
+   que una tarjeta normal (menos padding vertical) porque es solo un
+   título, no un bloque de contenido. */
+.section-intro{display:flex;align-items:flex-start;justify-content:space-between;margin:22px 0 10px;flex-wrap:wrap;gap:8px;
+  background:var(--card-solid);border:1px solid var(--line);border-radius:var(--radius-md);
+  padding:11px 16px;box-shadow:var(--shadow-sm)}
+.section-intro.compact{margin-top:22px}
 .section-intro h2{margin:0;font-size:17px;font-weight:800;letter-spacing:-.01em;color:var(--text)}
 .eyebrow{display:none}
 .data-badge{font-size:10.5px;font-weight:700;color:var(--red);background:none;border:none;padding:0;box-shadow:none;text-transform:uppercase;letter-spacing:.05em}
@@ -689,16 +711,24 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    nivel propio (grouped_nav() ahora aplana sus grupos en una sola fila),
    pero esta regla se queda: sigue aplicando a cualquier vista que anide
    sus propias pestañas internamente. */
+/* Fondo transparent original: pensaba que estas pestañas SIEMPRE vivían
+   sobre fondo normal del tema, nunca sobre foto — eso dejó de ser cierto
+   en cuanto .block-container pasó a transparent!important en TODA vista,
+   no solo en el header (ver arriba). Pasa a var(--card-solid), sólido,
+   para no quedar flotando sobre la imagen igual que cualquier otra caja
+   de texto — sigue siendo más liviana que la barra de nivel superior
+   (sin píldora, solo el subrayado inferior) para que se note la
+   jerarquía entre las dos filas. */
 .stTabs .stTabs [data-baseweb="tab-list"]{
-  background:transparent!important;border:none;box-shadow:none;border-radius:0;
-  padding:0 0 2px;gap:20px;border-bottom:1px solid var(--line);
+  background:var(--card-solid)!important;border:1px solid var(--line-soft);box-shadow:var(--shadow-sm);border-radius:var(--radius-sm);
+  padding:2px 8px 0;gap:20px;border-bottom:1px solid var(--line);
 }
 .stTabs .stTabs [data-baseweb="tab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650;text-shadow:none}
-/* Estas SÍ viven sobre fondo normal del tema (nunca sobre la foto de
-   arriba) — recuperan var(--muted)/sin sombra de texto por encima del
-   texto claro fijo que la regla de nivel superior les habría heredado.
-   Doble ".stTabs" pesa más que uno solo, así que esto gana sin necesitar
-   tocar la regla de arriba. */
+/* Estas viven sobre la caja sólida de arriba (ya no sobre la foto
+   directamente) — recuperan var(--muted)/sin sombra de texto por encima
+   del texto claro fijo que la regla de nivel superior les habría
+   heredado. Doble ".stTabs" pesa más que uno solo, así que esto gana sin
+   necesitar tocar la regla de arriba. */
 .stTabs .stTabs [data-baseweb="tab"],.stTabs .stTabs [data-baseweb="tab"] *{color:var(--muted)!important;font-weight:650!important;text-shadow:none}
 .stTabs .stTabs [data-baseweb="tab"]:hover,.stTabs .stTabs [data-baseweb="tab"]:hover *{background:transparent;color:var(--blue-strong)!important}
 .stTabs .stTabs [aria-selected="true"]{
@@ -789,8 +819,17 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 [data-testid="stExpander"] summary svg{color:var(--blue)!important}
 
 [data-testid="stAlert"]{background:var(--panel)!important;color:var(--text)!important;border:1px solid var(--line)!important;border-radius:var(--radius-sm)!important}
-.stCaption,[data-testid="stCaptionContainer"]{color:var(--muted)!important}
-.stDataFrame,[data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden}
+/* Los caption (textos auxiliares chicos — "X registros analizados", avisos
+   cortos) no tenían fondo propio, solo color de texto: quedaban sueltos
+   sobre la foto igual que cualquier otro texto. Caja mínima, no una
+   tarjeta completa — son una línea de texto secundario, no un bloque de
+   contenido. */
+.stCaption,[data-testid="stCaptionContainer"]{color:var(--muted)!important;background:var(--card-solid);
+  border:1px solid var(--line-soft);border-radius:var(--radius-sm);padding:4px 10px;display:inline-block}
+/* stDataFrame ya traía borde/radio pero nunca un fondo propio explícito —
+   dependía de que la tabla nativa de Streamlit trajera el suyo. Se fuerza
+   opaco (--card-solid) para no depender de eso. */
+.stDataFrame,[data-testid="stDataFrame"]{background:var(--card-solid)!important;border:1px solid var(--line);border-radius:var(--radius-md);box-shadow:var(--shadow-sm);overflow:hidden}
 [data-testid="stMetric"]{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px;box-shadow:var(--shadow-sm)}
 [data-testid="stMetricLabel"]{color:var(--muted)!important;font-size:11px!important}
 [data-testid="stMetricValue"]{color:var(--text)!important;font-size:22px!important;font-variant-numeric:tabular-nums}
