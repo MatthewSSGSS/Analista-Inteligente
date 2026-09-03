@@ -397,35 +397,35 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .stPlotlyChart{margin-top:-3px}
 
 /* ===== Tabs =====
-   El texto de la pestaña INACTIVA necesita !important: BaseWeb trae su
-   propio color por defecto con suficiente peso como para ganarle a esta
-   regla sin él. En Modo Claro ese gris por defecto igual se alcanza a
-   leer sobre blanco (por eso el bug no se notaba ahí), pero sobre el
-   fondo oscuro de Modo Oscuro queda casi invisible — la pestaña
-   seleccionada (abajo) ya tenía !important desde el principio; a esta
-   le faltaba.
-
-   El FONDO de la barra (`background:var(--panel-2)`) tenía este mismo
-   problema y nadie lo había notado: sin !important, perdía contra el
-   estilo propio de BaseWeb — invisible mientras la fila de pestañas vivía
-   sobre un fondo plano casi del mismo tono, pero en cuanto detrás pasó a
-   haber una foto (la franja de .block-container:before, arriba), la barra
-   dejó de verse como una píldora opaca y la foto se coló detrás de cada
-   pestaña inactiva — exactamente el mismo patrón de bug que el comentario
-   de arriba ya documentaba para el texto, ahora aplicado al fondo. */
-.stTabs [data-baseweb="tab-list"]{gap:6px;background:var(--panel-2)!important;border:1px solid var(--line);padding:6px;border-radius:999px;box-shadow:var(--shadow-sm);overflow-x:auto}
-.stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:var(--muted)!important;font-weight:700!important;font-size:13.5px;
+   La fila de pestañas de nivel superior (Inicio/Asistente IA/Datos/.../
+   Georeferenciación, la que arma grouped_nav() en app.py) es la ÚNICA
+   `.stTabs` de toda la app que no vive anidada dentro de otra — por eso
+   puede tener un estilo fijo propio sin afectar a las demás: SIEMPRE se
+   renderiza justo debajo de la franja de foto (.block-container:before,
+   arriba), nunca sobre un fondo plano normal. En vez de una píldora
+   blanca/panel encima de la foto (que la tapaba, ver el bug documentado
+   más abajo), ahora flota directo sobre la foto — sin fondo ni borde
+   propios, con texto claro fijo (no var(--muted), que en Modo Claro es
+   casi negro e ilegible sobre una foto oscura) — igual que el resto del
+   texto que ya vive en esa franja (.hero-band, .hero-band-meta). Las
+   pestañas ANIDADAS (dentro de otra pestaña, p. ej. las internas de
+   Descripción) NUNCA están sobre la foto — más abajo, el bloque
+   ".stTabs .stTabs" les devuelve explícitamente los colores normales del
+   tema con selectores más específicos, así que este cambio no las toca. */
+.stTabs [data-baseweb="tab-list"]{gap:6px;background:transparent!important;border:none!important;padding:6px;border-radius:999px;box-shadow:none!important;overflow-x:auto}
+.stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:rgba(255,255,255,.82)!important;font-weight:700!important;font-size:13.5px;
+  text-shadow:0 1px 5px rgba(0,0,0,.55);
   transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
   background:transparent;border:1px solid transparent}
 /* El color no se deja solo en `inherit` sobre <p> — se repite explícito en
    TODOS los descendientes (`*`), porque no hay forma de confirmar en este
    entorno qué elemento exacto envuelve el texto en cada versión de
-   BaseWeb, y un solo selector que no acierte deja el texto invisible en
-   Oscuro sin ningún aviso. Esto es más ancho de lo estrictamente
-   necesario a propósito — mejor una regla de más que un texto ilegible. */
-.stTabs [data-baseweb="tab"],.stTabs [data-baseweb="tab"] *{color:var(--muted)!important;font-weight:700!important}
-.stTabs [data-baseweb="tab"]:hover{background:var(--panel);border-color:var(--line);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
-.stTabs [data-baseweb="tab"]:hover,.stTabs [data-baseweb="tab"]:hover *{color:var(--text)!important}
+   BaseWeb, y un solo selector que no acierte deja el texto invisible sin
+   ningún aviso. Esto es más ancho de lo estrictamente necesario a
+   propósito — mejor una regla de más que un texto ilegible. */
+.stTabs [data-baseweb="tab"],.stTabs [data-baseweb="tab"] *{color:rgba(255,255,255,.82)!important;font-weight:700!important}
+.stTabs [data-baseweb="tab"]:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.22);transform:translateY(-1px)}
+.stTabs [data-baseweb="tab"]:hover,.stTabs [data-baseweb="tab"]:hover *{color:#ffffff!important}
 /* Pestaña seleccionada: no es un rectángulo rojo plano — el radial-gradient
    agrega un brillo/reflejo (como una píldora con volumen, no un color
    sólido) encima del degradado de marca, más el mismo --glow-ring que ya
@@ -462,7 +462,13 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   background:transparent!important;border:none;box-shadow:none;border-radius:0;
   padding:0 0 2px;gap:20px;border-bottom:1px solid var(--line);
 }
-.stTabs .stTabs [data-baseweb="tab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650}
+.stTabs .stTabs [data-baseweb="tab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650;text-shadow:none}
+/* Estas SÍ viven sobre fondo normal del tema (nunca sobre la foto de
+   arriba) — recuperan var(--muted)/sin sombra de texto por encima del
+   texto claro fijo que la regla de nivel superior les habría heredado.
+   Doble ".stTabs" pesa más que uno solo, así que esto gana sin necesitar
+   tocar la regla de arriba. */
+.stTabs .stTabs [data-baseweb="tab"],.stTabs .stTabs [data-baseweb="tab"] *{color:var(--muted)!important;font-weight:650!important;text-shadow:none}
 .stTabs .stTabs [data-baseweb="tab"]:hover,.stTabs .stTabs [data-baseweb="tab"]:hover *{background:transparent;color:var(--blue-strong)!important}
 .stTabs .stTabs [aria-selected="true"]{
   background:transparent!important;box-shadow:none!important;
