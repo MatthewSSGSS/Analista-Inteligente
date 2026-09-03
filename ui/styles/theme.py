@@ -365,22 +365,28 @@ _COMPONENTS_CSS_RAW = """
    existe ningún `.hero-band`, así que ahí `:has()` no matchea y la franja
    simplemente no se pinta — cada pantalla vuelve a depender solo de su
    propio fondo, sin pisarse. */
-/* Vuelta atrás, pedida explícitamente ("volviendo al diseño... usar este
-   formato" con la referencia de la foto vívida detrás del título y las
-   pestañas) — se había apagado (`content:none`) en la ronda anterior
-   porque "tapaba" las cajas sólidas. Ahora se reactiva, reutilizando la
-   misma foto general (`__APP_BG__`/fondo.jpg — ya no ciudad_red.jpg, para
-   no reintroducir una segunda imagen distinta) SOLO en esta franja
-   (~300px del hero + pestañas), con su propio velo oscuro fijo — el
-   resto de la página (KPIs, gráficos, tablas) se queda tal cual está
-   ahora, en cajas sólidas: este cambio es puntual a esta franja, "primero
-   empecemos por esto" tal como se pidió. */
+/* "Arregla ese corte horrible, parece que hubiera 2 imágenes" — tenía
+   toda la razón: literalmente HABÍA 2 imágenes. Esta franja traía su
+   propia copia de la foto (`url("__APP_BG__")`) en una caja de 300px de
+   alto — "cover" la recorta/escala para esa caja concreta, MUY distinta
+   de cómo "cover" recorta la MISMA foto en el fondo general de toda la
+   página (`[data-testid="stAppViewContainer"]`, a pantalla completa). Dos
+   recortes/zooms distintos de la misma imagen, apiladas una encima de la
+   otra, más un velo bastante más oscuro aquí que el de abajo (rgba(255,
+   255,255,.20) general) — el salto de encuadre Y de tono es justo el
+   "parece que hay 2 imágenes".
+
+   Arreglo: se quita la imagen duplicada de esta franja — la foto que se
+   ve aquí ahora es la MISMA, única, del fondo general (ya visible a
+   través del .block-container transparente de abajo), sin un segundo
+   recorte propio. Lo que queda es solo un degradado (sin imagen) que
+   parte de un tono más oscuro (para el título) y termina EXACTAMENTE en
+   var(--overlay-veil) — el mismo color/opacidad del velo general — así
+   la transición hacia el resto de la página es continua, no un corte. */
 [data-testid="stMain"] .block-container:has(.hero-band):before{content:"";position:absolute;top:0;left:0;right:0;height:300px;z-index:-1;
   border-radius:0 0 var(--radius-lg) var(--radius-lg);
-  background-image:
-    linear-gradient(120deg,rgba(8,4,7,.95) 0%,rgba(110,8,20,.62) 38%,rgba(20,4,8,.24) 68%,transparent 90%),
-    url("__APP_BG__");
-  background-size:cover,cover;background-position:center,center;background-repeat:no-repeat,no-repeat}
+  background-image:linear-gradient(180deg,rgba(8,4,7,.72) 0%,rgba(20,6,10,.4) 45%,var(--overlay-veil) 85%);
+  background-size:100% 100%;background-position:center;background-repeat:no-repeat}
 /* La barra nativa de Streamlit (arriba del todo, íconos de compartir/menú)
    tenía un fondo translúcido con blur — glassmorphism real. En la
    práctica ya perdía siempre contra la regla `!important` de más arriba
