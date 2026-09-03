@@ -196,8 +196,22 @@ _COMPONENTS_CSS_RAW = """
    un selector desnudo `.block-container:before` habría pintado esta misma
    foto detrás del logo/filtros del sidebar también. Por eso va con el
    prefijo `[data-testid="stMain"]`, que solo envuelve el contenido
-   principal. */
-[data-testid="stMain"] .block-container:before{content:"";position:absolute;top:0;left:0;right:0;height:300px;z-index:-1;
+   principal.
+
+   Segundo problema real, encontrado después de ver la franja pisar el
+   login y el landing: `inject_theme()` se llama SIEMPRE, en cada rerun,
+   antes incluso de decidir si toca mostrar login/landing/mode_choice o el
+   dashboard — así que esta regla, sin más, se pintaba en TODAS esas
+   pantallas, duplicada encima del fondo propio que cada una ya trae
+   (el velo crema de ui/login.py, el de ui/landing.py). `:has(.hero-band)`
+   hace que el `::before` solo exista cuando el `.block-container`
+   de turno de verdad contiene un `.hero-band` — y esa clase solo la pone
+   `hero(..., band=True)`, que solo se llama una vez en toda la app
+   (app.py, ya dentro del dashboard). En login/landing/mode_choice no
+   existe ningún `.hero-band`, así que ahí `:has()` no matchea y la franja
+   simplemente no se pinta — cada pantalla vuelve a depender solo de su
+   propio fondo, sin pisarse. */
+[data-testid="stMain"] .block-container:has(.hero-band):before{content:"";position:absolute;top:0;left:0;right:0;height:300px;z-index:-1;
   border-radius:0 0 var(--radius-lg) var(--radius-lg);
   background-image:
     linear-gradient(120deg,rgba(8,4,7,.95) 0%,rgba(110,8,20,.62) 38%,rgba(20,4,8,.24) 68%,transparent 90%),
@@ -635,7 +649,7 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 
 @media (max-width:900px){
  .block-container{padding-left:.8rem;padding-right:.8rem}
- [data-testid="stMain"] .block-container:before{height:360px}
+ [data-testid="stMain"] .block-container:has(.hero-band):before{height:360px}
  .hero{padding:20px}.hero h1{font-size:23px}
  .analysis-toolbar{align-items:flex-start;flex-direction:column;padding:15px 16px}
  .analysis-toolbar-meta{justify-content:flex-start}
