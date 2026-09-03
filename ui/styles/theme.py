@@ -220,6 +220,34 @@ _COMPONENTS_CSS_RAW = """
    después arreglar el contraste del texto encima suyo (paso siguiente,
    todavía no hecho). */
 [data-testid="stHeader"]{background:rgba(0,0,0,0)!important}
+/* LA CAUSA REAL de que la foto solo se viera en la franja de arriba: esta
+   MISMA regla (arriba del todo, dentro de base_layer_css()) le pone un
+   fondo SÓLIDO Y OPACO — no solo a stAppViewContainer, al mismo tiempo
+   también a [data-testid="stMain"], [data-testid="stMainBlockContainer"]
+   (= .block-container) y .main — con !important:
+
+     html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"],
+     [data-testid="stMain"],[data-testid="stMainBlockContainer"],.main,
+     .stAppViewContainer{background:<gradiente rojo>,#ffffff!important;...}
+
+   stMain/.block-container/.main viven DENTRO de stAppViewContainer y
+   cubren casi toda el área de contenido de arriba a abajo — aunque a
+   stAppViewContainer ya se le puso la foto (regla de más arriba), ese
+   fondo opaco de sus hijos la tapaba por completo en cuanto se salía de
+   los ~300px de la franja del hero (la única zona con algo pintado
+   ENCIMA de ese opaco: el ::before de .block-container:has(.hero-band),
+   más abajo en este archivo, que sí se alcanza a ver porque se pinta
+   después del propio fondo de .block-container). De ahí para abajo, puro
+   blanco/negro opaco — exactamente el síntoma reportado.
+
+   Arreglo: estos 3 selectores (NO stAppViewContainer, ese sí debe quedarse
+   con la foto) pasan a transparent!important, para que la foto de
+   stAppViewContainer se vea a través suyo en TODA la altura. El sidebar
+   tiene su .block-container propio y también queda transparent con esta
+   regla — no es un problema: section[data-testid="stSidebar"] ya tiene su
+   propio fondo opaco (más abajo, sin tocar), así que se sigue viendo
+   sólido igual que antes, nada por detrás lo atraviesa. */
+[data-testid="stMain"],[data-testid="stMainBlockContainer"],.main,.block-container{background:transparent!important}
 .stApp{background:var(--bg);color:var(--text)}
 * {font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 .block-container{max-width:1540px;padding:1.1rem 1.2rem 4rem;position:relative;z-index:0}
