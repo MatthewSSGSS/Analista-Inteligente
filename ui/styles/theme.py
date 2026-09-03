@@ -402,19 +402,27 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    `.stTabs` de toda la app que no vive anidada dentro de otra — por eso
    puede tener un estilo fijo propio sin afectar a las demás: SIEMPRE se
    renderiza justo debajo de la franja de foto (.block-container:before,
-   arriba), nunca sobre un fondo plano normal. En vez de una píldora
-   blanca/panel encima de la foto (que la tapaba, ver el bug documentado
-   más abajo), ahora flota directo sobre la foto — sin fondo ni borde
-   propios, con texto claro fijo (no var(--muted), que en Modo Claro es
-   casi negro e ilegible sobre una foto oscura) — igual que el resto del
-   texto que ya vive en esa franja (.hero-band, .hero-band-meta). Las
-   pestañas ANIDADAS (dentro de otra pestaña, p. ej. las internas de
+   arriba), nunca sobre un fondo plano normal.
+
+   Primer intento (fondo transparente, solo texto blanco + text-shadow):
+   se veía bien donde el velo de la franja está más cargado (izquierda),
+   pero ese velo es un degradado diagonal que se desvanece a "transparent"
+   hacia la derecha — justo donde vive la mayoría de las pestañas. Ahí el
+   texto quedaba flotando sobre la foto sin ningún respaldo oscuro debajo,
+   y un text-shadow no basta cuando detrás hay rojo saturado, no negro.
+   Corrección: la píldora vuelve a tener su propio fondo, pero ahora fijo
+   y oscuro semi-translúcido (no var(--panel-2) del tema, que era blanco
+   en Claro) — un respaldo constante para el texto sin importar en qué
+   punto del degradado de la franja caiga cada pestaña, dejando ver la
+   foto de fondo a través suyo en vez de taparla del todo.
+
+   Las pestañas ANIDADAS (dentro de otra pestaña, p. ej. las internas de
    Descripción) NUNCA están sobre la foto — más abajo, el bloque
    ".stTabs .stTabs" les devuelve explícitamente los colores normales del
    tema con selectores más específicos, así que este cambio no las toca. */
-.stTabs [data-baseweb="tab-list"]{gap:6px;background:transparent!important;border:none!important;padding:6px;border-radius:999px;box-shadow:none!important;overflow-x:auto}
-.stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:rgba(255,255,255,.82)!important;font-weight:700!important;font-size:13.5px;
-  text-shadow:0 1px 5px rgba(0,0,0,.55);
+.stTabs [data-baseweb="tab-list"]{gap:6px;background:rgba(8,6,10,.62)!important;border:1px solid rgba(255,255,255,.09)!important;padding:6px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.35)!important;overflow-x:auto}
+.stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:rgba(255,255,255,.86)!important;font-weight:700!important;font-size:13.5px;
+  text-shadow:0 1px 4px rgba(0,0,0,.5);
   transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
   background:transparent;border:1px solid transparent}
 /* El color no se deja solo en `inherit` sobre <p> — se repite explícito en
@@ -423,7 +431,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    BaseWeb, y un solo selector que no acierte deja el texto invisible sin
    ningún aviso. Esto es más ancho de lo estrictamente necesario a
    propósito — mejor una regla de más que un texto ilegible. */
-.stTabs [data-baseweb="tab"],.stTabs [data-baseweb="tab"] *{color:rgba(255,255,255,.82)!important;font-weight:700!important}
+.stTabs [data-baseweb="tab"],.stTabs [data-baseweb="tab"] *{color:rgba(255,255,255,.86)!important;font-weight:700!important}
 .stTabs [data-baseweb="tab"]:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.22);transform:translateY(-1px)}
 .stTabs [data-baseweb="tab"]:hover,.stTabs [data-baseweb="tab"]:hover *{color:#ffffff!important}
 /* Pestaña seleccionada: no es un rectángulo rojo plano — el radial-gradient
