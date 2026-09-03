@@ -88,6 +88,7 @@ def _theme_vars(dark: bool) -> str:
   --red:#ff5570;--red-soft:#37232d;--purple:#9b8cf2;--purple-soft:#292b3f;
   --card-solid:#161b22;
   --glow-ring:0 0 0 1px rgba(255,59,82,.32),0 0 26px rgba(255,59,82,.24);
+  --overlay-veil:rgba(13,17,23,.90);
 """
     return """
   --bg:#ffffff;--panel:#ffffff;--panel-2:#f7f9fc;--panel-3:#eef2f8;
@@ -99,6 +100,7 @@ def _theme_vars(dark: bool) -> str:
   --red:#e0223f;--red-soft:#fdeaee;--purple:#6a5bd8;--purple-soft:#efecfc;
   --card-solid:#ffffff;
   --glow-ring:0 0 0 1px rgba(228,0,43,.15),0 0 12px rgba(228,0,43,.09);
+  --overlay-veil:rgba(255,255,255,.88);
 """
 
 
@@ -208,6 +210,29 @@ _COMPONENTS_CSS_RAW = """
   background-attachment:fixed!important;
   background-repeat:no-repeat!important;
 }
+/* ===== PASO 2: velo semitranslúcido entre la foto y el contenido — sin
+   esto el texto competía directo contra los colores de la foto y era
+   ilegible (pestañas, título de Inicio, párrafos...). `var(--overlay-veil)`
+   está definido por tema en _theme_vars() (arriba): blanco 88% en Claro,
+   panel oscuro 90% en Oscuro — cambia solo con eso, sin duplicar la regla.
+
+   `position:fixed;inset:0` en vez de absolute: no depende de que
+   stAppViewContainer tenga position propio, siempre cubre el viewport
+   completo. z-index:0 (no negativo) + `> *{position:relative;z-index:1}`
+   en la regla de abajo: dos elementos EXPLÍCITAMENTE comparados por
+   z-index (1 gana a 0) es más confiable aquí que apoyarse en que los
+   hijos de stAppViewContainer sean o no positioned por su cuenta — con
+   z-index negativo en el ::before, esa comparación habría dependido de
+   si el sidebar/main ya eran positioned o no (no lo son por defecto), y
+   se corría el riesgo de que el velo terminara TAPANDO el contenido en
+   vez de quedar detrás. `pointer-events:none` para que la capa no
+   bloquee clics en nada de lo que hay debajo. */
+[data-testid="stAppViewContainer"]::before{
+  content:"";position:fixed;inset:0;
+  background:var(--overlay-veil);
+  z-index:0;pointer-events:none;
+}
+[data-testid="stAppViewContainer"]>*{position:relative;z-index:1}
 /* El header nativo de Streamlit (arriba del todo) tenía fondo sólido
    opaco (regla de arriba, `[data-testid="stHeader"]{background:var(--bg)
    !important}`) — se vuelve transparente aquí, DESPUÉS de esa regla en el
@@ -600,32 +625,27 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== Tabs =====
    La fila de pestañas de nivel superior (Inicio/Asistente IA/Datos/.../
-   Georeferenciación, la que arma grouped_nav() en app.py) es la ÚNICA
-   `.stTabs` de toda la app que no vive anidada dentro de otra — por eso
-   puede tener un estilo fijo propio sin afectar a las demás: SIEMPRE se
-   renderiza justo debajo de la franja de foto (.block-container:before,
-   arriba), nunca sobre un fondo plano normal.
+   Georeferenciación) tuvo 3 versiones por lo mismo — vivía sobre una foto
+   sin nada detrás que garantizara contraste: fondo transparente + texto
+   blanco (fallaba donde el velo diagonal se desvanecía), luego un fondo
+   oscuro semi-translúcido, luego un oscuro sólido fijo (#161616, ganaba
+   siempre pero no respetaba el tema Claro).
 
-   Primer intento (fondo transparente, solo texto blanco + text-shadow):
-   se veía bien donde el velo de la franja está más cargado (izquierda),
-   pero ese velo es un degradado diagonal que se desvanece a "transparent"
-   hacia la derecha — justo donde vive la mayoría de las pestañas. Ahí el
-   texto quedaba flotando sobre la foto sin ningún respaldo oscuro debajo,
-   y un text-shadow no basta cuando detrás hay rojo saturado, no negro.
-   Segundo intento: un respaldo oscuro semi-translúcido — mejor, pero
-   seguía siendo transparencia real. Ahora es sólido y opaco de verdad
-   (el mismo #161616 que ya usa la píldora de pestañas del login, para
-   que ambas compartan el mismo lenguaje) — la foto queda completamente
-   detrás de esta píldora, no se transparenta a través de ella, y el
-   texto queda garantizado legible sin importar qué haya en la foto.
+   ahora hay un velo semitranslúcido propio del tema entre la foto de
+   stAppViewContainer y TODO el contenido (::before + var(--overlay-veil),
+   ver más abajo) — con eso ya no hace falta que la pestaña "compita" sola
+   contra una foto sin filtrar: vuelve a un fondo sólido normal del tema
+   (var(--panel-2) — blanco en Claro, panel oscuro en Oscuro) con
+   !important, porque BaseWeb trae su propio fondo con peso suficiente
+   para ganarle a una regla sin él (ese SÍ era un bug real, no cosmético:
+   sin !important la pestaña quedaba prácticamente transparente encima de
+   cualquier fondo, no solo de una foto).
 
    Las pestañas ANIDADAS (dentro de otra pestaña, p. ej. las internas de
-   Descripción) NUNCA están sobre la foto — más abajo, el bloque
-   ".stTabs .stTabs" les devuelve explícitamente los colores normales del
-   tema con selectores más específicos, así que este cambio no las toca. */
-.stTabs [data-baseweb="tab-list"]{gap:6px;background:#161616!important;border:1px solid rgba(255,255,255,.09)!important;padding:6px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.35)!important;overflow-x:auto}
-.stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:rgba(255,255,255,.86)!important;font-weight:700!important;font-size:13.5px;
-  text-shadow:0 1px 4px rgba(0,0,0,.5);
+   Descripción) tienen su propio bloque más abajo (".stTabs .stTabs"), sin
+   tocar. */
+.stTabs [data-baseweb="tab-list"]{gap:6px;background:var(--panel-2)!important;border:1px solid var(--line)!important;padding:6px;border-radius:999px;box-shadow:var(--shadow-sm)!important;overflow-x:auto}
+.stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:var(--muted)!important;font-weight:700!important;font-size:13.5px;
   transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
   background:transparent;border:1px solid transparent}
 /* El color no se deja solo en `inherit` sobre <p> — se repite explícito en
@@ -634,9 +654,9 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    BaseWeb, y un solo selector que no acierte deja el texto invisible sin
    ningún aviso. Esto es más ancho de lo estrictamente necesario a
    propósito — mejor una regla de más que un texto ilegible. */
-.stTabs [data-baseweb="tab"],.stTabs [data-baseweb="tab"] *{color:rgba(255,255,255,.86)!important;font-weight:700!important}
-.stTabs [data-baseweb="tab"]:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.22);transform:translateY(-1px)}
-.stTabs [data-baseweb="tab"]:hover,.stTabs [data-baseweb="tab"]:hover *{color:#ffffff!important}
+.stTabs [data-baseweb="tab"],.stTabs [data-baseweb="tab"] *{color:var(--muted)!important;font-weight:700!important}
+.stTabs [data-baseweb="tab"]:hover{background:var(--panel);border-color:var(--line);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.stTabs [data-baseweb="tab"]:hover,.stTabs [data-baseweb="tab"]:hover *{color:var(--text)!important}
 /* Pestaña seleccionada: no es un rectángulo rojo plano — el radial-gradient
    agrega un brillo/reflejo (como una píldora con volumen, no un color
    sólido) encima del degradado de marca, más el mismo --glow-ring que ya
