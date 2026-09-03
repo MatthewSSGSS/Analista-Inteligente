@@ -621,7 +621,32 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .chart-head{display:flex;justify-content:space-between;align-items:flex-start;padding:2px 3px 0}
 .chart-title{font-size:clamp(15px,1.05vw,19px);letter-spacing:-.01em;font-weight:750;color:var(--text)}
 .chart-subtitle{font-size:clamp(11px,.8vw,13px);color:var(--muted);margin-top:3px}
-.stPlotlyChart{margin-top:-3px}
+/* El gráfico de Plotly (paper_bgcolor/plot_bgcolor transparentes a
+   propósito en visualization/charts.py, para mezclarse con lo que sea
+   que esté detrás) NUNCA vivió realmente DENTRO de la caja del
+   encabezado (.chart-card/.pbi-visual): chart_card() abre el <div> con
+   un st.markdown() y lo cierra con OTRO st.markdown() aparte, con
+   st.plotly_chart() en medio — Streamlit renderiza cada uno como su
+   propio nodo independiente, así que ese <div> nunca envuelve de verdad
+   al gráfico (el navegador lo autocierra en el momento). Antes eso no
+   se notaba porque detrás solo había blanco/negro liso, igual que el
+   fondo de la propia página — ahora que hay una foto de fondo en toda
+   la app, el hueco quedaba expuesto: el título en su caja se leía bien,
+   pero el gráfico de abajo flotaba directo sobre la imagen.
+
+   Como no se puede envolver el gráfico en el mismo <div> sin reescribir
+   chart_card() (y las otras 5 vistas que llaman a st.plotly_chart()
+   directo, sin ninguna tarjeta encima — catalog.py, comparison.py x2,
+   georeferencing.py, practical.py — mismo problema ahí, arreglado igual
+   con esta única regla), la solución que sí es solo CSS: el propio
+   contenedor del gráfico se convierte en su caja sólida, separada de la
+   del título por un espacio chico en vez de fingir ser una sola pieza. */
+.stPlotlyChart{
+  margin:8px 0 10px;background:var(--card-solid);
+  border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:10px 12px 4px;
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
+}
 
 /* ===== Tabs =====
    BUG RAÍZ encontrado con un navegador real (Playwright + Edge del
