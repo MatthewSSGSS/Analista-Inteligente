@@ -119,7 +119,7 @@ if st.session_state.analysis_mode == "practico":
     render_practical_page()
     st.stop()
 
-hero("📊 Panel Analítico Universal", "De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.")
+hero("📊 Panel Analítico Universal", "De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.", band=True)
 
 with st.sidebar:
     st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
@@ -452,7 +452,11 @@ for c,r in valid_filters.items():
     elif op in {"equals","contains","gt","gte","lt","lte"}:
         df,_meta=apply_filters(df,{c:r})
 
-st.markdown(f"**{len(df):,} registros visibles** · Todos los indicadores y gráficos se recalculan sobre la selección actual.")
+st.markdown(
+    f'<p class="hero-band-meta"><b>{len(df):,} registros visibles</b> · '
+    'Todos los indicadores y gráficos se recalculan sobre la selección actual.</p>',
+    unsafe_allow_html=True,
+)
 
 query=st.text_input("🔎 Pregúntale al Excel",placeholder="Ej.: mayores a 100000, Bogotá, producto X...",key="natural_query_search")
 if query:

@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.assets import image_data_uri
+
 # ---------------------------------------------------------------------------
 # Tokens compartidos. Los breakpoints existen como constantes de Python (y no
 # solo como texto dentro del CSS) para que cualquier otro `<style>` que
@@ -173,7 +175,34 @@ _COMPONENTS_CSS_RAW = """
 [data-testid="stHeader"],[data-testid="stBottomBlockContainer"]{background:var(--bg)!important}
 .stApp{background:var(--bg);color:var(--text)}
 * {font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-.block-container{max-width:1540px;padding:1.1rem 1.8rem 4rem}
+.block-container{max-width:1540px;padding:1.1rem 1.8rem 4rem;position:relative;z-index:0}
+/* ===== Franja de foto de toda la app: la misma ciudad_red.jpg de los
+   banners de cada vista (ui/components/section.py::banner_header), pero
+   detrás del hero + el buscador + la fila de pestañas — lo único que se
+   repite igual en TODAS las vistas, así que es la única franja que tiene
+   sentido pintar una sola vez a nivel de página en vez de vista por vista.
+   Es un ::before absoluto con z-index negativo (no una foto puesta en cada
+   elemento): así no importa cómo Streamlit anide los divs de arriba, el
+   texto normal (en flujo, sin position) siempre pinta ENCIMA de un
+   descendiente absoluto con z-index negativo — la misma garantía de orden
+   de pintado en la que se apoya .view-banner, aplicada aquí a una franja
+   compartida en vez de a una sola tarjeta. Por debajo de esta altura
+   (~300px) todo vuelve al fondo normal de la app — las tablas, tarjetas y
+   gráficos de cada pestaña NO viven bajo la foto.
+
+   Ojo con el selector: `.block-container` NO es exclusivo del contenido
+   principal — el sidebar tiene el suyo propio
+   (`section[data-testid="stSidebar"] .block-container`, ver más abajo), y
+   un selector desnudo `.block-container:before` habría pintado esta misma
+   foto detrás del logo/filtros del sidebar también. Por eso va con el
+   prefijo `[data-testid="stMain"]`, que solo envuelve el contenido
+   principal. */
+[data-testid="stMain"] .block-container:before{content:"";position:absolute;top:0;left:0;right:0;height:300px;z-index:-1;
+  border-radius:0 0 var(--radius-lg) var(--radius-lg);
+  background-image:
+    linear-gradient(120deg,rgba(8,4,7,.95) 0%,rgba(110,8,20,.62) 38%,rgba(20,4,8,.24) 68%,transparent 90%),
+    url(__HERO_BG__);
+  background-size:cover,cover;background-position:center,center;background-repeat:no-repeat,no-repeat}
 header[data-testid="stHeader"]{background:rgba(238,241,246,.86);backdrop-filter:blur(6px)}
 h1,h2,h3,h4,h5,h6{color:var(--text);font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
 p,span,div,li,label{color:var(--text)}
@@ -238,6 +267,16 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .hero{padding:6px 2px 14px;margin:0 0 6px;border:none;background:transparent;box-shadow:none;border-bottom:1px solid var(--line)}
 .hero h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.01em;color:var(--text)}
 .hero p{color:var(--muted);margin:4px 0 0;font-size:12.5px;max-width:900px}
+/* Único hero que se sienta sobre la franja de foto de .block-container:before
+   (ver arriba) — texto blanco fijo, igual que .view-banner, porque debajo
+   siempre hay una foto oscura sin importar si el tema activo es Claro u
+   Oscuro. Los otros dos hero() de la app (Inicio, perfil individual) no
+   llevan esta clase y se quedan con var(--text) normal. */
+.hero-band{border-bottom:none}
+.hero-band h1{color:#ffffff!important;text-shadow:0 2px 10px rgba(0,0,0,.65)}
+.hero-band p{color:rgba(255,255,255,.9)!important;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.hero-band-meta{color:#ffffff!important;text-shadow:0 1px 6px rgba(0,0,0,.6);font-size:13.5px;margin:0 0 10px}
+.hero-band-meta b{color:#ffffff!important}
 
 /* ===== Section headers: bold title with a quiet subtitle directly beneath, no pill chrome ===== */
 .section-intro{display:flex;align-items:flex-start;justify-content:space-between;margin:26px 0 6px;flex-wrap:wrap;gap:8px}
@@ -587,6 +626,7 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
 
 @media (max-width:900px){
  .block-container{padding-left:.8rem;padding-right:.8rem}
+ [data-testid="stMain"] .block-container:before{height:360px}
  .hero{padding:20px}.hero h1{font-size:23px}
  .analysis-toolbar{align-items:flex-start;flex-direction:column;padding:15px 16px}
  .analysis-toolbar-meta{justify-content:flex-start}
@@ -627,6 +667,10 @@ def components_css() -> str:
         "@media (max-width:900px){",
         f"@media (max-width:{BREAKPOINT_CONTENT}px){{",
     )
+    # Marcador de texto, no f-string: _COMPONENTS_CSS_RAW tiene decenas de
+    # llaves {} de selectores propias (mismo motivo que ui/login.py) — un
+    # solo .replace() al final evita escaparlas todas a mano.
+    css = css.replace("__HERO_BG__", image_data_uri("ciudad_red.jpg"))
     return css
 
 
