@@ -365,17 +365,22 @@ _COMPONENTS_CSS_RAW = """
    existe ningún `.hero-band`, así que ahí `:has()` no matchea y la franja
    simplemente no se pinta — cada pantalla vuelve a depender solo de su
    propio fondo, sin pisarse. */
-/* Pedido explícito: "quita toda imagen de la parte analítica, deja solo
-   el fondo" — esta franja tenía su PROPIA foto (ciudad_red.jpg), aparte
-   de la foto general de toda la app (stAppViewContainer). Con el hero y
-   la fila de pestañas ya en sus propias cajas sólidas (.hero-band,
-   .stTabs [role="tablist"]), esta segunda foto ya no sumaba nada —
-   ahora era, literalmente, "una imagen que se sobrepone" en los huecos
-   entre esas cajas. `content:none` apaga el ::before por completo (no
-   solo la imagen — la caja entera deja de generarse), así que en ese
-   tramo se ve exactamente el mismo fondo general (foto tenue + velo)
-   que en el resto de la página, no una franja aparte. */
-[data-testid="stMain"] .block-container:has(.hero-band):before{content:none}
+/* Vuelta atrás, pedida explícitamente ("volviendo al diseño... usar este
+   formato" con la referencia de la foto vívida detrás del título y las
+   pestañas) — se había apagado (`content:none`) en la ronda anterior
+   porque "tapaba" las cajas sólidas. Ahora se reactiva, reutilizando la
+   misma foto general (`__APP_BG__`/fondo.jpg — ya no ciudad_red.jpg, para
+   no reintroducir una segunda imagen distinta) SOLO en esta franja
+   (~300px del hero + pestañas), con su propio velo oscuro fijo — el
+   resto de la página (KPIs, gráficos, tablas) se queda tal cual está
+   ahora, en cajas sólidas: este cambio es puntual a esta franja, "primero
+   empecemos por esto" tal como se pidió. */
+[data-testid="stMain"] .block-container:has(.hero-band):before{content:"";position:absolute;top:0;left:0;right:0;height:300px;z-index:-1;
+  border-radius:0 0 var(--radius-lg) var(--radius-lg);
+  background-image:
+    linear-gradient(120deg,rgba(8,4,7,.95) 0%,rgba(110,8,20,.62) 38%,rgba(20,4,8,.24) 68%,transparent 90%),
+    url("__APP_BG__");
+  background-size:cover,cover;background-position:center,center;background-repeat:no-repeat,no-repeat}
 /* La barra nativa de Streamlit (arriba del todo, íconos de compartir/menú)
    tenía un fondo translúcido con blur — glassmorphism real. En la
    práctica ya perdía siempre contra la regla `!important` de más arriba
@@ -472,21 +477,23 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   box-shadow:var(--shadow-md);border-radius:var(--radius-lg)}
 .hero h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.01em;color:var(--text)}
 .hero p{color:var(--muted);margin:4px 0 0;font-size:12.5px;max-width:900px}
-/* El hero que se sienta sobre la franja de foto (.block-container:before,
-   .st-key-home_hero_band) usaba texto blanco fijo + text-shadow porque el
-   texto flotaba directo sobre la foto, sin nada opaco detrás. Cambio de
-   estrategia: ahora es una caja sólida propia (fondo del tema, borde,
-   sombra) — vuelve a var(--text)/var(--muted) normales, como cualquier
-   .hero, porque ya no hay foto directamente detrás del texto, hay esta
-   caja. La foto sigue viéndose alrededor, en el espacio que la caja no
-   ocupa (ese "aire" es justo lo que se pidió). */
-.hero-band{border-bottom:none;background:var(--card-solid);border:1px solid var(--line);
-  border-radius:var(--radius-lg);padding:14px 22px;box-shadow:var(--shadow-md)}
-.hero-band h1{color:var(--text)!important;text-shadow:none}
-.hero-band p{color:var(--muted)!important;text-shadow:none}
-.hero-band-meta{background:var(--card-solid);border:1px solid var(--line);border-radius:var(--radius-sm);
-  padding:8px 14px;color:var(--text)!important;text-shadow:none;font-size:13.5px;margin:10px 0}
-.hero-band-meta b{color:var(--text)!important}
+/* El hero que se sienta sobre la franja de foto (.block-container:before)
+   pasó por 3 estrategias: texto blanco fijo directo sobre la foto (fallaba
+   en zonas brillantes/detalladas de la imagen — el mismo problema que ya
+   se vio y se corrigió en la pestañas: un text-shadow solo no alcanza
+   contra un fondo sin filtrar y variable) → caja sólida opaca (perdía la
+   foto detrás, no era "este formato") → esta: un respaldo oscuro
+   semi-translúcido PROPIO (no depende del velo diagonal de la franja,
+   que en algunos puntos ya se desvanece) detrás del texto, dejando ver
+   la foto a través suyo — mismo principio que ya funcionó en
+   .stTabs [role="tablist"] cuando el texto flotaba solo. */
+.hero-band{border-bottom:none;background:rgba(6,8,13,.4);border:none;
+  padding:10px 16px;border-radius:var(--radius-md);box-shadow:none;backdrop-filter:blur(2px)}
+.hero-band h1{color:#ffffff!important;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+.hero-band p{color:rgba(255,255,255,.92)!important;text-shadow:0 1px 5px rgba(0,0,0,.6)}
+.hero-band-meta{background:rgba(6,8,13,.4);border:none;border-radius:var(--radius-sm);backdrop-filter:blur(2px);
+  padding:8px 14px;color:#ffffff!important;text-shadow:0 1px 5px rgba(0,0,0,.6);font-size:13.5px;margin:10px 0}
+.hero-band-meta b{color:#ffffff!important}
 
 /* ===== Section headers: bold title with a quiet subtitle directly beneath =====
    Antes flotaba suelto sobre el fondo (sin caja) — con la foto detrás de
