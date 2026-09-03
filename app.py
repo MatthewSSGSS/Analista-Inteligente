@@ -133,9 +133,22 @@ with st.sidebar:
         st.rerun()
     if st.session_state.get("auth_user"):
         u = st.session_state.auth_user
-        col_user, col_out = st.columns([3, 1])
-        col_user.markdown(f'<p class="sidebar-section-label" style="margin:0;">👤 {u.get("display_name") or u.get("username")}</p>', unsafe_allow_html=True)
-        if col_out.button("Salir", key="logout_btn", use_container_width=True):
+        name = u.get("display_name") or u.get("username") or "Invitado"
+        # Antes iba en 2 columnas (nombre + botón "Salir" lado a lado): con
+        # el sidebar ya fijo en 270px, la columna del botón quedaba
+        # demasiado angosta y "Salir" se veía cortado a una sola letra.
+        # Ahora es una tarjetita propia (mismo lenguaje visual que
+        # .sidebar-logo: círculo + texto) con el botón debajo, a todo el
+        # ancho — nunca le falta espacio al texto, sea cual sea el nombre.
+        st.markdown(
+            f'<div class="sidebar-account">'
+            f'<div class="sidebar-account-avatar">👤</div>'
+            f'<div class="sidebar-account-info"><span class="sidebar-account-label">Sesión activa</span>'
+            f'<span class="sidebar-account-name">{name}</span></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("🚪 Salir", key="logout_btn", use_container_width=True):
             auth_engine.logout()
             st.rerun()
 

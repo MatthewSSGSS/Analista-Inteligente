@@ -460,6 +460,23 @@ section[data-testid="stSidebar"] .mode-confidence{color:var(--sidebar-muted)!imp
 .sidebar-group-header{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--sidebar-text-strong)!important;
   margin:14px 0 7px;padding-top:11px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
 .sidebar-group-header:first-of-type{border-top:none;padding-top:0;margin-top:4px}
+/* Tarjeta de sesión (nombre + botón "Salir" debajo) — mismo lenguaje que
+   .sidebar-logo (círculo con degradado de marca + texto de dos líneas),
+   para que "de quién es la sesión" se sienta parte del mismo encabezado
+   en vez de una fila de texto suelta. El botón "Salir" va FUERA de esta
+   tarjeta (as widget nativo de Streamlit, con su propio estilo de botón
+   ya existente) pero pegado justo debajo, a todo el ancho del sidebar —
+   así "Salir" nunca se queda sin espacio, sea cual sea el nombre. */
+.sidebar-account{display:flex;align-items:center;gap:10px;padding:8px 10px;margin:2px 0 8px;
+  background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:var(--radius-md)}
+.sidebar-account-avatar{width:30px;height:30px;border-radius:50%;flex:0 0 30px;
+  background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);
+  box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);
+  display:flex;align-items:center;justify-content:center;font-size:14px}
+.sidebar-account-info{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.sidebar-account-label{font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--sidebar-muted)}
+.sidebar-account-name{font-size:13px;font-weight:700;color:var(--sidebar-text-strong);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* View-mode selector styled as a dark nav pill row, matching the sidebar */
 section[data-testid="stSidebar"] div[role="radiogroup"]{background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:10px;padding:4px;gap:2px}
 section[data-testid="stSidebar"] div[role="radiogroup"] label{border-radius:7px;padding:6px 10px}
