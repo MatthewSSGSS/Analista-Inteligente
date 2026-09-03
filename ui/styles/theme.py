@@ -497,28 +497,31 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .eyebrow{display:none}
 .data-badge{font-size:10.5px;font-weight:700;color:var(--red);background:none;border:none;padding:0;box-shadow:none;text-transform:uppercase;letter-spacing:.05em}
 
-/* ===== View banner: encabezado de vista con foto (ui/components/section.py
-   :: banner_header) — usado en un puñado de vistas donde una de las 4
-   fotos de assets/images/ tiene sentido temático. El texto es blanco fijo
-   sobre un velo oscuro que SIEMPRE está ahí (con opacidad, no con
-   var(--panel)) — funciona igual en Claro y Oscuro sin dos versiones. */
+/* ===== View banner: encabezado de vista (ui/components/section.py ::
+   banner_header) — usado en Resumen ejecutivo, Georeferenciación,
+   Asistente IA, Descripción, Comparativa, Varias hojas.
+
+   ANTES tenía su propia foto (una de las 4 de assets/images/) con un velo
+   oscuro y texto blanco fijo encima — un tercer sistema de imagen,
+   redundante ahora que TODA la app ya tiene la foto general de fondo
+   (stAppViewContainer) detrás. Pedido explícito: "quita la imagen que se
+   sobrepone, solo deja el fondo" — banner_header() en Python SIGUE
+   pasando `image=...` en cada llamada (no se tocó esa función, para no
+   romper nada), pero acá se ignora a propósito: `background-image:none
+   !important` le gana al `style="background-image:url(...)"` inline que
+   ese Python todavía genera. El resultado es una caja sólida normal,
+   igual que .section-intro/.hero — el texto vuelve a var(--text)/
+   var(--muted) normales, ya no hace falta blanco fijo ni text-shadow
+   porque ya no hay foto directamente detrás. */
 .view-banner{position:relative;border-radius:var(--radius-lg);overflow:hidden;margin:4px 0 22px;
-  height:112px;background-size:cover;background-position:center;animation:fadeUp .4s ease both;
+  height:112px;background-image:none!important;background:var(--card-solid);
+  border:1px solid var(--line);animation:fadeUp .4s ease both;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.06),var(--glow-ring)}
-/* La foto sola no basta para que el texto se lea con una imagen tan
-   detallada: el ojo pierde el trazo de las letras contra tanto ruido
-   visual, aunque el contraste numérico diera bien. El velo se subió a
-   94%/70% (antes 85%/45%) y se extiende más hacia la derecha, y el texto
-   suma su propia sombra (text-shadow) — dos capas de seguridad, no solo
-   una. Ojo: esto va en `:before` (una capa aparte, detrás del texto por
-   `z-index`), NO en un `filter` sobre `.view-banner` — un filter ahí
-   oscurecería también el texto, que es descendiente del mismo elemento. */
-.view-banner:before{content:"";position:absolute;inset:0;
-  background:linear-gradient(90deg,rgba(6,8,13,.94) 0%,rgba(6,8,13,.7) 55%,rgba(6,8,13,.2) 85%)}
+.view-banner:before{content:"";position:absolute;inset:0;background:none}
 .view-banner-content{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;justify-content:center;padding:0 26px}
-.view-banner h2{margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;color:#ffffff;text-shadow:0 2px 10px rgba(0,0,0,.65)}
-.view-banner p{margin:5px 0 0;font-size:12px;color:rgba(255,255,255,.88);max-width:600px;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.6)}
-@media(max-width:900px){.view-banner{height:130px}.view-banner:before{background:linear-gradient(180deg,rgba(6,8,13,.45) 0%,rgba(6,8,13,.94) 100%)}.view-banner-content{justify-content:flex-end;padding:0 18px 14px}}
+.view-banner h2{margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em;color:var(--text);text-shadow:none}
+.view-banner p{margin:5px 0 0;font-size:12px;color:var(--muted);max-width:600px;line-height:1.5;text-shadow:none}
+@media(max-width:900px){.view-banner{height:130px}.view-banner-content{justify-content:flex-end;padding:0 18px 14px}}
 
 /* ===== Franja de foto propia de Inicio (ui/home.py): extiende la misma
    foto/velo de la franja compartida de arriba, pero SOLO por el alto del
