@@ -458,10 +458,25 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-query=st.text_input("🔎 Pregúntale al Excel",placeholder="Ej.: mayores a 100000, Bogotá, producto X...",key="natural_query_search")
+query=st.text_input(
+    "🔎 Pregúntale al Excel",
+    placeholder="Ej.: mayores a 100000, Bogotá, producto X...",
+    key="natural_query_search",
+    # El campo se queda dentro de la franja de foto (.block-container:before,
+    # ver ui/styles/theme.py) — la etiqueta normal ("🔎 Pregúntale al
+    # Excel") es texto oscuro sobre la foto y quedaba casi ilegible. Se
+    # colapsa (sigue existiendo para accesibilidad, solo no se pinta) en
+    # vez de intentar volverla blanca a mano: la referencia tampoco la
+    # muestra, solo el campo con su placeholder.
+    label_visibility="collapsed",
+)
 if query:
     df,_=natural_filter(df,query,schema)
-    st.caption(f"Resultado de la consulta: {len(df):,} registros")
+    st.markdown(
+        f'<p class="hero-band-meta" style="font-size:12px;opacity:.85">'
+        f'Resultado de la consulta: {len(df):,} registros</p>',
+        unsafe_allow_html=True,
+    )
 
 mode_info=detect_dataset_mode(df, schema)
 dashboard=_cached_build_dashboard(df,item["profile"])

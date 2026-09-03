@@ -389,8 +389,17 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    leer sobre blanco (por eso el bug no se notaba ahí), pero sobre el
    fondo oscuro de Modo Oscuro queda casi invisible — la pestaña
    seleccionada (abajo) ya tenía !important desde el principio; a esta
-   le faltaba. */
-.stTabs [data-baseweb="tab-list"]{gap:6px;background:var(--panel-2);border:1px solid var(--line);padding:6px;border-radius:999px;box-shadow:var(--shadow-sm);overflow-x:auto}
+   le faltaba.
+
+   El FONDO de la barra (`background:var(--panel-2)`) tenía este mismo
+   problema y nadie lo había notado: sin !important, perdía contra el
+   estilo propio de BaseWeb — invisible mientras la fila de pestañas vivía
+   sobre un fondo plano casi del mismo tono, pero en cuanto detrás pasó a
+   haber una foto (la franja de .block-container:before, arriba), la barra
+   dejó de verse como una píldora opaca y la foto se coló detrás de cada
+   pestaña inactiva — exactamente el mismo patrón de bug que el comentario
+   de arriba ya documentaba para el texto, ahora aplicado al fondo. */
+.stTabs [data-baseweb="tab-list"]{gap:6px;background:var(--panel-2)!important;border:1px solid var(--line);padding:6px;border-radius:999px;box-shadow:var(--shadow-sm);overflow-x:auto}
 .stTabs [data-baseweb="tab"]{height:40px;border-radius:999px;padding:0 18px;color:var(--muted)!important;font-weight:700!important;font-size:13.5px;
   transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
   background:transparent;border:1px solid transparent}
@@ -436,7 +445,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    pero esta regla se queda: sigue aplicando a cualquier vista que anide
    sus propias pestañas internamente. */
 .stTabs .stTabs [data-baseweb="tab-list"]{
-  background:transparent;border:none;box-shadow:none;border-radius:0;
+  background:transparent!important;border:none;box-shadow:none;border-radius:0;
   padding:0 0 2px;gap:20px;border-bottom:1px solid var(--line);
 }
 .stTabs .stTabs [data-baseweb="tab"]{height:34px;padding:0 2px;border-radius:0;font-size:12.5px;font-weight:650}
