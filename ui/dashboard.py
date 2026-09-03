@@ -1102,7 +1102,7 @@ def render_dashboard(df, dashboard):
     ex = dashboard.get("executive", {})
 
     # ── Vista general: lo primero que se ve, sin necesidad de desplegar nada ──
-    st.markdown(banner_header("Qué está pasando", "Descripción completa · todo recalculado con los filtros actuales.", "datos1.jpg"), unsafe_allow_html=True)
+    st.markdown(banner_header("Qué está pasando", "Descripción completa · todo recalculado con los filtros actuales.", "ciudad_red.jpg"), unsafe_allow_html=True)
     st.caption(dashboard["summary"])
 
     # Perfil individual integrado: se abre dentro del mismo dashboard.

@@ -134,7 +134,7 @@ def render_comparison(result, show_filter_panel: bool = True, key_prefix: str = 
 
     Los 4 llamados existentes (comparación de archivos) no pasan ninguno
     de los dos argumentos, así que siguen exactamente igual que antes."""
-    st.markdown(banner_header("Qué cambió entre los archivos", "Último vs. anterior · primero vs. último.", "datos1.jpg"), unsafe_allow_html=True)
+    st.markdown(banner_header("Qué cambió entre los archivos", "Último vs. anterior · primero vs. último.", "ciudad_red.jpg"), unsafe_allow_html=True)
     files = result["files"]
     st.caption(" · ".join(f"{i+1}. {f['label']}" for i, f in enumerate(files)))
     if show_filter_panel:

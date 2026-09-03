@@ -3,6 +3,7 @@ from __future__ import annotations
 import streamlit as st
 
 import core.auth_engine as auth_engine
+from ui.assets import image_data_uri
 
 # ─────────────────────────────────────────────────────────────────────────
 # INTERRUPTOR TEMPORAL: mientras la conexión a la base de datos esté rota
@@ -18,18 +19,37 @@ BYPASS_AUTH_TEMPORARY = True
 
 
 def render_login():
-    st.markdown(
-        """
+    # Foto de fondo (assets/images/oficina_claro.jpg, provista por el
+    # usuario): trae texto de mentira incrustado en la propia imagen
+    # ("Google SSO"/"Microsoft SSO", que esta app no tiene) — por eso NO va
+    # directa y visible. Se pone detrás de un velo crema casi opaco (92%),
+    # así que se ve la escena (oficina, gente, marca Claro) pero ningún
+    # texto de la foto se alcanza a leer. El formulario real de abajo sigue
+    # siendo la única fuente de "qué opciones de login existen".
+    login_bg = image_data_uri("oficina_claro.jpg")
+    # Marcador de texto en vez de f-string: el resto del bloque CSS de abajo
+    # tiene decenas de llaves {} propias (selectores) que un f-string
+    # interpretaría como variables — un solo .replace() al final evita tener
+    # que escapar cada una a mano (alto riesgo de error tipográfico en un
+    # bloque tan largo).
+    style_block = """
         <style>
         @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
-        /* Fondo crema con resplandor rojo en las esquinas, como la referencia. */
+        /* Mismo resplandor rojo de siempre, un velo crema casi opaco encima
+           de la foto (para que su texto no se lea) y la foto al fondo. */
         [data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid="stMain"],html,body{
-          background:
+          background-image:
             radial-gradient(ellipse 900px 500px at 8% 6%, rgba(228,0,43,.20), transparent 60%),
             radial-gradient(ellipse 900px 550px at 92% 96%, rgba(228,0,43,.16), transparent 60%),
             radial-gradient(ellipse 700px 500px at 50% 100%, rgba(228,0,43,.10), transparent 65%),
-            #faf6f0 !important;
+            linear-gradient(rgba(250,246,240,.92),rgba(250,246,240,.92)),
+            url(__LOGIN_BG__);
+          background-size: auto, auto, auto, cover, cover;
+          background-position: 8% 6%, 92% 96%, 50% 100%, center, center;
+          background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+          background-attachment: fixed, fixed, fixed, fixed, fixed;
+          background-color: #faf6f0 !important;
         }
         [data-testid="stHeader"]{background:transparent!important}
 
@@ -65,9 +85,8 @@ def render_login():
         .login-card button[kind="secondary"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;
           border:none!important;color:#fff!important;border-radius:12px!important;height:46px!important;font-weight:750!important}
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        """
+    st.markdown(style_block.replace("__LOGIN_BG__", login_bg), unsafe_allow_html=True)
 
     st.markdown(
         '<div class="login-wrap"><div class="login-wordmark">Claro<sup>⚡</sup></div>'

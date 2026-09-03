@@ -15,7 +15,7 @@ from ui.person_profile import render_person_profile
 
 
 def render_executive(df, schema, dashboard):
-    st.markdown(banner_header("Resumen ejecutivo", "Vista ejecutiva · lectura compacta para decidir rápido. El contenido se adapta al tipo de Excel detectado.", "barras.jpg"), unsafe_allow_html=True)
+    st.markdown(banner_header("Resumen ejecutivo", "Vista ejecutiva · lectura compacta para decidir rápido. El contenido se adapta al tipo de Excel detectado.", "ciudad_red.jpg"), unsafe_allow_html=True)
 
     # ── Veredicto ejecutivo: lo primero que se lee, antes que cualquier KPI
     # o gráfico. dashboard["executive"] ya lo calcula core/executive.py

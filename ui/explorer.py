@@ -22,7 +22,7 @@ def render_explorer(df, schema):
         banner_header(
             "Explorador analítico",
             "Elige qué cruzar; la tabla y el gráfico se actualizan al instante.",
-            "barras.jpg",
+            "ciudad_red.jpg",
         ),
         unsafe_allow_html=True,
     )

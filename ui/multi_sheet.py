@@ -37,7 +37,7 @@ def render_multi_sheet(workbook: dict) -> None:
     rec = recommend_multi_sheet_tool(workbook)
     names = rec["sheet_names"]
     st.markdown(
-        banner_header("Varias hojas", "Busca, combina o compara información repartida en distintas hojas del mismo Excel.", "datos1.jpg"),
+        banner_header("Varias hojas", "Busca, combina o compara información repartida en distintas hojas del mismo Excel.", "ciudad_red.jpg"),
         unsafe_allow_html=True,
     )
     if len(names) < 2:
