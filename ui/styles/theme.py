@@ -409,6 +409,51 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .view-banner p{margin:5px 0 0;font-size:12px;color:rgba(255,255,255,.88);max-width:600px;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 @media(max-width:900px){.view-banner{height:130px}.view-banner:before{background:linear-gradient(180deg,rgba(6,8,13,.45) 0%,rgba(6,8,13,.94) 100%)}.view-banner-content{justify-content:flex-end;padding:0 18px 14px}}
 
+/* ===== Franja de foto propia de Inicio (ui/home.py): extiende la misma
+   foto/velo de la franja compartida de arriba, pero SOLO por el alto del
+   hero de bienvenida + la fila de 4 tarjetas "Qué se cargó" — no la
+   fila de tarjetas completa de la pestaña. `st.container(key="home_hero_
+   band")` (Streamlit ≥1.36) envuelve exactamente ese tramo con una clase
+   estable (`st-key-home_hero_band`), así que este fondo puede ir
+   directo en el propio contenedor (no hace falta el truco de ::before con
+   z-index negativo de la franja de arriba — acá el texto blanco SÍ es
+   descendiente real de este mismo elemento, no un hermano flotando al
+   lado). Es un container SEPARADO de la franja compartida (no la misma
+   alargada) a propósito: la franja de arriba vive una sola vez en
+   .block-container y la comparten TODAS las pestañas — alargarla ahí
+   habría puesto esta misma foto detrás de Resumen ejecutivo, Descripción,
+   etc., cuyo texto no está preparado para eso. Con un container propio,
+   el efecto queda contenido 100% a Inicio.
+
+   El alto no es un número fijo — crece con el padding + el contenido de
+   adentro (hero + fila de tarjetas), así que termina justo después de la
+   última tarjeta sin necesitar calibrar ningún píxel a mano; el siguiente
+   contenido ("Tipo detectado en...") queda automáticamente fuera, sobre
+   fondo normal otra vez.
+
+   Aviso honesto (no hay navegador en este entorno para afinarlo a ojo):
+   esta franja usa la MISMA foto que la de arriba pero en una caja de
+   alto distinto — "cover" recorta cada una por separado, así que el
+   empalme entre las dos puede no ser perfectamente continuo (un salto
+   sutil en el encuadre de la imagen en la costura). Minimizado alineando
+   ambas a "top" y sin redondear la esquina superior (mismo truco que ya
+   usa la franja de arriba: solo se redondean las esquinas de abajo, para
+   que la pila se lea como un solo bloque). */
+[data-testid="stMain"] .st-key-home_hero_band{
+  position:relative;margin:-6px 0 18px;padding:16px 22px 22px;
+  border-radius:0 0 var(--radius-lg) var(--radius-lg);
+  background-image:
+    linear-gradient(90deg,rgba(6,8,13,.94) 0%,rgba(6,8,13,.8) 45%,rgba(6,8,13,.35) 78%,rgba(6,8,13,.12) 100%),
+    url(__HERO_BG__);
+  background-size:cover,cover;background-position:top,top;background-repeat:no-repeat,no-repeat;
+}
+/* "Qué se cargó" es un section_header() normal (texto oscuro por defecto,
+   pensado para fondo blanco) — se sobreescribe SOLO dentro de esta franja,
+   sin tocar la regla general que usa el resto de la app. Las 4 tarjetas
+   (kpi_card()) no se tocan: ya son fondo sólido opaco (--card-solid), se
+   siguen leyendo bien encima tal cual estaban. */
+[data-testid="stMain"] .st-key-home_hero_band .section-intro h2{color:#ffffff!important;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+
 /* ===== KPI scorecards: light glassmorphism — frosted glass, not flat white =====
    clamp(mínimo, preferido-en-vw, máximo): el mínimo es EXACTAMENTE el
    valor fijo que ya tenía cada propiedad (así en pantallas normales/chicas

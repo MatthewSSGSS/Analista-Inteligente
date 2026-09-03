@@ -29,21 +29,33 @@ def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict) -> None:
     total_records = sum(len(it.get("processed", [])) for it in sheets.values() if isinstance(it, dict))
     classification = (mode_info or {}).get("classification", {}) or {}
 
-    # ── Hero de bienvenida, con el círculo rojo como acento de marca ──────
-    hero(
-        "Bienvenido al Panel Analítico Universal",
-        "Sube cualquier Excel o CSV y obtén, en segundos, KPIs, hallazgos, "
-        "alertas, comparaciones y un informe listo para compartir — sin depender de una estructura fija.",
-        icon=True, tight=True,
-    )
+    # ── Hero de bienvenida + snapshot del archivo, envueltos en un
+    # st.container(key=...) para que compartan un solo fondo con foto (ver
+    # ".st-key-home_hero_band" en ui/styles/theme.py) — la misma extensión
+    # visual de la franja de arriba, pero contenida SOLO a esta pestaña
+    # (Inicio): la franja de arriba es compartida por toda la app (vive una
+    # sola vez en .block-container, antes de las pestañas) y alargarla ahí
+    # habría puesto esta misma foto detrás de otras pestañas (Resumen
+    # ejecutivo, Descripción...) sin que su texto esté preparado para eso.
+    # Un container propio, con su fondo propio, evita ese efecto secundario
+    # por completo. El alto no es un número fijo: crece con el contenido
+    # de adentro, así que termina justo después de la fila de 4 tarjetas
+    # sin necesidad de calcular ningún píxel a mano.
+    with st.container(key="home_hero_band"):
+        hero(
+            "Bienvenido al Panel Analítico Universal",
+            "Sube cualquier Excel o CSV y obtén, en segundos, KPIs, hallazgos, "
+            "alertas, comparaciones y un informe listo para compartir — sin depender de una estructura fija.",
+            icon=True, tight=True, band=True,
+        )
 
-    # ── Snapshot del archivo cargado ───────────────────────────────────────
-    st.markdown(section_header("Qué se cargó", eyebrow="ARCHIVO ACTUAL", compact=True), unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(kpi_card("Archivo", wb.get("filename", "—"), small_value=True), unsafe_allow_html=True)
-    c2.markdown(kpi_card("Hojas con datos", f"{len(sheets):,}"), unsafe_allow_html=True)
-    c3.markdown(kpi_card("Registros totales", f"{total_records:,}"), unsafe_allow_html=True)
-    c4.markdown(kpi_card("Hoja activa", sheet, small_value=True), unsafe_allow_html=True)
+        # ── Snapshot del archivo cargado ─────────────────────────────────
+        st.markdown(section_header("Qué se cargó", eyebrow="ARCHIVO ACTUAL", compact=True), unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.markdown(kpi_card("Archivo", wb.get("filename", "—"), small_value=True), unsafe_allow_html=True)
+        c2.markdown(kpi_card("Hojas con datos", f"{len(sheets):,}"), unsafe_allow_html=True)
+        c3.markdown(kpi_card("Registros totales", f"{total_records:,}"), unsafe_allow_html=True)
+        c4.markdown(kpi_card("Hoja activa", sheet, small_value=True), unsafe_allow_html=True)
 
     if classification:
         cap_labels = {"evolucion": "evolución", "comparacion_periodos": "comparación de periodos", "ranking": "rankings", "distribucion": "distribuciones", "relaciones": "relaciones entre métricas", "estadisticas": "estadísticas", "grafico_distribucion": "gráficos de distribución", "geografia": "geografía", "catalogo": "consulta de catálogo", "estados": "seguimiento de estados"}

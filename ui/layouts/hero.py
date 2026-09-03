@@ -17,14 +17,12 @@ def hero(title: str, subtitle: str | None = None, icon: bool = False, tight: boo
     marca (círculo `var(--brand-orb)`); `tight=True` reduce el aire debajo
     del título, como ya hacía la variante con icono.
 
-    `band=True` añade la clase `hero-band`: es SOLO para el único hero de
-    nivel superior de toda la app (el de app.py, antes de las pestañas) —
-    ese es el que en ui/styles/theme.py se pinta encima de la franja de foto
-    (`.block-container:before`, la misma foto ciudad_red.jpg que usan los
-    banners de cada vista) y por eso necesita texto blanco fijo. Los otros
-    dos usos de `hero()` (ui/home.py, ui/tracking.py) viven DENTRO del
-    contenido de una pestaña, muy por debajo de esa franja, sobre fondo
-    normal — nunca deben heredar el texto blanco, por eso es opt-in y no el
+    `band=True` añade la clase `hero-band` (texto blanco fijo, con sombra) —
+    es para cualquier hero que termine sentado sobre una foto de fondo, sea
+    la franja compartida de nivel superior (app.py, `.block-container:before`
+    en ui/styles/theme.py) o un fondo propio de una sola pestaña (ui/home.py,
+    dentro de `.st-key-home_hero_band`). El de ui/tracking.py vive sobre
+    fondo normal y no lo usa — por eso sigue siendo opt-in, no el
     comportamiento por defecto de `.hero`."""
     classes = "hero hero-band" if band else "hero"
     style = ' style="border-bottom:none;padding-bottom:4px;"' if tight else ""
