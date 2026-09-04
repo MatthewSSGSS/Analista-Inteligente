@@ -306,38 +306,60 @@ _COMPONENTS_CSS_RAW = """
 [data-testid="stMain"] [data-testid="stVerticalBlock"]{gap:.75rem}
 /* ===== Filas de tarjetas/KPIs (kpi_grid(), y cualquier fila de 3+
    st.columns() usada para tarjetas — Resumen ejecutivo, Descripción,
-   Georeferenciación, Inicio, Comparar personas, Calidad...): Streamlit las
-   arma como columnas de ancho fijo entre sí (flex, sin wrap), así que en
-   pantalla angosta se aprietan hasta verse minúsculas, y en pantalla ancha
-   simplemente se estiran sin ganar densidad visual real (eso ya lo
-   resuelven los clamp() de cada tarjeta, arriba). Este selector las
-   convierte en una grilla flexible tipo CSS Grid/minmax: cada tarjeta
-   pide un ancho "cómodo" (el segundo valor de clamp) pero puede encogerse
-   hasta un mínimo legible o envolver a la fila siguiente si no caben —
-   eso es el breakpoint responsive, continuo en vez de un punto de quiebre
-   fijo. Solo apunta a filas de 3 COLUMNAS O MÁS (`:has(> ... :nth-child(3))`)
-   para no tocar los layouts de 2 columnas con proporciones intencionales
-   (contenido principal + panel lateral, botón + descripción, etc.) — esos
-   ya funcionan bien y no son "una fila de tarjetas". */
+   Georeferenciación, Inicio, Comparar personas, Calidad...).
+
+   Historial corto: primero se probó flex-wrap (cada tarjeta pide un ancho
+   "cómodo" y envuelve a la fila siguiente si no caben todas). Se veía
+   bien en el caso fácil, pero rompía la cuadrícula en el caso real: cada
+   `st.columns()` de Python es su PROPIA fila independiente — CSS no puede
+   fusionar la tarjeta que envuelve de la fila 1 con la fila 2 de al lado,
+   así que quedaba sola, con un hueco enorme junto a ella (exactamente el
+   reporte: "Mediana" y "Líder · Ciudad" solas, con la foto de fondo
+   asomando en el hueco). Ponerle un límite de ancho a esa tarjeta suelta
+   evitó que se estirara a lo ancho, pero el hueco (el problema real
+   reportado) seguía ahí.
+
+   Arreglo de raíz: se quita el wrap. Vuelven a ser columnas parejas de
+   Streamlit — TODAS las tarjetas de una fila con el mismo ancho, en una
+   sola línea, sin excepciones ni huérfanas. En pantalla angosta se
+   angostan juntas en vez de envolver (comportamiento de fábrica de
+   `st.columns()`) — se ven más chicas, pero la cuadrícula queda pareja
+   siempre, que es lo que se pidió. El tamaño "cómodo" por tarjeta lo
+   siguen resolviendo los clamp() de cada una (arriba, sin tocar). Solo
+   apunta a filas de 3 COLUMNAS O MÁS (`:has(> ... :nth-child(3))`) para
+   no tocar los layouts de 2 columnas con proporciones intencionales
+   (contenido principal + panel lateral, botón + descripción, etc.). */
 [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)){
-  flex-wrap:wrap;row-gap:clamp(10px,1vw,20px);
+  align-items:stretch;column-gap:clamp(10px,1vw,20px);
 }
 [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"]{
-  flex:1 1 clamp(215px,22vw,360px);min-width:0;max-width:360px;
+  display:flex;
 }
-/* Bug real, encontrado en captura: cuando una fila de 3+ no entra completa
-   y una tarjeta queda SOLA al final de su propia línea (p. ej. "Mediana"
-   quedando sin par), flex-grow:1 reparte TODO el espacio libre de esa
-   línea en ella sola — se estiraba a lo ancho de toda la fila por una
-   sola cifra chica. clamp() ya le pone techo al ANCHO INICIAL, pero no al
-   crecimiento por flex-grow (son cálculos distintos); max-width sí lo
-   limita, así que ahora una tarjeta sola nunca crece más allá de lo que
-   crecería estando acompañada — se queda del lado izquierdo, con aire a
-   la derecha, en vez de ocupar la fila entera. */
-@media (max-width:640px){
-  [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"]{
-    flex-basis:100%;
-  }
+/* La tarjeta (.kpi-card, etc.) es hija directa de este stColumn — que
+   estire a la altura completa de la columna (en vez de solo lo que su
+   propio contenido mide) es lo que hace que TODAS las tarjetas de una
+   misma fila terminen con la misma altura, aunque una tenga más o menos
+   texto que la de al lado. */
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"] > div{
+  display:flex;flex-direction:column;width:100%;
+}
+/* Cadena exacta confirmada inspeccionando el DOM real (no adivinada):
+   .kpi-card vive dentro de stMarkdownContainer > (div sin testid) >
+   stMarkdown > stElementContainer > stVerticalBlock (el "> div" de
+   arriba) > stColumn. flex:1 en stElementContainer lo hace crecer hasta
+   la altura completa de la columna ya estirada; height:100% en cada
+   div intermedio hace que ese alto le siga llegando a .kpi-card en vez
+   de quedarse solo en el contenedor de más afuera. */
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"] [data-testid="stElementContainer"]:has(.kpi-card){
+  flex:1;display:flex;flex-direction:column;
+}
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"] [data-testid="stElementContainer"]:has(.kpi-card) > div,
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"] [data-testid="stElementContainer"]:has(.kpi-card) > div > div,
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"] [data-testid="stElementContainer"]:has(.kpi-card) > div > div > div{
+  height:100%;display:flex;flex-direction:column;
+}
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"] .kpi-card{
+  flex:1;height:100%;box-sizing:border-box;
 }
 /* ===== Franja de foto de toda la app: la misma ciudad_red.jpg de los
    banners de cada vista (ui/components/section.py::banner_header), pero
@@ -415,6 +437,35 @@ _COMPONENTS_CSS_RAW = """
 header[data-testid="stHeader"]{background:var(--bg)!important}
 h1,h2,h3,h4,h5,h6{color:var(--text);font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
 p,span,div,li,label{color:var(--text)}
+/* ===== Subtítulos "sueltos" (st.markdown("### ...")/"#### ...", 20
+   lugares del código — comparison.py, dashboard.py, exports.py,
+   catalog.py, quality.py, practical.py) y etiquetas de controles nativos
+   (st.radio/selectbox/etc., p. ej. "Estilo de mapa" en Georeferenciación):
+   nunca pasan por section_header() ni por ningún otro componente con caja
+   propia, así que quedaban directo sobre la foto de fondo — mismo
+   problema que ya se resolvió en KPIs/hero/pestañas, pero en estos dos
+   nunca se había tocado.
+
+   Ningún componente con caja propia usa h3 o h4 (.hero/.hero-band son
+   h1; .section-intro/.view-banner son h2 — confirmado por grep antes de
+   escribir esto), así que apuntar a h3/h4 acá no pisa ni duplica ninguna
+   caja ya existente. Con `[data-testid="stMain"]` para no tocar el
+   sidebar (que ya tiene su propio fondo opaco, sin este problema).
+   `display:inline-block` para que la caja se ajuste solo al texto (una
+   "etiqueta", no una barra de ancho completo) — ninguno de estos títulos
+   depende de ocupar el 100% del ancho. */
+[data-testid="stMain"] [data-testid="stMarkdownContainer"] h3,
+[data-testid="stMain"] [data-testid="stMarkdownContainer"] h4{
+  background:var(--card-solid);display:inline-block;
+  padding:6px 14px;border-radius:var(--radius-sm);border:1px solid var(--line);
+  box-shadow:0 1px 2px rgba(20,26,43,.04),0 6px 16px rgba(20,26,43,.05);
+  margin:4px 0 8px;
+}
+[data-testid="stMain"] [data-testid="stWidgetLabel"]{
+  background:var(--card-solid);display:inline-block;
+  padding:3px 10px;border-radius:var(--radius-sm);
+  margin-bottom:3px;
+}
 
 /* ===== Sidebar: nav rail with its own surface tokens (--sidebar-*), navy in
    Dark Mode and off-white in Light Mode — same tokens, values swapped in
@@ -612,14 +663,19 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    no cambia nada), el máximo es un tope razonable — entre ambos, crece de
    forma continua con el ancho de la ventana en vez de quedarse siempre en
    el mismo tamaño chico aunque sobre media pantalla vacía alrededor. */
+/* Compactadas a pedido: menos aire, mismo número grande. El padding y el
+   alto mínimo bajaron bastante (antes hasta 132px de alto en pantallas
+   grandes; ahora tope de 84px) — el tamaño del NÚMERO (.kpi-value) no se
+   tocó, sigue creciendo igual con la pantalla, así que la tarjeta se ve
+   más chica pero la cifra sigue siendo lo más grande que hay en ella. */
 .kpi-card{position:relative;background:var(--card-solid);border:1px solid var(--line);border-left:4px solid var(--blue);
-  border-radius:12px;padding:clamp(14px,1vw,22px) clamp(16px,1.15vw,26px) clamp(14px,1vw,22px) clamp(18px,1.25vw,28px);
-  min-height:clamp(92px,7vw,132px);animation:fadeUp .4s ease both;
+  border-radius:12px;padding:clamp(9px,.6vw,14px) clamp(12px,.85vw,18px) clamp(9px,.6vw,14px) clamp(14px,.95vw,20px);
+  min-height:clamp(64px,4.5vw,84px);animation:fadeUp .4s ease both;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055),var(--glow-ring);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px rgba(20,26,43,.09),var(--glow-ring)}
 .kpi-label{display:block;font-size:clamp(10.5px,.75vw,13px);color:var(--muted);letter-spacing:.02em;font-weight:700;text-transform:uppercase}
-.kpi-value{font-size:clamp(22px,1.65vw,34px);font-weight:800;letter-spacing:-.01em;margin-top:9px;color:var(--text);font-variant-numeric:tabular-nums;font-family:'Sora','Inter',sans-serif}
+.kpi-value{font-size:clamp(22px,1.65vw,34px);font-weight:800;letter-spacing:-.01em;margin-top:4px;color:var(--text);font-variant-numeric:tabular-nums;font-family:'Sora','Inter',sans-serif}
 .kpi-card.negative .kpi-value{color:var(--red)}
 .kpi-card.positive .kpi-value{color:var(--green)}
 /* "Líder · X" (quién encabeza una categoría) es un tipo de dato distinto a
