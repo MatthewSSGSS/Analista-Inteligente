@@ -97,6 +97,31 @@ def caso_3_encabezado_3_niveles():
     check("quedan las 2 filas de datos", len(df) == 2)
 
 
+# ── Caso 3b: regresión de un bug real reportado en producción — título del
+# reporte combinado en la fila de arriba (p. ej. "INFORME PDC TaT TROPAS"),
+# cayendo sobre columnas cuyas demás filas son puramente numéricas. pandas
+# tipa esas columnas con un dtype "nulificable" estricto (Float64/Int64) que
+# NO acepta texto — escribirle el título ahí tronaba con
+# "Invalid value '...' for dtype '...'" al rellenar la celda combinada. ──
+def caso_3b_titulo_combinado_sobre_columnas_numericas():
+    import pandas as pd
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "PDC"
+    ws.append(["INFORME PDC TaT TROPAS", "", "", ""])
+    ws.append(["Región", 2024, 2025, 2026])  # encabezados numéricos, no texto
+    for r in [("Norte", 100, 110, 120), ("Sur", 80, 90, 95)]:
+        ws.append(r)
+    ws.merge_cells("A1:D1")
+    item = load_workbook(_upload_xlsx("informe_pdc.xlsx", wb))["sheets"]["PDC"]
+    df = item["processed"]
+    log = item["profile"]["cleaning_log"]
+    check("no truena con título combinado sobre columnas numéricas", len(df) == 2)
+    check("el título no se cuela como fila/columna de datos", not any("INFORME" in str(c) for c in df.columns))
+    check("las columnas de años se recuperan como datos numéricos", pd.to_numeric(df.iloc[:, 1], errors="coerce").notna().all())
+    check("el log dice que se descartó la fila de título", any("título" in x.lower() for x in log))
+
+
 # ── Caso 4: CSV exportado de una dinámica (sin celdas combinadas posibles
 # en CSV, pero con el mismo hueco de etiquetas + total general). ──
 def caso_4_csv_con_forma_de_dinamica():
@@ -162,6 +187,7 @@ if __name__ == "__main__":
     caso_1_merges_y_subtotales()
     caso_2_staircase_sin_merge_header_2_filas()
     caso_3_encabezado_3_niveles()
+    caso_3b_titulo_combinado_sobre_columnas_numericas()
     caso_4_csv_con_forma_de_dinamica()
     control_1_categoria_real_total_play()
     control_2_columna_dispersa_no_se_rellena()

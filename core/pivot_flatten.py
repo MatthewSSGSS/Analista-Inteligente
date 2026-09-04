@@ -154,9 +154,29 @@ def fill_merged_cells(raw: pd.DataFrame, ranges) -> int:
     """Rellena, en el propio raw (in place), cada rango combinado con el
     valor de su celda superior-izquierda — la única que Excel guarda
     realmente; el resto de la combinación llega vacía. Devuelve cuántas
-    celdas se rellenaron, para el log de calidad."""
-    filled = 0
+    celdas se rellenaron, para el log de calidad.
+
+    Antes de escribir, sube a dtype `object` las columnas que participan en
+    algún rango combinado (nunca la hoja entera — sería carísimo en un
+    archivo grande sin necesidad). Por qué hace falta: `raw` es la
+    cuadrícula cruda, tipada columna por columna por pandas según lo que
+    haya en ESA columna a lo largo de TODA la hoja — una columna que en
+    todas las demás filas es numérica queda tipada como float/entero
+    "nulificable" (Float64/Int64). El título de un reporte, combinado en la
+    fila de arriba, puede caer justo en una columna así — y escribir texto
+    ahí truena ("Invalid value '...' for dtype 'Float64'") porque esos
+    dtypes NO aceptan texto, a diferencia del float64 normal de numpy.
+    `object` acepta cualquier tipo, así que el resto del pipeline (que ya
+    maneja columnas mixtas más abajo, en cleaner.py) sigue funcionando
+    igual, solo que sin ese riesgo de tipo."""
+    if not ranges:
+        return 0
     n_rows, n_cols = len(raw.index), len(raw.columns)
+    merge_cols = {c for (_, c1, _, c2) in ranges for c in range(c1, c2 + 1) if c < n_cols}
+    for c in merge_cols:
+        if raw.dtypes.iloc[c] != object:
+            raw.isetitem(c, raw.iloc[:, c].astype(object))
+    filled = 0
     for (r1, c1, r2, c2) in ranges:
         if r1 >= n_rows or c1 >= n_cols:
             continue
@@ -305,16 +325,49 @@ def flatten_pivot_grid(raw: pd.DataFrame, header_score_fn, norm_header_fn, make_
     def _nonempty_count(i):
         return sum(1 for v in raw.iloc[i].tolist() if norm_header_fn(v))
 
-    # ── "Mirar abajo": cuando NINGUNA fila superó el umbral de confianza de
-    # arriba (columnas tipo "Q1"/"Q2" casi nunca traen ninguna palabra del
-    # diccionario semántico de _header_score, así que un super-encabezado
-    # real puede quedar por debajo de 0.55 aunque sea perfectamente válido),
-    # la fila elegida por defecto (0) puede en realidad ser el
-    # super-encabezado, con el encabezado real justo debajo — se detecta
-    # comparando: la fila de abajo puntúa claramente mejor Y tiene más
-    # celdas llenas (agrupa menos que lo que agrupa). Sin este chequeo,
-    # header_i se hubiera quedado apuntando al super-encabezado y la fila
-    # de nombres de columna real se leería como si fuera un dato más. */
+    def _is_title_row(i):
+        """Fila con UN solo valor repetido en TODAS sus celdas, sin ningún
+        hueco (p. ej. el título de un reporte, "INFORME PDC TaT TROPAS",
+        combinado en toda la fila y ya rellenado por fill_merged_cells).
+        Nunca es un encabezado real — un encabezado real, por definición,
+        nombra columnas DISTINTAS. Se comprueba aparte de is_super_header_row
+        (que sí permite un valor repetido, pero solo si agrupa una PARTE del
+        ancho — un super-encabezado real dos niveles abajo)."""
+        values = [norm_header_fn(v) for v in raw.iloc[i].tolist()]
+        nonempty = [v for v in values if v]
+        return len(nonempty) == len(values) and len(nonempty) >= 2 and len(set(nonempty)) == 1
+
+    # ── "Mirar abajo": dos motivos para desconfiar de la fila elegida y
+    # preferir la de abajo como encabezado real:
+    # 1. Es un título de fila completa (_is_title_row) — nunca es un
+    #    encabezado, así que este caso se corrige SIEMPRE, sin importar el
+    #    puntaje (un título con una frase que por casualidad toca una
+    #    palabra del diccionario semántico podría incluso puntuar "confident").
+    # 2. (Solo si 1 no aplicó) NINGUNA fila superó el umbral de confianza de
+    #    arriba — columnas tipo "Q1"/"Q2" casi nunca traen ninguna palabra
+    #    del diccionario semántico de _header_score, así que un
+    #    super-encabezado real puede quedar por debajo de 0.55 aunque sea
+    #    perfectamente válido — la fila elegida por defecto (0) puede ser
+    #    ese super-encabezado, con el encabezado real justo debajo; se
+    #    detecta comparando: la fila de abajo puntúa claramente mejor Y
+    #    tiene más celdas llenas (agrupa menos que lo que agrupa).
+    # Sin ninguno de los dos, header_i se hubiera quedado apuntando a una
+    # fila que no es el encabezado real, y esa fila real se habría leído
+    # como si fuera un dato más. ──
+    # Fila(s) de título descartadas — a diferencia de un super-encabezado,
+    # un título NUNCA se combina con el encabezado real (produciría columnas
+    # como "INFORME PDC TaT TROPAS · 2024"), se tira sin más.
+    discarded_title_rows = 0
+    while header_i + 1 < limit and _is_title_row(header_i):
+        header_i += 1
+        discarded_title_rows += 1
+        confident = False  # la fila ahora elegida todavía no pasó el chequeo de puntaje
+    if discarded_title_rows:
+        log.append(
+            f"{discarded_title_rows} fila(s) de título (texto repetido en toda la fila, "
+            "sin relación con los datos) descartada(s) del encabezado."
+        )
+
     header_rows = [header_i]
     if not confident and header_i + 1 < limit:
         below_score = candidates[header_i + 1][1]
