@@ -4,7 +4,7 @@ import re
 import pandas as pd
 from .profile import profile_sheet
 from .relationships import detect_relationships
-from .pivot_flatten import merged_ranges, fill_merged_cells, flatten_pivot_grid
+from .pivot_flatten import merged_ranges_by_sheet, fill_merged_cells, flatten_pivot_grid
 
 
 def _norm_header(v):
@@ -53,7 +53,7 @@ def _excel_engine(filename: str):
     return None  # .xlsx/.xlsm: pandas ya elige openpyxl automáticamente.
 
 
-def _read_excel_sheet(data, sheet_name, filename="", engine=None):
+def _read_excel_sheet(data, sheet_name, merge_ranges=None, engine=None):
     # Read without assuming the first row is the header. Excel files often have
     # a title/merged row above the real table header — y, si el Excel trae una
     # tabla dinámica (encabezado de varias filas, celdas combinadas, filas de
@@ -63,12 +63,10 @@ def _read_excel_sheet(data, sheet_name, filename="", engine=None):
     raw = pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=None, engine=engine)
     if raw.empty:
         return raw, []
-    # Celdas combinadas: pandas ya perdió esa información (solo la esquina
-    # superior-izquierda del rango trae el valor, el resto llega vacío) —
-    # se relee directo con openpyxl/xlrd para recuperar los rangos y
-    # rellenar antes de decidir dónde está el encabezado real.
-    ranges = merged_ranges(data, filename, sheet_name)
-    n_merged = fill_merged_cells(raw, ranges) if ranges else 0
+    # merge_ranges ya viene calculado UNA vez para todo el archivo (ver
+    # load_workbook) — recalcularlo por hoja era carísimo (ver el
+    # comentario largo en pivot_flatten.merged_ranges_by_sheet).
+    n_merged = fill_merged_cells(raw, merge_ranges) if merge_ranges else 0
     data_df, pivot_log = flatten_pivot_grid(raw, _header_score, _norm_header, _make_unique_columns)
     if n_merged:
         pivot_log.insert(0, f"{n_merged} celda(s) combinada(s) del Excel rellenadas con su valor real.")
@@ -127,7 +125,13 @@ def load_workbook(uploaded):
         # Discover sheet names first, then read each sheet with header inference.
         engine = _excel_engine(name)
         book = pd.ExcelFile(io.BytesIO(data), engine=engine)
-        raw = {sheet: _read_excel_sheet(data, sheet, filename=filename, engine=engine) for sheet in book.sheet_names}
+        # Celdas combinadas de TODO el archivo, en una sola pasada (no una
+        # por hoja — ver el porqué en pivot_flatten.merged_ranges_by_sheet).
+        merges_by_sheet = merged_ranges_by_sheet(data, filename)
+        raw = {
+            sheet: _read_excel_sheet(data, sheet, merge_ranges=merges_by_sheet.get(sheet), engine=engine)
+            for sheet in book.sheet_names
+        }
     else:
         raise ValueError("Formato no soportado")
 

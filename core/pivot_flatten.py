@@ -50,29 +50,104 @@ def _cell_text(v) -> str:
     return re.sub(r"\s+", " ", str(v)).strip()
 
 
-def merged_ranges(data: bytes, filename: str, sheet_name: str):
-    """(r1,c1,r2,c2) 0-indexados e inclusivos de cada rango combinado de la
-    hoja, leídos directo de la librería nativa correspondiente (pandas
-    descarta esta información al leer). [] si el formato no la expone
-    (.xlsb) o si algo falla — nunca debe tumbar la carga del archivo."""
-    name = filename.lower()
+def _xlsx_merged_ranges_by_sheet(data: bytes) -> dict:
+    """{nombre_de_hoja: [(r1,c1,r2,c2), ...]} de TODO el .xlsx/.xlsm en una
+    sola pasada ligera sobre el XML interno (es un ZIP) — nunca carga el
+    árbol completo de celdas de openpyxl.load_workbook().
+
+    Por qué el cambio: la primera versión llamaba a
+    openpyxl.load_workbook(...) — que sí carga cada celda de cada hoja en
+    memoria como objetos — UNA VEZ POR HOJA (load_workbook() se invocaba
+    dentro de _read_excel_sheet, que corre por hoja). Un Excel de varias
+    hojas terminaba parseándose por completo tantas veces como hojas
+    tuviera, encima de lo que pandas ya hace — en Streamlit Cloud (memoria
+    limitada) eso se tradujo en que el proceso se quedaba sin memoria o
+    colgado al subir un archivo, y el healthcheck lo mataba
+    ("connection reset by peer", no un error de Python normal).
+
+    Esto en cambio solo lee <mergeCells> del XML de cada hoja (texto plano,
+    sin instanciar ninguna celda) y se llama UNA sola vez por archivo
+    completo, sin importar cuántas hojas tenga."""
+    import zipfile
+    from xml.etree import ElementTree as ET
+    from openpyxl.utils.cell import range_boundaries
+
+    ns_main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    ns_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    ns_pkg_rel = "http://schemas.openxmlformats.org/package/2006/relationships"
     try:
-        if name.endswith((".xlsx", ".xlsm")):
-            import openpyxl
-            wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
-            ws = wb[sheet_name]
-            return [
-                (r.min_row - 1, r.min_col - 1, r.max_row - 1, r.max_col - 1)
-                for r in ws.merged_cells.ranges
-            ]
-        if name.endswith(".xls"):
-            import xlrd
-            book = xlrd.open_workbook(file_contents=data)
-            sheet = book.sheet_by_name(sheet_name)
-            return [(r0, c0, r1 - 1, c1 - 1) for (r0, r1, c0, c1) in sheet.merged_cells]
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            names = set(z.namelist())
+            wb_xml = ET.fromstring(z.read("xl/workbook.xml"))
+            rid_by_name = {
+                sh.get("name"): sh.get(f"{{{ns_rel}}}id")
+                for sh in wb_xml.findall(f"{{{ns_main}}}sheets/{{{ns_main}}}sheet")
+            }
+            wb_rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
+            target_by_rid = {
+                rel.get("Id"): rel.get("Target")
+                for rel in wb_rels.findall(f"{{{ns_pkg_rel}}}Relationship")
+            }
+            out = {}
+            for sheet_name, rid in rid_by_name.items():
+                target = target_by_rid.get(rid) or ""
+                if not target:
+                    continue
+                # El Target de un Relationship en OOXML es o bien "absoluto
+                # al paquete" (empieza con "/", p. ej. "/xl/worksheets/
+                # sheet1.xml" — algunos generadores de Excel lo escriben
+                # así) o relativo a la carpeta del propio .rels ("xl/_rels/",
+                # así que relativo a "xl/", p. ej. "worksheets/sheet1.xml").
+                # Tratar SIEMPRE el segundo caso sin distinguir el primero
+                # producía "xl/xl/worksheets/sheet1.xml" (duplicado, no
+                # existe en el zip) cada vez que el Target ya venía con "/"
+                # — por eso nunca se encontraban celdas combinadas.
+                sheet_path = target.lstrip("/") if target.startswith("/") else f"xl/{target}"
+                if sheet_path not in names:
+                    continue
+                sheet_xml = ET.fromstring(z.read(sheet_path))
+                ranges = []
+                for mc in sheet_xml.findall(f"{{{ns_main}}}mergeCells/{{{ns_main}}}mergeCell"):
+                    ref = mc.get("ref")
+                    if not ref:
+                        continue
+                    try:
+                        c1, r1, c2, r2 = range_boundaries(ref)
+                    except ValueError:
+                        continue
+                    ranges.append((r1 - 1, c1 - 1, r2 - 1, c2 - 1))
+                out[sheet_name] = ranges
+            return out
     except Exception:
-        pass
-    return []
+        return {}
+
+
+def _xls_merged_ranges_by_sheet(data: bytes) -> dict:
+    """Igual que la anterior pero para .xls legado (vía xlrd) — un solo
+    xlrd.open_workbook() para todo el archivo, reutilizado por cada hoja en
+    vez de reabrirlo por cada una."""
+    try:
+        import xlrd
+        book = xlrd.open_workbook(file_contents=data)
+        out = {}
+        for sheet in book.sheets():
+            out[sheet.name] = [(r0, c0, r1 - 1, c1 - 1) for (r0, r1, c0, c1) in sheet.merged_cells]
+        return out
+    except Exception:
+        return {}
+
+
+def merged_ranges_by_sheet(data: bytes, filename: str) -> dict:
+    """{nombre_de_hoja: [(r1,c1,r2,c2), ...]} para TODO el archivo, en una
+    sola pasada — se llama una vez por archivo (ver core/loader.py), nunca
+    por hoja. {} si el formato no expone celdas combinadas (.xlsb) o si algo
+    falla — nunca debe tumbar la carga del archivo."""
+    name = filename.lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        return _xlsx_merged_ranges_by_sheet(data)
+    if name.endswith(".xls"):
+        return _xls_merged_ranges_by_sheet(data)
+    return {}
 
 
 def fill_merged_cells(raw: pd.DataFrame, ranges) -> int:
