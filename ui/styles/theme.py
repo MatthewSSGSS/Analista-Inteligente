@@ -323,8 +323,17 @@ _COMPONENTS_CSS_RAW = """
   flex-wrap:wrap;row-gap:clamp(10px,1vw,20px);
 }
 [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"]{
-  flex:1 1 clamp(215px,22vw,360px);min-width:0;
+  flex:1 1 clamp(215px,22vw,360px);min-width:0;max-width:360px;
 }
+/* Bug real, encontrado en captura: cuando una fila de 3+ no entra completa
+   y una tarjeta queda SOLA al final de su propia línea (p. ej. "Mediana"
+   quedando sin par), flex-grow:1 reparte TODO el espacio libre de esa
+   línea en ella sola — se estiraba a lo ancho de toda la fila por una
+   sola cifra chica. clamp() ya le pone techo al ANCHO INICIAL, pero no al
+   crecimiento por flex-grow (son cálculos distintos); max-width sí lo
+   limita, así que ahora una tarjeta sola nunca crece más allá de lo que
+   crecería estando acompañada — se queda del lado izquierdo, con aire a
+   la derecha, en vez de ocupar la fila entera. */
 @media (max-width:640px){
   [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"]{
     flex-basis:100%;
@@ -519,14 +528,28 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    semi-translúcido PROPIO (no depende del velo diagonal de la franja,
    que en algunos puntos ya se desvanece) detrás del texto, dejando ver
    la foto a través suyo — mismo principio que ya funcionó en
-   .stTabs [role="tablist"] cuando el texto flotaba solo. */
-.hero-band{border-bottom:none;background:rgba(6,8,13,.4);border:none;
-  padding:10px 16px;border-radius:var(--radius-md);box-shadow:none;backdrop-filter:blur(2px)}
-.hero-band h1{color:#ffffff!important;text-shadow:0 2px 8px rgba(0,0,0,.6)}
-.hero-band p{color:rgba(255,255,255,.92)!important;text-shadow:0 1px 5px rgba(0,0,0,.6)}
-.hero-band-meta{background:rgba(6,8,13,.4);border:none;border-radius:var(--radius-sm);backdrop-filter:blur(2px);
-  padding:8px 14px;color:#ffffff!important;text-shadow:0 1px 5px rgba(0,0,0,.6);font-size:13.5px;margin:10px 0}
-.hero-band-meta b{color:#ffffff!important}
+   .stTabs [role="tablist"] cuando el texto flotaba solo.
+
+   BUG real encontrado después de subir la opacidad y seguir viéndose
+   igual de oscuro (no era cuestión de contraste): Streamlit envuelve el
+   texto de cualquier h1-h6 en un <span> propio (para el link de anclaje
+   que agrega solo, algo que este proyecto no pidió ni usa). Ese <span>
+   NO hereda el blanco de `.hero-band h1` — lo pisa la regla genérica
+   `p,span,div,li,label{color:var(--text)}` (más abajo), que sin ser
+   `!important` igual gana porque apunta DIRECTO al <span> (una regla que
+   apunta directo a un elemento siempre le gana a un color heredado del
+   padre, sin importar especificidad). El texto SÍ era blanco en el
+   `<h1>` — el `<span>` de adentro, que es lo que en verdad se ve, seguía
+   en var(--text) (casi negro en Claro). Arreglo: mismo truco que ya se
+   usó en las pestañas — el selector también apunta a los descendientes
+   (`*`) del h1/p, no solo al h1/p mismo. */
+.hero-band{border-bottom:none;background:rgba(6,8,13,.8);border:none;
+  padding:10px 16px;border-radius:var(--radius-md);box-shadow:none;backdrop-filter:blur(4px)}
+.hero-band h1,.hero-band h1 *{color:#ffffff!important;text-shadow:0 2px 8px rgba(0,0,0,.85)}
+.hero-band p,.hero-band p *{color:rgba(255,255,255,.96)!important;text-shadow:0 1px 5px rgba(0,0,0,.85)}
+.hero-band-meta{background:rgba(6,8,13,.8);border:none;border-radius:var(--radius-sm);backdrop-filter:blur(4px);
+  padding:8px 14px;color:#ffffff!important;text-shadow:0 1px 5px rgba(0,0,0,.85);font-size:13.5px;margin:10px 0}
+.hero-band-meta,.hero-band-meta *{color:#ffffff!important}
 
 /* ===== Section headers: bold title with a quiet subtitle directly beneath =====
    Antes flotaba suelto sobre el fondo (sin caja) — con la foto detrás de
