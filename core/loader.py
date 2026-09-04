@@ -4,6 +4,7 @@ import re
 import pandas as pd
 from .profile import profile_sheet
 from .relationships import detect_relationships
+from .pivot_flatten import merged_ranges, fill_merged_cells, flatten_pivot_grid
 
 
 def _norm_header(v):
@@ -52,30 +53,26 @@ def _excel_engine(filename: str):
     return None  # .xlsx/.xlsm: pandas ya elige openpyxl automáticamente.
 
 
-def _read_excel_sheet(data, sheet_name, engine=None):
+def _read_excel_sheet(data, sheet_name, filename="", engine=None):
     # Read without assuming the first row is the header. Excel files often have
-    # a title/merged row above the real table header.
+    # a title/merged row above the real table header — y, si el Excel trae una
+    # tabla dinámica (encabezado de varias filas, celdas combinadas, filas de
+    # subtotal/total general), esa forma se aplana aquí mismo antes de que le
+    # llegue a cleaner/schema, que sí esperan una tabla plana normal. Ver
+    # core/pivot_flatten.py para el detalle de cada paso.
     raw = pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=None, engine=engine)
     if raw.empty:
-        return raw
-    limit = min(len(raw), 15)
-    candidates = [(i, _header_score(raw.iloc[i])) for i in range(limit)]
-    best_i, best_score = max(candidates, key=lambda x: x[1])
-    first_score = candidates[0][1]
-    # Keep row 0 when it already looks like a proper header. Otherwise promote
-    # a later row only when it is clearly more header-like.
-    if first_score >= 0.58 and first_score >= best_score - 0.04:
-        header_i = 0
-    elif best_score >= 0.55:
-        header_i = best_i
-    else:
-        header_i = 0
-    header = _make_unique_columns(raw.iloc[header_i].tolist())
-    data_df = raw.iloc[header_i + 1:].copy()
-    data_df.columns = header
-    # Remove completely empty rows/columns created by formatting around the table.
-    data_df = data_df.dropna(axis=0, how="all").dropna(axis=1, how="all")
-    return data_df.reset_index(drop=True)
+        return raw, []
+    # Celdas combinadas: pandas ya perdió esa información (solo la esquina
+    # superior-izquierda del rango trae el valor, el resto llega vacío) —
+    # se relee directo con openpyxl/xlrd para recuperar los rangos y
+    # rellenar antes de decidir dónde está el encabezado real.
+    ranges = merged_ranges(data, filename, sheet_name)
+    n_merged = fill_merged_cells(raw, ranges) if ranges else 0
+    data_df, pivot_log = flatten_pivot_grid(raw, _header_score, _norm_header, _make_unique_columns)
+    if n_merged:
+        pivot_log.insert(0, f"{n_merged} celda(s) combinada(s) del Excel rellenadas con su valor real.")
+    return data_df, pivot_log
 
 
 def _detect_csv_sep(data: bytes) -> str:
@@ -112,15 +109,12 @@ def _read_csv(data):
         # de rendirse.
         raw = pd.read_csv(io.BytesIO(data), header=None, sep=sep, engine="python", on_bad_lines="skip", encoding="latin-1")
     if raw.empty:
-        return raw
-    limit = min(len(raw), 15)
-    candidates = [(i, _header_score(raw.iloc[i])) for i in range(limit)]
-    best_i, best_score = max(candidates, key=lambda x: x[1])
-    header_i = best_i if best_score >= 0.55 else 0
-    data_df = raw.iloc[header_i + 1:].copy()
-    data_df.columns = _make_unique_columns(raw.iloc[header_i].tolist())
-    data_df = data_df.dropna(axis=0, how="all").dropna(axis=1, how="all")
-    return data_df.reset_index(drop=True)
+        return raw, []
+    # Un CSV no puede traer celdas combinadas, pero un CSV exportado desde una
+    # tabla dinámica sí hereda su forma (encabezado de varias filas, etiquetas
+    # de fila que solo aparecen una vez, filas de subtotal/total general) —
+    # mismo aplanador que usan los Excel, sin el paso de celdas combinadas.
+    return flatten_pivot_grid(raw, _header_score, _norm_header, _make_unique_columns)
 
 
 def load_workbook(uploaded):
@@ -133,15 +127,17 @@ def load_workbook(uploaded):
         # Discover sheet names first, then read each sheet with header inference.
         engine = _excel_engine(name)
         book = pd.ExcelFile(io.BytesIO(data), engine=engine)
-        raw = {sheet: _read_excel_sheet(data, sheet, engine=engine) for sheet in book.sheet_names}
+        raw = {sheet: _read_excel_sheet(data, sheet, filename=filename, engine=engine) for sheet in book.sheet_names}
     else:
         raise ValueError("Formato no soportado")
 
     sheets = {}
-    for sheet_name, raw_df in raw.items():
+    for sheet_name, (raw_df, structural_log) in raw.items():
         if raw_df is None or raw_df.empty or len(raw_df.columns) == 0:
             continue
-        sheets[sheet_name] = profile_sheet(raw_df, context={"sheet_name": sheet_name, "workbook_name": filename})
+        sheets[sheet_name] = profile_sheet(
+            raw_df, context={"sheet_name": sheet_name, "workbook_name": filename}, structural_log=structural_log,
+        )
 
     if not sheets:
         raise ValueError("No se encontraron hojas con datos.")
