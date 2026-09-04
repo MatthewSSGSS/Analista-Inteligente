@@ -179,4 +179,31 @@ def detect_schema(df, context=None):
         schema["date_metadata"][internal] = "mes_nombre" if year_source_col is None else "mes_año"
         schema.setdefault("period_sources", {})[internal] = {"month": month_source_col, "year": year_source_col, "year_hint": year_hint}
 
+    # ===== Una columna NUNCA puede ser fecha y métrica al mismo tiempo =====
+    # `schema["semantic"]["metrics"]` es la salida cruda del motor semántico,
+    # que clasifica por su cuenta y no sabe qué terminó siendo fecha aquí. El
+    # problema es que MEDIA app lee esa lista con preferencia sobre
+    # schema["metrics"] (`schema["semantic"]["metrics"] or schema["metrics"]`
+    # aparece en dashboard_engine, executive, insights, performance,
+    # universal_analysis, charts y chart_selector), así que filtrar solo
+    # schema["metrics"] no alcanzaba: una columna de fecha numérica (p. ej.
+    # un "Periodo" 202608, ahora que sí se detecta como fecha) seguía
+    # colándose como métrica principal por esa otra vía.
+    #
+    # Cuando eso pasaba, la métrica principal y la fecha eran LA MISMA
+    # columna, y core/executive.py::_monthly hacía `df[[date_col, metric]]`
+    # → un DataFrame con la misma columna repetida dos veces → pandas, al
+    # recibir un DataFrame en to_datetime(), intenta ensamblar una fecha a
+    # partir de los nombres de columna y truena con
+    # "cannot assemble with duplicate keys".
+    #
+    # Se limpia una sola vez acá, en el origen, para que las 8 lecturas de
+    # esa lista vean lo mismo, en vez de parchear cada una por separado.
+    _excluded = set(schema["dates"]) | set(schema["ids"])
+    if _excluded and isinstance(schema.get("semantic"), dict):
+        schema["semantic"]["metrics"] = [
+            c for c in schema["semantic"].get("metrics", []) if c not in _excluded
+        ]
+    schema["metrics"] = [c for c in schema["metrics"] if c not in _excluded]
+
     return schema

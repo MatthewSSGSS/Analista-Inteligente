@@ -131,6 +131,21 @@ def main():
     cdi = profile_sheet(control_df, {"sheet_name": "Control", "workbook_name": "control.xlsx"})
     check("columna numérica sin nombre de fecha no se confunde con AAAAMM", "Cantidad" not in cdi["profile"]["schema"]["dates"])
 
+    # Regresión de un crash real en producción: un archivo cuya ÚNICA columna
+    # numérica es la fecha ("periodo" AAAAMM). El motor semántico la listaba
+    # como métrica por su cuenta (schema["semantic"]["metrics"]), que es la
+    # lista que la mayoría de la app lee con preferencia — así la métrica
+    # principal y la fecha terminaban siendo la MISMA columna, y
+    # core/executive.py::_monthly hacía df[[col, col]] → pandas recibía un
+    # DataFrame con la columna repetida en to_datetime() y tronaba con
+    # "cannot assemble with duplicate keys".
+    solo_periodo = pd.DataFrame({"periodo": [202608] * 3 + [202607] * 3 + [202606] * 3})
+    spi = profile_sheet(solo_periodo, {"sheet_name": "SoloPeriodo", "workbook_name": "solo_periodo.xlsx"})
+    ss = spi["profile"]["schema"]
+    check("una columna fecha no aparece como métrica semántica", "periodo" not in (ss.get("semantic", {}).get("metrics") or []))
+    build_dashboard(spi["processed"], spi["profile"])
+    check("archivo con solo una columna de fecha no rompe build_dashboard", True)
+
     plans = pd.DataFrame({
         "Categoría": ["Hogar", "Hogar"],
         "Segmento": ["Residencial", "Residencial"],

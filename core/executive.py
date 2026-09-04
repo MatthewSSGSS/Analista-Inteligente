@@ -34,12 +34,29 @@ def primary_metric(df, schema):
 
 
 def _monthly(df, date_col, metric):
-    x=df[[date_col,metric]].copy()
-    x[date_col]=pd.to_datetime(x[date_col],errors='coerce')
-    x[metric]=pd.to_numeric(x[metric],errors='coerce')
-    x=x.dropna()
+    # Se arma columna por columna en vez de con df[[date_col, metric]]: si
+    # date_col y metric son LA MISMA columna (o el archivo trae dos columnas
+    # con el mismo nombre), ese doble corchete devuelve un DataFrame con la
+    # columna repetida, y pd.to_datetime() sobre un DataFrame intenta
+    # ensamblar una fecha a partir de los nombres de sus columnas y truena
+    # con "cannot assemble with duplicate keys". El origen de esa
+    # coincidencia ya se corrigió en core/schema.py (una columna no puede
+    # ser fecha y métrica a la vez), pero esto lo deja imposible por
+    # construcción: nunca hay dos columnas en juego, solo dos Series.
+    if date_col is None or metric is None:
+        return None
+    if date_col == metric:
+        return None
+    dates = df[date_col]
+    values = df[metric]
+    if isinstance(dates, pd.DataFrame): dates = dates.iloc[:, 0]
+    if isinstance(values, pd.DataFrame): values = values.iloc[:, 0]
+    x = pd.DataFrame({
+        '__fecha__': pd.to_datetime(dates, errors='coerce'),
+        '__valor__': pd.to_numeric(values, errors='coerce'),
+    }).dropna()
     if x.empty: return None
-    return x.set_index(date_col)[metric].resample('MS').sum().dropna()
+    return x.set_index('__fecha__')['__valor__'].resample('MS').sum().dropna()
 
 
 def build_executive(df, schema, insights=None, anomalies=None):
