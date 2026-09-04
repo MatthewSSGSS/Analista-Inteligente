@@ -707,20 +707,35 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
    Las pestañas ANIDADAS (dentro de otra pestaña, p. ej. las internas de
    Descripción) tienen su propio bloque más abajo (".stTabs .stTabs"), sin
-   tocar. */
-.stTabs [role="tablist"]{gap:6px;background:var(--panel-2)!important;border:1px solid var(--line)!important;padding:6px;border-radius:999px;box-shadow:var(--shadow-sm)!important;overflow-x:auto}
-.stTabs [data-testid="stTab"]{height:40px;border-radius:999px;padding:0 18px;color:var(--muted)!important;font-weight:700!important;font-size:13.5px;
-  transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,box-shadow .15s ease;
-  background:transparent;border:1px solid transparent}
+   tocar.
+
+   Rediseño pedido explícitamente: fila limpia, sin píldora contenedora,
+   texto directo sobre la foto — pero con un respaldo real, no solo
+   text-shadow. Ya se probó (con las pestañas Y con el hero) que un
+   text-shadow solo no alcanza contra esta foto en particular: tiene
+   zonas muy brillantes/detalladas donde cualquier sombra se pierde. Acá
+   sí hay margen para hacerlo con texto suelto porque cada pestaña
+   INACTIVA lleva su propio fondo casi imperceptible (rgba(10,8,10,.28) —
+   "muy leve", tal como se pidió) — un respaldo real, constante, que no
+   depende de qué parte de la foto le toque detrás a cada pestaña. Fijo
+   (no var(--...)) a propósito, igual que .hero-band: esta franja se ve
+   igual de oscura en Claro y en Oscuro (la foto domina en los dos), así
+   que un solo valor sirve para ambos temas sin duplicar la regla. */
+.stTabs [role="tablist"]{gap:8px;background:transparent!important;border:none!important;
+  border-bottom:1px solid rgba(255,255,255,.16);padding:4px 2px 10px;box-shadow:none!important;overflow-x:auto}
+.stTabs [data-testid="stTab"]{height:38px;border-radius:999px;padding:0 16px;color:rgba(255,255,255,.88)!important;font-weight:700!important;font-size:13.5px;
+  text-shadow:0 1px 4px rgba(0,0,0,.55);
+  transition:background .15s ease,color .15s ease,transform .15s ease;
+  background:rgba(10,8,10,.28);border:1px solid transparent}
 /* El color no se deja solo en `inherit` sobre <p> — se repite explícito en
    TODOS los descendientes (`*`), porque no hay forma de confirmar en este
    entorno qué elemento exacto envuelve el texto en cada versión de
    Streamlit, y un solo selector que no acierte deja el texto invisible sin
    ningún aviso. Esto es más ancho de lo estrictamente necesario a
    propósito — mejor una regla de más que un texto ilegible. */
-.stTabs [data-testid="stTab"],.stTabs [data-testid="stTab"] *{color:var(--muted)!important;font-weight:700!important}
-.stTabs [data-testid="stTab"]:hover{background:var(--panel);border-color:var(--line);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
-.stTabs [data-testid="stTab"]:hover,.stTabs [data-testid="stTab"]:hover *{color:var(--text)!important}
+.stTabs [data-testid="stTab"],.stTabs [data-testid="stTab"] *{color:rgba(255,255,255,.88)!important;font-weight:700!important}
+.stTabs [data-testid="stTab"]:hover{background:rgba(255,255,255,.16);transform:translateY(-1px)}
+.stTabs [data-testid="stTab"]:hover,.stTabs [data-testid="stTab"]:hover *{color:#ffffff!important}
 /* Pestaña seleccionada: no es un rectángulo rojo plano — el radial-gradient
    agrega un brillo/reflejo (como una píldora con volumen, no un color
    sólido) encima del degradado de marca, más el mismo --glow-ring que ya
