@@ -7,6 +7,7 @@ from core.dashboard_engine import build_dashboard
 from core.comparison_engine import prepare_comparison, build_comparison
 from visualization.charts import trend, ranking, donut, histogram, scatter, correlation, wide_month_chart
 from core.geo_engine import supports_georeferencing
+from ui.dashboard import render_dashboard
 
 
 def upload(name, df, sheet="Hoja1"):
@@ -94,6 +95,41 @@ def main():
     ed = build_dashboard(ei["processed"], ei["profile"])
     check("selección sin valores numéricos no rompe el dashboard", isinstance(ed, dict))
     check("KPI sin datos devuelve valor seguro", all(pd.notna(k.get("raw", 0)) for k in ed.get("kpis", [])))
+
+    # Regresión: sin ninguna columna categórica válida para desglosar (aquí
+    # solo hay un identificador y una métrica), core/performance.py::analyze
+    # devuelve None a propósito — dashboard["performance"] queda en None (la
+    # clave EXISTE, con valor None). ui/dashboard.py tenía un
+    # `dashboard.get("performance", {})` ahí: ese default solo aplica cuando
+    # la clave falta, no cuando vale None, así que terminaba llamando
+    # `.get("dimension")` sobre None y tronaba con AttributeError en
+    # producción (pestaña 🏆 Desempeño). Reproduce exactamente ese caso.
+    no_dim = pd.DataFrame({"Cedula": [10000001, 10000002, 10000003], "Ingresos": [100, 200, 150]})
+    ndi = profile_sheet(no_dim, {"sheet_name": "SinDimension", "workbook_name": "sin_dimension.xlsx"})
+    ndd = build_dashboard(ndi["processed"], ndi["profile"])
+    check("caso sin dimensión válida deja performance en None", ndd.get("performance") is None)
+    render_dashboard(ndi["processed"], ndd)
+    check("performance=None no rompe render_dashboard (pestaña Desempeño)", True)
+
+    # "Periodo" numérico AAAAMM (202608 = agosto 2026), típico de exportes de
+    # BI/ERP: antes no se reconocía como fecha (ni excel_serial ni
+    # unix_timestamp caen en ese rango de valores), así que nunca aparecía
+    # "Cambio reciente"/evolución en el dashboard para ese tipo de archivo.
+    periodo_df = pd.DataFrame({
+        "periodo": [202608] * 3 + [202607] * 3 + [202606] * 3,
+        "ventas": [100, 110, 120, 90, 95, 100, 80, 85, 90],
+    })
+    pdi = profile_sheet(periodo_df, {"sheet_name": "Periodo", "workbook_name": "periodo.xlsx"})
+    check("columna 'periodo' AAAAMM se detecta como fecha", "periodo" in pdi["profile"]["schema"]["dates"])
+    check("'periodo' ya fecha no queda también como métrica", "periodo" not in pdi["profile"]["schema"]["metrics"])
+    pdd = build_dashboard(pdi["processed"], pdi["profile"])
+    check("con 'periodo' como fecha, sí aparece Cambio reciente", pdd["growth"] is not None)
+    # Control: una columna numérica en el MISMO rango de valores pero sin
+    # nombre relacionado a fecha/periodo no debe interpretarse como AAAAMM
+    # (evita falsos positivos sobre una cantidad/código cualquiera).
+    control_df = pd.DataFrame({"Cantidad": [202608, 202607, 202606, 202605], "ventas": [1, 2, 3, 4]})
+    cdi = profile_sheet(control_df, {"sheet_name": "Control", "workbook_name": "control.xlsx"})
+    check("columna numérica sin nombre de fecha no se confunde con AAAAMM", "Cantidad" not in cdi["profile"]["schema"]["dates"])
 
     plans = pd.DataFrame({
         "Categoría": ["Hogar", "Hogar"],

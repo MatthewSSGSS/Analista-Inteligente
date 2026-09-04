@@ -133,7 +133,12 @@ def detect_schema(df, context=None):
                 df[c] = dt
                 schema["dates"].append(c); schema["types"][c] = "Fecha"; schema["date_metadata"][c] = method or "semantic"
     for c in semantic["metrics"]:
-        if c in df.columns and c not in schema["metrics"] and c not in schema["ids"]:
+        # c not in schema["dates"]: sin este chequeo, una columna que el
+        # detector determinista de arriba YA clasificó como fecha (p. ej.
+        # un "Periodo" 202608) podía terminar TAMBIÉN en metrics si la capa
+        # semántica la ve como número — y de ahí, en el peor caso, ser
+        # elegida como métrica principal y "sumada" como si fuera dinero.
+        if c in df.columns and c not in schema["metrics"] and c not in schema["ids"] and c not in schema["dates"]:
             schema["metrics"].append(c)
             item = next((x for x in semantic["columns"] if x["column"] == c), None)
             schema["types"][c] = {

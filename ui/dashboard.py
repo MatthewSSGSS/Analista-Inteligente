@@ -1171,7 +1171,16 @@ def render_dashboard(df, dashboard):
         _performance_panel(df, dashboard)
         st.divider()
         st.markdown("#### 🔎 Profundizar en el resultado")
-        _drilldown_panel(df, schema, dashboard.get("primary_metric"), dashboard.get("performance",{}).get("dimension"))
+        # dashboard.get("performance", {}) NO alcanza cuando la clave existe
+        # pero su valor es None (analyze_performance() en core/performance.py
+        # devuelve None explícitamente si no hay una dimensión categórica
+        # válida para desglosar, p. ej. datos ya reducidos a una sola
+        # categoría visible) — .get(clave, default) solo usa el default
+        # cuando la clave falta, no cuando vale None, así que quedaba
+        # ".get(...)" sobre None y tronaba con AttributeError. "or {}"
+        # cubre ambos casos; es el mismo patrón que ya usa
+        # performance_cfg más arriba en este archivo.
+        _drilldown_panel(df, schema, dashboard.get("primary_metric"), (dashboard.get("performance") or {}).get("dimension"))
 
     with detail_tabs["🗂️ Contexto y acción"]:
         st.markdown("#### 🗂️ Perfil del archivo y cómo se interpretó")

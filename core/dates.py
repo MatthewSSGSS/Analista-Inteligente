@@ -125,6 +125,27 @@ def unix_timestamp(s):
     return result
 
 
+def yyyymm_series(s):
+    """"Periodo" numérico tipo 202608 (= agosto 2026) — muy común en
+    exportes de sistemas de BI/ERP como columna "Periodo"/"Período". Se
+    interpreta como el día 1 de ese mes. Nunca se confunde con
+    excel_serial (1-60000) ni con unix_timestamp (600 millones+): un
+    AAAAMM real cae siempre entre 190001 y 210012, un rango que ninguno de
+    los otros dos toca."""
+    numeric = pd.to_numeric(s, errors="coerce")
+    year = numeric // 100
+    month = numeric % 100
+    valid = numeric.between(190001, 210012) & month.between(1, 12)
+    result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+    if valid.any():
+        vals = pd.to_datetime(
+            {"year": year[valid].astype(int), "month": month[valid].astype(int), "day": 1},
+            errors="coerce",
+        )
+        result.loc[valid[valid].index] = vals
+    return result
+
+
 def detect_date(s, name):
     if pd.api.types.is_datetime64_any_dtype(s):
         converted = pd.to_datetime(s, errors="coerce")
@@ -161,6 +182,22 @@ def detect_date(s, name):
                 result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
                 result.loc[x.index] = excel
                 return result, excel.notna().mean(), "excel_serial"
+
+        # "Periodo" AAAAMM (p. ej. 202608 = agosto 2026) — columna numérica,
+        # sin separador, muy común en exportes de BI/ERP. Se exige que el
+        # NOMBRE de la columna sugiera fecha/periodo (mismo criterio que
+        # excel_serial arriba): un AAAAMM real siempre cae en el rango
+        # 190001-210012 con mes 01-12, pero esos mismos números también
+        # podrían ser una cantidad o un código cualquiera en una columna sin
+        # relación con fechas — el nombre es lo que evita ese falso positivo.
+        yyyymm = yyyymm_series(x)
+        valid = yyyymm.dropna()
+        if len(valid):
+            years = valid.dt.year
+            if years.between(1990, 2100).mean() > 0.95 and DATE_NAME.search(str(name)):
+                result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+                result.loc[x.index] = yyyymm
+                return result, yyyymm.notna().mean(), "yyyymm_period"
 
     text = x.astype(str).str.strip()
     iso_ratio = text.str.match(ISO_DATE_RE).mean() if len(text) else 0
