@@ -24,8 +24,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ui.assets import background_data_uri
-
 # ---------------------------------------------------------------------------
 # Tokens compartidos. Los breakpoints existen como constantes de Python (y no
 # solo como texto dentro del CSS) para que cualquier otro `<style>` que
@@ -186,70 +184,18 @@ _COMPONENTS_CSS_RAW = """
    vez de aparecer de golpe. */
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 [data-testid="stHeader"],[data-testid="stBottomBlockContainer"]{background:var(--bg)!important}
-/* ===== PASO 1 de la nueva foto de fondo general (pidió explícitamente NO
-   preocuparse todavía por legibilidad — eso es el paso siguiente).
+/* Se quitó la foto de fondo general (stAppViewContainer con
+   background-image:url("__APP_BG__")) más el velo (::before con
+   var(--overlay-veil)) y el forzado a transparente del header nativo de
+   Streamlit que existían solo para que esa foto se viera detrás suyo —
+   pedido explícito: volver al fondo blanco/degradado rojo sutil de
+   siempre (_bg_gradient(), ya puesto por base_layer_css() en
+   stAppViewContainer, sin nada más encima). El resto de este bloque
+   (stMain/.block-container transparent, más abajo) se deja tal cual: ya
+   no tapa ninguna foto, simplemente deja ver el fondo de
+   stAppViewContainer sin capas de más.
 
-   Va en [data-testid="stAppViewContainer"], no en .block-container: ese
-   último solo mide lo que mide su contenido (por eso los intentos
-   anteriores dejaban la foto como una franja arriba); stAppViewContainer
-   es el contenedor de más afuera, cubre sidebar + contenido a pantalla
-   completa. background-attachment:fixed la deja quieta al hacer scroll
-   sin importar qué tan largo sea el contenido de abajo.
-
-   !important en cada propiedad porque esta MISMA regla ya existe una vez
-   en base_layer_css() (el degradado rojo sutil + color sólido de fondo,
-   ver _bg_gradient()) — ese bloque se inyecta ANTES que este
-   (inject_theme() llama primero base_layer_css(), después
-   components_css()), así que en igualdad de !important, este gana por
-   orden de aparición. No se borró esa regla vieja: se queda ahí, por si
-   en algún momento se quita esta foto y hay que volver al fondo anterior. */
-[data-testid="stAppViewContainer"]{
-  background-image:url("__APP_BG__")!important;
-  background-size:cover!important;
-  background-position:center!important;
-  background-attachment:fixed!important;
-  background-repeat:no-repeat!important;
-}
-/* ===== PASO 2 → PASO 3: este velo empezó como el mecanismo PRINCIPAL de
-   legibilidad (88%/90% de opacidad, tapaba casi toda la foto). Cambio de
-   estrategia explícito: ahora la legibilidad la da que cada bloque de
-   contenido tenga su propia caja opaca (ver .hero-band, .section-intro,
-   tarjetas, tablas, expanders... más abajo) — este velo baja a un tinte
-   MUY sutil (22%/20%, tope pedido de 0.25) solo para unificar un poco el
-   tono de la foto con la paleta de la app, sin taparla. `var(--overlay-veil)`
-   sigue definido por tema en _theme_vars() (arriba), mismo mecanismo,
-   valores nuevos.
-
-   `position:fixed;inset:0` en vez de absolute: no depende de que
-   stAppViewContainer tenga position propio, siempre cubre el viewport
-   completo. z-index:0 (no negativo) + `> *{position:relative;z-index:1}`
-   en la regla de abajo: dos elementos EXPLÍCITAMENTE comparados por
-   z-index (1 gana a 0) es más confiable aquí que apoyarse en que los
-   hijos de stAppViewContainer sean o no positioned por su cuenta — con
-   z-index negativo en el ::before, esa comparación habría dependido de
-   si el sidebar/main ya eran positioned o no (no lo son por defecto), y
-   se corría el riesgo de que el velo terminara TAPANDO el contenido en
-   vez de quedar detrás. `pointer-events:none` para que la capa no
-   bloquee clics en nada de lo que hay debajo. */
-[data-testid="stAppViewContainer"]::before{
-  content:"";position:fixed;inset:0;
-  background:var(--overlay-veil);
-  z-index:0;pointer-events:none;
-}
-[data-testid="stAppViewContainer"]>*{position:relative;z-index:1}
-/* El header nativo de Streamlit (arriba del todo) tenía fondo sólido
-   opaco (regla de arriba, `[data-testid="stHeader"]{background:var(--bg)
-   !important}`) — se vuelve transparente aquí, DESPUÉS de esa regla en el
-   mismo bloque de texto (misma especificidad + !important en ambas: gana
-   la que aparece después), para que se vea la foto detrás. Esto
-   CONTRADICE a propósito una decisión de una tarea anterior ("nada de
-   glassmorphism", header opaco) — es la primera mitad de un cambio de
-   diseño que el usuario pidió hacer en dos pasos: primero que la foto se
-   vea en toda la app (este paso, sin preocuparse por legibilidad),
-   después arreglar el contraste del texto encima suyo (paso siguiente,
-   todavía no hecho). */
-[data-testid="stHeader"]{background:rgba(0,0,0,0)!important}
-/* LA CAUSA REAL de que la foto solo se viera en la franja de arriba: esta
+   LA CAUSA REAL de que la foto solo se viera en la franja de arriba: esta
    MISMA regla (arriba del todo, dentro de base_layer_css()) le pone un
    fondo SÓLIDO Y OPACO — no solo a stAppViewContainer, al mismo tiempo
    también a [data-testid="stMain"], [data-testid="stMainBlockContainer"]
@@ -361,80 +307,13 @@ _COMPONENTS_CSS_RAW = """
 [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"] .kpi-card{
   flex:1;height:100%;box-sizing:border-box;
 }
-/* ===== Franja de foto de toda la app: la misma ciudad_red.jpg de los
-   banners de cada vista (ui/components/section.py::banner_header), pero
-   detrás del hero + el buscador + la fila de pestañas — lo único que se
-   repite igual en TODAS las vistas, así que es la única franja que tiene
-   sentido pintar una sola vez a nivel de página en vez de vista por vista.
-   Es un ::before absoluto con z-index negativo (no una foto puesta en cada
-   elemento): así no importa cómo Streamlit anide los divs de arriba, el
-   texto normal (en flujo, sin position) siempre pinta ENCIMA de un
-   descendiente absoluto con z-index negativo — la misma garantía de orden
-   de pintado en la que se apoya .view-banner, aplicada aquí a una franja
-   compartida en vez de a una sola tarjeta. Por debajo de esta altura
-   (~300px) todo vuelve al fondo normal de la app — las tablas, tarjetas y
-   gráficos de cada pestaña NO viven bajo la foto.
-
-   Ojo con el selector: `.block-container` NO es exclusivo del contenido
-   principal — el sidebar tiene el suyo propio
-   (`section[data-testid="stSidebar"] .block-container`, ver más abajo), y
-   un selector desnudo `.block-container:before` habría pintado esta misma
-   foto detrás del logo/filtros del sidebar también. Por eso va con el
-   prefijo `[data-testid="stMain"]`, que solo envuelve el contenido
-   principal.
-
-   Segundo problema real, encontrado después de ver la franja pisar el
-   login y el landing: `inject_theme()` se llama SIEMPRE, en cada rerun,
-   antes incluso de decidir si toca mostrar login/landing/mode_choice o el
-   dashboard — así que esta regla, sin más, se pintaba en TODAS esas
-   pantallas, duplicada encima del fondo propio que cada una ya trae
-   (el velo crema de ui/login.py, el de ui/landing.py). `:has(.hero-band)`
-   hace que el `::before` solo exista cuando el `.block-container`
-   de turno de verdad contiene un `.hero-band` — y esa clase solo la pone
-   `hero(..., band=True)`, que solo se llama una vez en toda la app
-   (app.py, ya dentro del dashboard). En login/landing/mode_choice no
-   existe ningún `.hero-band`, así que ahí `:has()` no matchea y la franja
-   simplemente no se pinta — cada pantalla vuelve a depender solo de su
-   propio fondo, sin pisarse. */
-/* "Arregla ese corte horrible, parece que hubiera 2 imágenes" — tenía
-   toda la razón: literalmente HABÍA 2 imágenes. Esta franja traía su
-   propia copia de la foto (`url("__APP_BG__")`) en una caja de 300px de
-   alto — "cover" la recorta/escala para esa caja concreta, MUY distinta
-   de cómo "cover" recorta la MISMA foto en el fondo general de toda la
-   página (`[data-testid="stAppViewContainer"]`, a pantalla completa). Dos
-   recortes/zooms distintos de la misma imagen, apiladas una encima de la
-   otra, más un velo bastante más oscuro aquí que el de abajo (rgba(255,
-   255,255,.20) general) — el salto de encuadre Y de tono es justo el
-   "parece que hay 2 imágenes".
-
-   Arreglo (1ª parte): se quita la imagen duplicada de esta franja — la
-   foto que se ve aquí ahora es la MISMA, única, del fondo general (ya
-   visible a través del .block-container transparente de abajo), sin un
-   segundo recorte propio.
-
-   Ajuste fino (2ª parte, revisado después de seguir viéndose un corte):
-   la primera versión de este degradado terminaba en var(--overlay-veil)
-   — pero eso lo hacía IGUAL al velo general solo en el color, no en el
-   efecto: como este ::before se pinta ENCIMA del velo general (que ya
-   cubre toda la página, incluida esta franja), el resultado real cerca
-   de los 300px era velo general + este degradado = doble oscurecido,
-   más oscuro que justo un pixel más abajo (donde solo hay un velo). Esa
-   diferencia, aunque más sutil que el bug original, seguía siendo un
-   salto visible. Ahora el degradado termina en transparent bien ANTES
-   de los 300px (60% del alto) — deja de aportar NADA en el último
-   tramo, así que ahí coincide exactamente con lo que hay justo debajo:
-   un único velo general, sin doble capa ni salto de ningún tipo. */
-[data-testid="stMain"] .block-container:has(.hero-band):before{content:"";position:absolute;top:0;left:0;right:0;height:300px;z-index:-1;
-  border-radius:0 0 var(--radius-lg) var(--radius-lg);
-  background-image:linear-gradient(180deg,rgba(8,4,7,.6) 0%,rgba(15,5,8,.28) 35%,transparent 60%);
-  background-size:100% 100%;background-position:center;background-repeat:no-repeat}
-/* La barra nativa de Streamlit (arriba del todo, íconos de compartir/menú)
-   tenía un fondo translúcido con blur — glassmorphism real. En la
-   práctica ya perdía siempre contra la regla `!important` de más arriba
-   (`[data-testid="stHeader"]{background:var(--bg)!important}`), así que
-   era peso muerto sin efecto visible, pero se deja explícita y sólida
-   para que no quede ningún rastro de transparencia en el código. */
-header[data-testid="stHeader"]{background:var(--bg)!important}
+/* Se quitó la franja oscura (::before de 300px sobre .block-container:has
+   (.hero-band)) que degradaba hacia la foto de fondo general — sin foto
+   detrás, ya no había nada con qué mezclarla y solo dejaba un tinte
+   oscuro sin motivo encima del hero. La barra nativa de Streamlit (arriba
+   del todo) se queda con su fondo sólido normal, como ya la deja la regla
+   `[data-testid="stHeader"]{background:var(--bg)!important}` de más
+   arriba. */
 h1,h2,h3,h4,h5,h6{color:var(--text);font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
 p,span,div,li,label{color:var(--text)}
 /* ===== Subtítulos "sueltos" (st.markdown("### ...")/"#### ...", 20
@@ -1104,8 +983,9 @@ def components_css() -> str:
     # solo .replace() al final evita escaparlas todas a mano.
     # (ciudad_red.jpg / __HERO_BG__ ya no se usa en ningún selector — se
     # quitó junto con las 2 franjas de foto propias del header/Inicio,
-    # pedido explícito de "quita toda imagen de la parte analítica".)
-    css = css.replace("__APP_BG__", background_data_uri("fondo.jpg"))
+    # pedido explícito de "quita toda imagen de la parte analítica". La
+    # foto de fondo general, fondo.jpg vía __APP_BG__, se quitó después
+    # por el mismo motivo — ya no queda ningún marcador que sustituir acá.)
     return css
 
 
