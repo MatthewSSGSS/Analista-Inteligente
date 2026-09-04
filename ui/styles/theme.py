@@ -363,12 +363,40 @@ p,span,div,li,label{color:var(--text)}
    cambiarlo a mano deja de tener efecto. */
 section[data-testid="stSidebar"]{width:270px!important;min-width:270px!important;max-width:270px!important;background:var(--sidebar-bg)!important;border-right:1px solid var(--sidebar-line)!important}
 section[data-testid="stSidebar"]>div{width:270px!important}
-section[data-testid="stSidebar"] .block-container{padding:1rem 1rem 1.5rem}
-section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.5rem}
+/* ===== Compactación pedida ("controles de app profesional, no tarjetas
+   gigantes"): el sidebar heredaba el mismo padding/gap generoso pensado
+   para el contenido principal (tarjetas de KPI, gráficos). Un rail de
+   270px con puros controles (radios, selects, botones, filtros) no
+   necesita ese mismo aire — se reduce el padding del contenedor y el gap
+   entre widgets consecutivos (antes 1rem/.5rem, pensado para separar
+   bloques grandes) para que cada control quede a una distancia ajustada
+   del siguiente, sin perder legibilidad. */
+section[data-testid="stSidebar"] .block-container{padding:.8rem .85rem .9rem}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.35rem}
 section[data-testid="stSidebar"] *{color:var(--sidebar-text)}
 section[data-testid="stSidebar"] h1,section[data-testid="stSidebar"] h2,section[data-testid="stSidebar"] h3{color:var(--sidebar-text-strong)!important;font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
-section[data-testid="stSidebar"] .stCaption,section[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{color:var(--sidebar-muted)!important}
-section[data-testid="stSidebar"] hr{border-color:var(--sidebar-line);margin:.75rem 0}
+section[data-testid="stSidebar"] .stCaption,section[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{color:var(--sidebar-muted)!important;font-size:11.5px!important;line-height:1.4!important}
+section[data-testid="stSidebar"] hr{border-color:var(--sidebar-line);margin:.5rem 0}
+/* Controles nativos (radio Tema/Vista, botones, expanders) venían con el
+   mismo tamaño "cómodo" de 40px de alto que usa el contenido principal —
+   en un rail angosto se siente sobredimensionado. Un control de ~32px es
+   el estándar de barras laterales de apps de escritorio (VS Code, Notion)
+   y sigue siendo perfectamente clickeable. */
+section[data-testid="stSidebar"] .stButton>button{min-height:32px!important;padding:0 12px!important;font-size:12.5px!important;border-radius:9px!important}
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary{padding:8px 10px!important;font-size:12.5px!important;min-height:0!important}
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary svg{width:16px;height:16px}
+section[data-testid="stSidebar"] [data-testid="stExpanderDetails"]{padding:8px 10px 4px!important}
+/* El chevron nativo de colapsar/expandir el sidebar entero (arriba del
+   todo) se deja funcionalmente donde Streamlit lo pone, pero se retoca
+   para que no rompa la paleta del rail (traía su propio fondo/ícono
+   genérico, sin relación con --sidebar-*) y se vea como un control chico
+   más, no como un elemento aparte pegado encima. */
+[data-testid="stSidebarCollapseButton"] button{
+  color:var(--sidebar-muted)!important;background:transparent!important;border-radius:8px!important;
+}
+[data-testid="stSidebarCollapseButton"] button:hover{
+  color:var(--blue)!important;background:var(--sidebar-panel)!important;
+}
 section[data-testid="stSidebar"] input,section[data-testid="stSidebar"] textarea{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;color:var(--sidebar-text-strong)!important;border-radius:9px!important}
 section[data-testid="stSidebar"] [data-baseweb="select"]{background:var(--sidebar-panel)!important}
 section[data-testid="stSidebar"] [data-baseweb="select"]>div{background:var(--sidebar-panel)!important;border:1px solid var(--sidebar-line)!important;border-radius:9px!important}
@@ -402,40 +430,45 @@ section[data-testid="stSidebar"] [data-testid="stAlert"]{background:var(--sideba
    opaco (ver la nota sobre los tokens --*-soft en _theme_vars) — el
    borde sí se queda translúcido, un borde con transparencia no afecta
    la legibilidad del texto de adentro como sí lo hace un fondo. */
-section[data-testid="stSidebar"] .mode-banner{background:var(--blue-soft);border:1px solid rgba(228,0,43,.4);color:var(--sidebar-text-strong)}
+section[data-testid="stSidebar"] .mode-banner{background:var(--blue-soft);border:1px solid rgba(228,0,43,.4);color:var(--sidebar-text-strong);padding:8px 10px!important;font-size:12px!important}
 section[data-testid="stSidebar"] .mode-banner .mode-banner-label{color:var(--sidebar-muted)}
 section[data-testid="stSidebar"] .mode-banner b{color:var(--sidebar-text-strong)}
 section[data-testid="stSidebar"] .mode-confidence{color:var(--sidebar-muted)!important;background:var(--sidebar-panel)!important}
-/* Sidebar logo block, like the reference nav header */
-.sidebar-logo{display:flex;align-items:center;gap:10px;padding:2px 2px 14px;margin-bottom:10px;border-bottom:1px solid var(--sidebar-line)}
-.sidebar-logo-mark{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 34px}
-.sidebar-logo-text{font-size:14px;font-weight:800;font-family:'Sora','Inter',sans-serif;color:var(--sidebar-text-strong);line-height:1.2}
-.sidebar-logo-text small{display:block;font-size:10.5px;font-weight:600;font-family:'Inter',sans-serif;color:var(--sidebar-muted)}
-.sidebar-section-label{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--sidebar-muted)!important;margin:10px 0 5px}
-.sidebar-group-header{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--sidebar-text-strong)!important;
-  margin:14px 0 7px;padding-top:11px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
-.sidebar-group-header:first-of-type{border-top:none;padding-top:0;margin-top:4px}
-/* Tarjeta de sesión (nombre + botón "Salir" debajo) — mismo lenguaje que
-   .sidebar-logo (círculo con degradado de marca + texto de dos líneas),
-   para que "de quién es la sesión" se sienta parte del mismo encabezado
-   en vez de una fila de texto suelta. El botón "Salir" va FUERA de esta
-   tarjeta (as widget nativo de Streamlit, con su propio estilo de botón
-   ya existente) pero pegado justo debajo, a todo el ancho del sidebar —
-   así "Salir" nunca se queda sin espacio, sea cual sea el nombre. */
-.sidebar-account{display:flex;align-items:center;gap:10px;padding:8px 10px;margin:2px 0 8px;
-  background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:var(--radius-md)}
-.sidebar-account-avatar{width:30px;height:30px;border-radius:50%;flex:0 0 30px;
+/* Sidebar logo block, like the reference nav header. Compactado (pedido
+   "controles profesionales, no tarjetas gigantes"): 14px de padding
+   inferior + 34px de círculo eran proporciones pensadas para respirar
+   solo, cuando en realidad es la primera de 8 secciones apiladas. */
+.sidebar-logo{display:flex;align-items:center;gap:8px;padding:2px 2px 10px;margin-bottom:6px;border-bottom:1px solid var(--sidebar-line)}
+.sidebar-logo-mark{width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 28px}
+.sidebar-logo-text{font-size:13px;font-weight:800;font-family:'Sora','Inter',sans-serif;color:var(--sidebar-text-strong);line-height:1.15}
+.sidebar-logo-text small{display:block;font-size:10px;font-weight:600;font-family:'Inter',sans-serif;color:var(--sidebar-muted)}
+.sidebar-section-label{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--sidebar-muted)!important;margin:6px 0 3px}
+.sidebar-group-header{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--sidebar-text-strong)!important;
+  margin:8px 0 4px;padding-top:7px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
+.sidebar-group-header:first-of-type{border-top:none;padding-top:0;margin-top:2px}
+/* Fila de sesión (avatar + nombre): antes era una tarjeta propia (fondo +
+   borde + radio, mismo lenguaje que .sidebar-logo) con el botón "Salir"
+   apilado debajo a todo el ancho — dos elementos de altura completa solo
+   para mostrar "quién está conectado". Pasa a ser una fila plana sin caja
+   (mismo trato que cualquier otro control del rail, no una tarjeta
+   aparte); "Salir" (en app.py) se queda como botón nativo justo debajo,
+   ahora ya compacto por la regla general de botones del sidebar de más
+   arriba, así que la sección entera ocupa una fracción de la altura de
+   antes sin perder ningún dato visible (nombre completo sigue con
+   ellipsis si no cabe, avatar sigue con el mismo degradado de marca). */
+.sidebar-account{display:flex;align-items:center;gap:8px;padding:4px 2px;margin:0 0 2px}
+.sidebar-account-avatar{width:24px;height:24px;border-radius:50%;flex:0 0 24px;
   background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);
   box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);
-  display:flex;align-items:center;justify-content:center;font-size:14px}
-.sidebar-account-info{display:flex;flex-direction:column;min-width:0;line-height:1.25}
-.sidebar-account-label{font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--sidebar-muted)}
-.sidebar-account-name{font-size:13px;font-weight:700;color:var(--sidebar-text-strong);
+  display:flex;align-items:center;justify-content:center;font-size:12px}
+.sidebar-account-info{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.sidebar-account-label{font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--sidebar-muted)}
+.sidebar-account-name{font-size:12.5px;font-weight:700;color:var(--sidebar-text-strong);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* View-mode selector styled as a dark nav pill row, matching the sidebar */
-section[data-testid="stSidebar"] div[role="radiogroup"]{background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:10px;padding:4px;gap:2px}
-section[data-testid="stSidebar"] div[role="radiogroup"] label{border-radius:7px;padding:6px 10px}
-section[data-testid="stSidebar"] div[role="radiogroup"] label p{color:var(--sidebar-muted)!important;font-weight:650}
+section[data-testid="stSidebar"] div[role="radiogroup"]{background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:9px;padding:3px;gap:2px}
+section[data-testid="stSidebar"] div[role="radiogroup"] label{border-radius:6px;padding:5px 8px}
+section[data-testid="stSidebar"] div[role="radiogroup"] label p{color:var(--sidebar-muted)!important;font-weight:650;font-size:12.5px!important}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){background:linear-gradient(180deg,#ff3b4e,#e4002b)}
 section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{color:#ffffff!important;font-weight:750}
 

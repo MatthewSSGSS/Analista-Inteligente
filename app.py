@@ -180,7 +180,7 @@ with st.sidebar:
 
     wb=st.session_state.workbook
     if wb:
-        st.markdown('<p class="sidebar-section-label" style="margin-top:10px;">Hoja activa</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sidebar-section-label" style="margin-top:6px;">Hoja activa</p>', unsafe_allow_html=True)
         sheet=st.selectbox("Hoja",list(wb["sheets"]), label_visibility="collapsed")
         item=wb["sheets"][sheet]
         st.session_state.active_sheet = sheet
