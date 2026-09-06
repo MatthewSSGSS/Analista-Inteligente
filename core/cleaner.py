@@ -18,32 +18,45 @@ def _consolidate_spelling_variants(series: pd.Series):
     grafiquen como categorías separadas. La variante más frecuente es la que
     se conserva. Solo toca columnas donde de verdad existe esa duplicación;
     si todo ya está escrito de forma consistente, no cambia nada.
+
+    Se trabaja sobre los valores DISTINTOS, no sobre las filas: normalizar
+    (quitar tildes, mayúsculas, espacios) es caro y una columna de 200.000
+    filas suele tener unas pocas decenas de valores distintos. La versión
+    anterior normalizaba fila por fila —dos veces, además: una para agrupar
+    y otra al reemplazar— y encima recorría la columna entera por cada clave
+    candidata (`non_null[keys == k]` dentro del bucle), lo que la volvía
+    cuadrática. El resultado es el mismo, solo que proporcional a los
+    valores distintos en vez de al tamaño del archivo.
     """
     non_null = series.dropna()
     if non_null.empty:
         return series, 0
-    keys = non_null.map(_normalize_key)
-    variant_keys = {k for k, cnt in keys.value_counts().items() if cnt > 1 and non_null[keys == k].nunique() > 1}
-    if not variant_keys:
+
+    counts = non_null.value_counts()
+    key_by_value = {v: _normalize_key(v) for v in counts.index}
+    by_key: dict[str, list] = {}
+    for value, key in key_by_value.items():
+        by_key.setdefault(key, []).append(value)
+
+    # Solo hay variante cuando una misma clave normalizada llega escrita de
+    # más de una forma (con una sola forma no hay nada que unificar).
+    canonical = {
+        key: counts[values].idxmax()
+        for key, values in by_key.items()
+        if len(values) > 1
+    }
+    if not canonical:
         return series, 0
-    canonical = {}
-    for key in variant_keys:
-        group = non_null[keys == key]
-        canonical[key] = group.value_counts().idxmax()
-    changed = 0
 
-    def _map(v):
-        nonlocal changed
-        if pd.isna(v):
-            return v
-        k = _normalize_key(v)
-        repl = canonical.get(k)
-        if repl is not None and repl != v:
-            changed += 1
-            return repl
-        return v
-
-    return series.map(_map), changed
+    replacements = {
+        value: canonical[key_by_value[value]]
+        for value in counts.index
+        if key_by_value[value] in canonical and canonical[key_by_value[value]] != value
+    }
+    if not replacements:
+        return series, 0
+    changed = int(non_null.isin(list(replacements)).sum())
+    return series.replace(replacements), changed
 
 
 def clean(df):

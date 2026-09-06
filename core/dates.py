@@ -205,6 +205,26 @@ def detect_date(s, name):
     # convertir una columna datetime a texto en el pipeline de limpieza),
     # dayfirst debe ir en False para no invertir día y mes.
     use_dayfirst = iso_ratio < 0.5
+
+    # Sondeo con una muestra antes de convertir la columna ENTERA. Para que
+    # una columna se acepte como fecha hace falta que parsee >=0.90 (ver
+    # core/schema.py), así que si en 1.000 valores no llega ni a la mitad,
+    # la columna completa tampoco va a llegar — y convertirla es carísimo:
+    # en una hoja de 200.000 filas, intentar leer como fecha una columna de
+    # códigos ("D3243.00002") costaba 4 segundos para terminar
+    # descartándola. El sondeo cuesta milisegundos y llega a la misma
+    # conclusión. Solo se salta cuando hay bastantes valores: por debajo de
+    # eso, convertir todo ya es barato y no vale la pena arriesgar.
+    if len(text) > 2000:
+        # Muestra REPARTIDA a lo largo de la columna, no las primeras 1.000
+        # filas: un archivo ordenado puede tener al principio un tramo que no
+        # se parece al resto (encabezados de sección, registros viejos con
+        # otro formato), y decidir con solo el arranque sería frágil.
+        probe = text.iloc[:: max(1, len(text) // 1000)]
+        probe_rate = pd.to_datetime(probe, errors="coerce", format="mixed", dayfirst=use_dayfirst).notna().mean()
+        if probe_rate < 0.5:
+            return None, float(probe_rate), None
+
     parsed = pd.to_datetime(text, errors="coerce", format="mixed", dayfirst=use_dayfirst)
     rate = parsed.notna().mean()
     if rate >= 0.90:

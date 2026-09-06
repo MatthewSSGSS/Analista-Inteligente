@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.numeric import numeric_series
+from core.entity_engine import analyze_entity_candidates, describe_entity
 from core.universal_analysis import semantic_map, ADDITIVE, period_series
 from visualization.charts import metric_candidates, dimension_candidates, _label, chart_text_color
 from ui.components.cards import kpi_card
@@ -46,6 +47,57 @@ def _person_col(schema, df):
     return None
 
 
+def _entity_candidates(df, schema):
+    """Candidatas a entidad, calculadas UNA vez por hoja y guardadas en la
+    sesión. El análisis recorre todas las columnas comparándolas entre sí
+    (~1s en 60.000 filas): barato una vez, caro si se repitiera en cada
+    rerun de Streamlit — y Streamlit vuelve a ejecutar el script entero
+    ante cualquier clic o cambio de filtro. La clave incluye las columnas
+    para que al cambiar de hoja se recalcule, pero no al filtrar: qué
+    columna identifica a la entidad es una propiedad de la TABLA, no de la
+    selección visible."""
+    key = (st.session_state.get("active_sheet"), tuple(str(c) for c in df.columns))
+    cache = st.session_state.setdefault("_entity_candidates_cache", {})
+    if key not in cache:
+        cache[key] = analyze_entity_candidates(df, schema)
+    return cache[key]
+
+
+def resolve_entity(df, schema):
+    """Sobre qué "sujeto" se puede armar un perfil en este archivo.
+
+    Primero busca una persona (comportamiento de siempre, intacto). Si no
+    hay, cae al detector universal de códigos (core/entity_engine.py), que
+    reconoce identificadores por la FORMA de sus valores y por las columnas
+    que determinan, sin depender de cómo se llame la columna.
+
+    Devuelve None si el archivo no tiene ningún sujeto perfilable — mejor
+    no ofrecer el perfil que armarlo sobre la columna equivocada.
+    """
+    person = _person_col(schema, df)
+    if person:
+        return {"column": person, "noun": "persona", "icon": "👤", "candidates": [], "detected": None}
+    candidates = [c for c in _entity_candidates(df, schema) if c["column"] in df.columns]
+    if not candidates:
+        return None
+    chosen = candidates[0]
+    if chosen["score"] < 0.50:
+        return None
+    return {"column": chosen["column"], "noun": "código", "icon": "🔖",
+            "candidates": candidates, "detected": chosen}
+
+
+def has_entity(df, schema) -> bool:
+    """Si conviene ofrecer el botón de perfil. Lo usan el dashboard y el
+    resumen ejecutivo para decidir si mostrarlo — antes preguntaban solo
+    por una columna de nombre, así que con un archivo de códigos el botón
+    nunca aparecía."""
+    try:
+        return resolve_entity(df, schema) is not None
+    except Exception:
+        return False
+
+
 def _card(label, value, delta=None):
     return kpi_card(label, value, delta=delta)
 
@@ -76,20 +128,56 @@ def _apply_current_filters(df):
 
 
 def render_person_profile(df, schema, dashboard=None):
-    """Dedicated universal profile: everything the workbook can legitimately say about one person."""
-    person_col = _person_col(schema, df)
-    if not person_col:
-        st.info("Este Excel no contiene una persona, agente, cliente o nombre identificable para construir un perfil individual.")
+    """Perfil universal de UNA entidad: todo lo que el archivo puede decir
+    legítimamente sobre ella. La entidad es una persona cuando el archivo
+    tiene nombres, o un código (de local, de punto, de funcionario...)
+    cuando no — ver resolve_entity()."""
+    entity = resolve_entity(df, schema)
+    if not entity:
+        st.info("Este Excel no contiene una persona ni un código identificable para construir un perfil individual.")
         return
+    person_col, noun = entity["column"], entity["noun"]
+
+    # Si hay varias columnas que podrían ser la entidad (p. ej. código de
+    # local y cédula), se deja cambiar: la detección acierta sola en la
+    # mayoría de los casos, pero cuando no, el usuario corrige en un clic
+    # en vez de quedarse sin la herramienta.
+    candidates = entity.get("candidates") or []
+    if len(candidates) > 1:
+        options = [c["column"] for c in candidates]
+        picked = st.selectbox(
+            "Analizar por", options, index=0, key="profile_entity_column_v54",
+            help="Columna que identifica al sujeto del análisis. Se eligió automáticamente por el formato de sus valores y por las columnas que describe.",
+        )
+        if picked != person_col:
+            person_col = picked
+        entity["detected"] = next((c for c in candidates if c["column"] == person_col), entity.get("detected"))
 
     data = _apply_current_filters(df)
+    if person_col not in data.columns:
+        st.info("La columna seleccionada no está disponible con los filtros actuales.")
+        return
     names = sorted(data[person_col].dropna().astype(str).str.strip().replace("", pd.NA).dropna().unique(), key=str.casefold)
     if not names:
-        st.info("No hay personas disponibles con los filtros actuales.")
+        st.info(f"No hay valores de {noun} disponibles con los filtros actuales.")
         return
 
-    st.markdown(section_header("Analizar perfil individual", eyebrow="PERFIL INDIVIDUAL", subtitle="Selecciona una persona y revisa todo lo que el Excel permite conocer sobre ella."), unsafe_allow_html=True)
-    selected = st.selectbox("Buscar y seleccionar nombre completo", names, key="profile_person_selector_inline", placeholder="Escribe para buscar…")
+    subtitle = (f"Selecciona un {noun} y revisa todo lo que el Excel permite conocer sobre él."
+                if noun == "código" else
+                "Selecciona una persona y revisa todo lo que el Excel permite conocer sobre ella.")
+    st.markdown(section_header("Analizar perfil individual", eyebrow="PERFIL INDIVIDUAL", subtitle=subtitle), unsafe_allow_html=True)
+
+    # Cuando la entidad se dedujo de los datos (no es un nombre evidente),
+    # se explica en qué se basó: nadie debería preguntarse de dónde salió
+    # que "Ref" es el código del archivo.
+    detected = entity.get("detected")
+    if detected:
+        st.caption("Entidad detectada automáticamente · " + describe_entity(detected).replace("**", ""))
+
+    selected = st.selectbox(
+        f"Buscar y seleccionar {'nombre completo' if noun == 'persona' else noun}",
+        names, key="profile_person_selector_inline", placeholder="Escribe para buscar…",
+    )
     rows = data[data[person_col].astype(str).str.strip().eq(str(selected).strip())].copy()
     if rows.empty:
         return
@@ -105,7 +193,7 @@ def render_person_profile(df, schema, dashboard=None):
     if preferred:
         primary = preferred[0]
 
-    st.markdown(f'<div class="decision-strip positive"><b>{selected}</b> · {len(rows):,} registros relacionados encontrados. Todo el análisis de esta pestaña está restringido a esta persona.</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="decision-strip positive"><b>{selected}</b> · {len(rows):,} registros relacionados encontrados. Todo el análisis de esta pestaña está restringido a este registro.</div>', unsafe_allow_html=True)
 
     # 1. KPI layer
     st.markdown(section_header("KPIs", compact=True), unsafe_allow_html=True)
@@ -209,7 +297,7 @@ def render_person_profile(df, schema, dashboard=None):
             _chart(bench_title, bench_subtitle, bench_fig, "profile_person_benchmark_v52")
 
     # 5. Everything else the workbook knows: compact metadata + raw records
-    st.markdown(section_header("Todo lo relacionado con la persona", eyebrow="CONTEXTO COMPLETO", compact=True), unsafe_allow_html=True)
+    st.markdown(section_header(f"Todo lo relacionado con {'la persona' if noun == 'persona' else 'el ' + noun}", eyebrow="CONTEXTO COMPLETO", compact=True), unsafe_allow_html=True)
     context_rows = []
     for c in rows.columns:
         if str(c).startswith("__") or str(c).startswith("_geo_") or c == person_col:

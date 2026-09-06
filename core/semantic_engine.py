@@ -121,8 +121,23 @@ def _name_score(column: str, concept: str) -> float:
     return min(best, 1.0)
 
 
+# Cuántos valores se miran para ESTIMAR una proporción (qué porcentaje de la
+# columna parece un correo, una fecha, una coordenada...). Estas funciones no
+# transforman datos: solo puntúan qué tan probable es un concepto, y para eso
+# una muestra amplia da el mismo resultado que la columna entera —a una
+# fracción del costo. La conversión de verdad (la que sí toca todos los
+# valores) vive aparte, en core/dates.py::detect_date.
+CLASSIFY_SAMPLE = 5000
+
+
+def _for_rate(s: pd.Series) -> pd.Series:
+    """Los valores no nulos con los que se estima una proporción."""
+    x = s.dropna()
+    return x.head(CLASSIFY_SAMPLE) if len(x) > CLASSIFY_SAMPLE else x
+
+
 def _email_rate(s: pd.Series) -> float:
-    x = s.dropna().astype(str).str.strip()
+    x = _for_rate(s).astype(str).str.strip()
     if x.empty:
         return 0.0
     return float(x.str.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$").mean())
@@ -131,7 +146,7 @@ def _email_rate(s: pd.Series) -> float:
 def _date_rate(s: pd.Series) -> float:
     if pd.api.types.is_datetime64_any_dtype(s):
         return 1.0
-    x = s.dropna()
+    x = _for_rate(s)
     if x.empty:
         return 0.0
     # Avoid interpreting arbitrary large integers as dates.
@@ -151,7 +166,7 @@ def _date_rate(s: pd.Series) -> float:
 
 
 def _geo_rate(s: pd.Series, concept: str) -> float:
-    x = s.dropna().astype(str).str.strip()
+    x = _for_rate(s).astype(str).str.strip()
     if x.empty:
         return 0.0
     if concept == "latitude":
@@ -185,7 +200,7 @@ def _numeric_signal(s: pd.Series, concept: str) -> float:
 
 
 def _categorical_signal(s: pd.Series) -> float:
-    x = s.dropna().astype(str).str.strip()
+    x = _for_rate(s).astype(str).str.strip()
     if x.empty:
         return 0.0
     unique = x.nunique()
@@ -197,25 +212,53 @@ def _categorical_signal(s: pd.Series) -> float:
     return 0.0
 
 
-def _concept_prior_from_values(s: pd.Series, concept: str) -> float:
-    x = s.dropna().astype(str).str.strip()
+def _text_sample(s: pd.Series) -> list[str]:
+    """Hasta 500 valores normalizados de la columna, para las señales que se
+    resuelven mirando ejemplos ("masculino"/"femenino", "si"/"no").
+
+    Ojo con el ORDEN de las operaciones, que era el problema: antes se hacía
+    `s.dropna().astype(str).str.strip()` sobre la columna COMPLETA y recién
+    después `.head(500)`. Convertir 50.000 valores a texto para quedarse con
+    500 ya es caro; hacerlo una vez POR CONCEPTO (~30) y por columna lo
+    multiplicaba hasta volverse el mayor costo de la carga del archivo
+    (7,5 s de los 9,5 s que tardaba perfilar una hoja de 50.000 filas).
+    Recortar primero y convertir después da exactamente el mismo resultado.
+    """
+    x = s.dropna().head(500)
     if x.empty:
-        return 0.0
-    sample = x.head(500).map(normalize_text)
-    joined = " | ".join(sample.tolist())
+        return []
+    return x.astype(str).str.strip().map(normalize_text).tolist()
+
+
+def _concept_prior_from_values(s: pd.Series, concept: str, cache: dict | None = None) -> float:
+    """`cache` es un diccionario por COLUMNA (lo crea classify_column): las
+    señales pesadas —fecha, categórica, correo, geo— no dependen del
+    concepto que se esté evaluando, así que se calculan una sola vez y se
+    reutilizan. Sin él, `_categorical_signal` se recalculaba 8 veces
+    seguidas sobre la misma columna (una por cada concepto categórico) y
+    `_date_rate` 2 veces."""
+    cache = {} if cache is None else cache
+
+    def once(key, fn):
+        if key not in cache:
+            cache[key] = fn()
+        return cache[key]
+
     if concept == "gender":
-        return 1.0 if any(v in joined.split(" | ") for v in ["masculino", "femenino", "male", "female", "hombre", "mujer", "man", "woman"]) else 0.0
+        sample = once("sample", lambda: _text_sample(s))
+        return 1.0 if any(v in sample for v in ["masculino", "femenino", "male", "female", "hombre", "mujer", "man", "woman"]) else 0.0
     if concept == "boolean":
-        vals = set(sample.tolist())
+        sample = once("sample", lambda: _text_sample(s))
+        vals = set(sample)
         return 1.0 if vals and vals <= {"si", "no", "yes", "no", "true", "false", "1", "0", "activo", "inactivo"} else 0.0
     if concept == "email":
-        return _email_rate(s)
+        return once("email", lambda: _email_rate(s))
     if concept in {"latitude", "longitude"}:
-        return _geo_rate(s, concept)
+        return once(f"geo_{concept}", lambda: _geo_rate(s, concept))
     if concept in {"date", "datetime"}:
-        return _date_rate(s)
+        return once("date", lambda: _date_rate(s))
     if concept in {"country", "city", "region", "category", "status", "brand", "supplier", "product"}:
-        return _categorical_signal(s)
+        return once("categorical", lambda: _categorical_signal(s))
     return 0.0
 
 
@@ -227,9 +270,14 @@ def classify_column(s: pd.Series, column: str) -> dict:
     unique = int(non_null.nunique()) if len(non_null) else 0
     cardinality = unique / max(len(non_null), 1)
 
+    # Una sola caché para las ~30 evaluaciones de conceptos de ESTA columna:
+    # las señales de valores (fecha, categórica, correo, geo) no cambian
+    # según el concepto que se esté puntuando, así que basta calcularlas una
+    # vez. Se crea aquí y muere aquí — no hay estado entre columnas.
+    value_cache: dict = {}
     for concept in CONCEPTS:
         ns = _name_score(column, concept)
-        vs = _concept_prior_from_values(s, concept)
+        vs = _concept_prior_from_values(s, concept, value_cache)
         # Exact/alias names are strong evidence. Value patterns are a fallback,
         # not a license to override an explicit column name.
         if ns >= 0.98:
