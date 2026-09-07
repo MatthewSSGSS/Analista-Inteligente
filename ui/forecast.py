@@ -25,40 +25,71 @@ _TONO = {"alta": ("#0f8a5f", "Confianza alta"),
 
 
 def _grafico(resultado: dict, schema: dict) -> go.Figure:
-    """Histórico y proyección en un solo gráfico, con la banda del rango.
+    """Histórico y proyección, dibujados como TRES escenarios.
 
-    La banda no es decorativa: es el mensaje principal. Un valor central sin
-    rango invita a leer el pronóstico como un dato, y no lo es.
+    La banda sombreada sola no terminaba de comunicar: se leía como un
+    adorno alrededor de "el número". Dibujar además las líneas del escenario
+    optimista y del pesimista hace ver que el futuro es un abanico, no un
+    punto — que es exactamente lo que dice el cálculo.
+
+    Se marca también dónde termina lo real y empieza lo proyectado, para que
+    nadie confunda un dato con una estimación de un vistazo.
     """
     historico = resultado["historico"]
     pred = resultado["prediccion"]
     etiqueta = _label(schema, resultado["metric"])
+    ultimo_x, ultimo_y = historico.index[-1], float(historico.iloc[-1])
+    # Cada escenario arranca del último dato real: así las tres líneas nacen
+    # del mismo punto conocido y se ve cómo se abren hacia adelante.
+    x_proy = [ultimo_x] + list(pred["periodo"])
     fig = go.Figure()
 
-    # Banda del rango (se dibuja primero para que quede al fondo).
+    # Banda del rango, al fondo.
     fig.add_trace(go.Scatter(
-        x=list(pred["periodo"]) + list(pred["periodo"])[::-1],
-        y=list(pred["maximo"]) + list(pred["minimo"])[::-1],
-        fill="toself", fillcolor="rgba(228,0,43,0.12)",
+        x=x_proy + x_proy[::-1],
+        y=[ultimo_y] + list(pred["maximo"]) + ([ultimo_y] + list(pred["minimo"]))[::-1],
+        fill="toself", fillcolor="rgba(228,0,43,0.10)",
         line=dict(color="rgba(0,0,0,0)"), hoverinfo="skip",
-        name="Rango posible", showlegend=True,
+        name="Rango posible", showlegend=False,
+    ))
+    # Escenarios extremos: línea fina, sin marcadores, para que acompañen sin
+    # competir con la proyección central.
+    fig.add_trace(go.Scatter(
+        x=x_proy, y=[ultimo_y] + list(pred["maximo"]), mode="lines", name="Si va bien",
+        line=dict(color="#0f8a5f", width=1.6, dash="dot"),
+        hovertemplate="<b>%{x|%b %Y}</b><br>Escenario optimista: <b>%{y:,.0f}</b><extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=historico.index, y=historico.values, mode="lines+markers", name="Histórico",
-        line=dict(color="#1e293b", width=2.5), marker=dict(size=6),
+        x=x_proy, y=[ultimo_y] + list(pred["minimo"]), mode="lines", name="Si va mal",
+        line=dict(color="#be123c", width=1.6, dash="dot"),
+        hovertemplate="<b>%{x|%b %Y}</b><br>Escenario pesimista: <b>%{y:,.0f}</b><extra></extra>",
+    ))
+    # Histórico: lo que de verdad pasó.
+    fig.add_trace(go.Scatter(
+        x=historico.index, y=historico.values, mode="lines+markers", name="Histórico (real)",
+        line=dict(color="#1e293b", width=2.6), marker=dict(size=6),
         hovertemplate="<b>%{x|%b %Y}</b><br>" + etiqueta + ": <b>%{y:,.0f}</b><extra></extra>",
     ))
-    # Se une el último punto real con el primero proyectado para que la línea
-    # no aparezca flotando y se vea de dónde arranca.
+    # Proyección central, con el valor escrito sobre cada punto para poder
+    # leer la cifra sin pasar el mouse (importante al presentar en pantalla).
     fig.add_trace(go.Scatter(
-        x=[historico.index[-1]] + list(pred["periodo"]),
-        y=[float(historico.iloc[-1])] + list(pred["estimado"]),
-        mode="lines+markers", name="Proyección",
-        line=dict(color="#e4002b", width=2.5, dash="dash"), marker=dict(size=7, symbol="diamond"),
+        x=x_proy, y=[ultimo_y] + list(pred["estimado"]),
+        mode="lines+markers+text", name="Proyección esperada",
+        line=dict(color="#e4002b", width=2.8, dash="dash"),
+        marker=dict(size=9, symbol="diamond", line=dict(color="#fff", width=1.5)),
+        text=[""] + [f"{v:,.0f}" for v in pred["estimado"]],
+        textposition="top center", textfont=dict(size=11, color="#e4002b"),
         hovertemplate="<b>%{x|%b %Y}</b><br>Estimado: <b>%{y:,.0f}</b><extra></extra>",
     ))
-    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
-    return _base(fig, 380)
+
+    # Frontera entre lo real y lo proyectado.
+    fig.add_vline(x=ultimo_x, line_width=1.4, line_dash="dot", line_color="#94a3b8")
+    fig.add_annotation(x=ultimo_x, yref="paper", y=1.0, text="  proyección →",
+                       showarrow=False, xanchor="left", yanchor="top",
+                       font=dict(size=10.5, color="#64748b"))
+    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                      margin=dict(t=54))
+    return _base(fig, 420)
 
 
 def _base_calculo(resultado: dict, schema: dict, df: pd.DataFrame) -> None:
