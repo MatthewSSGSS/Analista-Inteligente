@@ -175,6 +175,21 @@ with st.sidebar:
                     st.session_state.filters={}
                 except Exception as e:
                     st.error(f"No pudimos procesar este archivo: {e}")
+                    # Detalle técnico plegado. Streamlit Cloud censura el
+                    # mensaje real de los errores no capturados, así que
+                    # cuando algo falla aquí no queda rastro de DÓNDE ocurrió
+                    # y hay que adivinar. Con esto, el usuario copia el bloque
+                    # y se ve el punto exacto del código en un solo paso, en
+                    # vez de ir descartando hipótesis de a un intento por vez.
+                    import traceback as _tb
+                    _frames = [f for f in _tb.extract_tb(e.__traceback__)
+                               if "site-packages" not in str(f.filename)]
+                    _detalle = "\n".join(
+                        f"{str(f.filename).split(chr(92))[-1].split('/')[-1]}:{f.lineno} en {f.name}()"
+                        for f in _frames[-6:]
+                    )
+                    with st.expander("Ver detalle técnico (cópialo si necesitas reportarlo)"):
+                        st.code(f"{type(e).__name__}: {e}\n\nRecorrido:\n{_detalle}", language="text")
         if _wb_before:
             st.caption("¿Otro archivo? Súbelo aquí para reemplazar el actual.")
 

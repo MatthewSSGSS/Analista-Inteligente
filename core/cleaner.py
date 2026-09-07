@@ -14,6 +14,23 @@ COLOMBIA_TZ = "America/Bogota"
 _TZ_VALUE_RE = re.compile(r"\d{1,2}:\d{2}.*?(?:Z|[+-]\d{2}:?\d{2})\s*$", re.I)
 
 
+def _valor_tiene_zona(valor) -> bool:
+    """¿Este valor concreto lleva zona horaria? Lo decide pandas, no un
+    patrón de texto.
+
+    Es la comprobación que importa: el error "Mixed timezones detected" lo
+    lanza pandas cuando, al interpretar una columna, encuentra valores con
+    zonas distintas. Entonces la pregunta correcta no es "¿esto se parece a
+    una fecha con zona?" sino "¿pandas ve aquí una zona?" — que es
+    exactamente lo que responde `Timestamp(...).tzinfo`, sin huecos por
+    formatos no contemplados (-05, UTC, GMT-5, ...).
+    """
+    try:
+        return pd.Timestamp(valor).tzinfo is not None
+    except Exception:
+        return False
+
+
 def normalize_timezones(df: pd.DataFrame) -> list[str]:
     """Pasa TODA columna con zona horaria a hora de Colombia y le quita la
     zona. Devuelve los nombres de las columnas convertidas.
@@ -36,8 +53,11 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
     for col in df.columns:
         serie = df[col]
         try:
-            # Caso 1: la columna ya es fecha CON zona (un solo desfase).
-            if isinstance(serie.dtype, pd.DatetimeTZDtype):
+            # Caso 1: la columna YA es de tipo fecha con zona. Se pregunta por
+            # el atributo `tz` en vez de comprobar un tipo concreto, para que
+            # también valgan los tipos respaldados por Arrow
+            # (timestamp[us, tz=UTC]) y no solo el datetime64 clásico.
+            if getattr(serie.dtype, "tz", None) is not None:
                 df[col] = serie.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None)
                 convertidas.append(str(col))
                 continue
@@ -45,39 +65,46 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
             if not (serie.dtype == object or pd.api.types.is_string_dtype(serie)):
                 continue
 
-            # Caso 2: el desfase viene pegado al valor, que es como Excel lo
-            # guarda (su formato NO admite zona horaria en una celda de
-            # fecha, así que llega como texto).
+            # Caso 2: el desfase viene pegado al valor — que es como Excel lo
+            # guarda, porque su formato NO admite zona horaria en una celda
+            # de fecha y termina llegando como texto.
             #
-            # Se revisa la columna ENTERA, valor por valor, y basta UNO con
-            # zona para actuar. Las dos versiones anteriores fallaron por
-            # confiar en atajos: miraban solo las primeras 200 filas y exigían
-            # que el 80% trajera zona. Un archivo donde solo algunas filas la
-            # traen —o donde la primera aparece más abajo de la fila 200— se
-            # saltaba entero, y el error volvía a aparecer.
-            texto = serie.astype(str)
-            con_zona = texto.str.contains(_TZ_VALUE_RE, na=False)
-            if not bool(con_zona.any()):
+            # Aquí NO se usa una expresión regular para decidir: se le
+            # pregunta a pandas. Ese fue el fallo de la versión anterior —
+            # el patrón reconocía "+00:00" o "Z", pero no "-05" (desfase de
+            # dos dígitos), ni " UTC", ni " GMT", ni "GMT-5", y con
+            # cualquiera de esos la columna se saltaba entera y el error
+            # volvía. pandas sabe exactamente qué sabe interpretar, que es
+            # justo el conjunto que puede provocar el fallo de zonas
+            # mezcladas; preguntarle a él no deja huecos.
+            #
+            # Se evalúa sobre los valores DISTINTOS (una columna de 200.000
+            # filas suele tener unas pocas decenas), así que revisar la
+            # columna completa sale barato.
+            distintos = pd.unique(serie.dropna())
+            if len(distintos) == 0:
+                continue
+            con_zona = {v for v in distintos if _valor_tiene_zona(v)}
+            if not con_zona:
                 continue
 
             # Se convierten SOLO los valores que traen zona; el resto de la
             # columna no se toca. Es deliberado: un valor sin zona ya está en
             # hora local, y reinterpretarlo arriesgaría además invertir día y
-            # mes (la lógica de formatos ambiguos vive en core/dates.py, con
-            # sus propias reglas). Aquí el objetivo es uno solo: que ningún
-            # valor conserve zona horaria.
-            aware = pd.to_datetime(texto[con_zona], errors="coerce", utc=True, format="mixed")
-            local = aware.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None)
-            # Se reescribe en texto ISO, sin desfase. Así la columna sigue
-            # siendo lo que era y el detector de fechas de siempre la
-            # interpreta con sus reglas, sin ambigüedad de día/mes.
-            reescrito = local.dt.strftime("%Y-%m-%d %H:%M:%S")
-            validos = reescrito.notna()
-            if not bool(validos.any()):
+            # mes (esa lógica vive en core/dates.py, con sus propias reglas).
+            equivalencias = {}
+            for v in con_zona:
+                try:
+                    ts = pd.Timestamp(v).tz_convert(COLOMBIA_TZ).tz_localize(None)
+                    # Se reescribe en texto ISO, sin desfase: la columna sigue
+                    # siendo lo que era y el detector de fechas de siempre la
+                    # interpreta con sus reglas, sin ambigüedad de día/mes.
+                    equivalencias[v] = ts.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    continue
+            if not equivalencias:
                 continue
-            nueva = serie.astype(object).copy()
-            nueva.loc[reescrito.index[validos]] = reescrito[validos]
-            df[col] = nueva
+            df[col] = serie.replace(equivalencias)
             convertidas.append(str(col))
         except Exception:
             # Nunca tumbar la carga por esto: si una columna rara no se deja
@@ -100,14 +127,29 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
             serie = df[col]
             if not (serie.dtype == object or pd.api.types.is_string_dtype(serie)):
                 continue
-            texto = serie.astype(str)
-            pendientes = texto.str.contains(_TZ_VALUE_RE, na=False)
-            if not bool(pendientes.any()):
+            distintos = pd.unique(serie.dropna())
+            # Aquí se usan LOS DOS criterios, unidos a propósito:
+            #  - lo que pandas reconoce como zona (cubre "-05", "UTC", "GMT-5")
+            #  - lo que SOLO lo parece por su forma (cubre valores que pandas
+            #    ni siquiera puede leer, como "15/13/2026 10:00:00+00:00", con
+            #    un mes 13 imposible pero un desfase pegado igual).
+            # El primer criterio solo no basta: esta es la última barrera y
+            # debe dejar la columna sin rastro de zona, se pueda interpretar
+            # el valor o no.
+            pendientes = [v for v in distintos
+                          if _valor_tiene_zona(v) or _TZ_VALUE_RE.search(str(v))]
+            if not pendientes:
                 continue
-            limpio = texto[pendientes].str.replace(r"\s*(?:Z|[+-]\d{2}:?\d{2})\s*$", "", regex=True)
-            nueva = serie.astype(object).copy()
-            nueva.loc[limpio.index] = limpio
-            df[col] = nueva
+            # Se le arranca el desfase al texto, sin intentar interpretarlo:
+            # llega aquí solo lo que la conversión ordenada no supo leer.
+            limpieza = {}
+            for v in pendientes:
+                limpio = re.sub(r"\s*(?:Z|[+-]\d{2}:?\d{2}|[+-]\d{2}|\s[A-Z]{2,4}(?:[+-]\d{1,2})?)\s*$", "", str(v)).strip()
+                if limpio and limpio != str(v):
+                    limpieza[v] = limpio
+            if not limpieza:
+                continue
+            df[col] = serie.replace(limpieza)
             if str(col) not in convertidas:
                 convertidas.append(str(col))
         except Exception:

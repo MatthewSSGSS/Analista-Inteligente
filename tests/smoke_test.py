@@ -229,6 +229,30 @@ def main():
     normalize_timezones(_rotas)
     check("hasta las fechas ilegibles quedan sin zona horaria", _sin_zona(_rotas["F"]))
 
+    # Formatos que la versión basada en expresiones regulares NO reconocía y
+    # que dejaban pasar la zona horaria intacta: desfase de dos dígitos y
+    # zonas con nombre. La detección ya no adivina con un patrón, le pregunta
+    # a pandas (core/cleaner.py::_valor_tiene_zona), que es quien lanza el
+    # error y por tanto quien sabe qué considera una zona horaria.
+    def _pandas_ve_zona(serie):
+        for _v in pd.unique(serie.dropna()):
+            try:
+                if pd.Timestamp(_v).tzinfo is not None:
+                    return True
+            except Exception:
+                pass
+        return False
+
+    for _etiqueta, _valores in {
+        "desfase de dos dígitos (-05)": ["2026-01-15 10:00:00-05", "2026-06-20 14:30:00+00:00"],
+        "zona con nombre (UTC)": ["2026-01-15 10:00:00 UTC", "2026-06-20 14:30:00-05:00"],
+        "zona con nombre (GMT)": ["2026-01-15 10:00:00 GMT", "2026-06-20 14:30:00"],
+        "GMT con desplazamiento": ["2026-01-15 10:00 GMT-5", "2026-06-20 14:30:00Z"],
+    }.items():
+        _d = pd.DataFrame({"F": _valores})
+        normalize_timezones(_d)
+        check(f"se normaliza: {_etiqueta}", not _pandas_ve_zona(_d["F"]))
+
     plans = pd.DataFrame({
         "Categoría": ["Hogar", "Hogar"],
         "Segmento": ["Residencial", "Residencial"],
