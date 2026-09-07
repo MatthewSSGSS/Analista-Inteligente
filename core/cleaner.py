@@ -42,27 +42,75 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
                 convertidas.append(str(col))
                 continue
 
-            # Caso 2: texto (u objetos de fecha sueltos) con el desfase
-            # pegado al valor — que es como Excel puede guardarlo, porque el
-            # formato de Excel NO admite zona horaria en una celda de fecha.
-            if serie.dtype == object or pd.api.types.is_string_dtype(serie):
-                muestra = serie.dropna().head(200).astype(str)
-                if muestra.empty or float(muestra.str.contains(_TZ_VALUE_RE).mean()) < 0.8:
-                    continue
-                # format="mixed" es imprescindible: sin él pandas deduce UN
-                # formato a partir del primer valor y descarta (NaT) los que
-                # no encajen. Basta con que el archivo combine
-                # "2026-05-05 14:00:00+00:00" y "2026-05-05T14:00:00Z"
-                # —espacio contra T, offset contra Z— para que se pierdan
-                # filas y la columna entera se descarte por bajo el umbral.
-                convertida = pd.to_datetime(serie, errors="coerce", utc=True, format="mixed")
-                if float(convertida.notna().mean()) < 0.9:
-                    continue  # no era una columna de fechas: se deja intacta
-                df[col] = convertida.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None)
-                convertidas.append(str(col))
+            if not (serie.dtype == object or pd.api.types.is_string_dtype(serie)):
+                continue
+
+            # Caso 2: el desfase viene pegado al valor, que es como Excel lo
+            # guarda (su formato NO admite zona horaria en una celda de
+            # fecha, así que llega como texto).
+            #
+            # Se revisa la columna ENTERA, valor por valor, y basta UNO con
+            # zona para actuar. Las dos versiones anteriores fallaron por
+            # confiar en atajos: miraban solo las primeras 200 filas y exigían
+            # que el 80% trajera zona. Un archivo donde solo algunas filas la
+            # traen —o donde la primera aparece más abajo de la fila 200— se
+            # saltaba entero, y el error volvía a aparecer.
+            texto = serie.astype(str)
+            con_zona = texto.str.contains(_TZ_VALUE_RE, na=False)
+            if not bool(con_zona.any()):
+                continue
+
+            # Se convierten SOLO los valores que traen zona; el resto de la
+            # columna no se toca. Es deliberado: un valor sin zona ya está en
+            # hora local, y reinterpretarlo arriesgaría además invertir día y
+            # mes (la lógica de formatos ambiguos vive en core/dates.py, con
+            # sus propias reglas). Aquí el objetivo es uno solo: que ningún
+            # valor conserve zona horaria.
+            aware = pd.to_datetime(texto[con_zona], errors="coerce", utc=True, format="mixed")
+            local = aware.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None)
+            # Se reescribe en texto ISO, sin desfase. Así la columna sigue
+            # siendo lo que era y el detector de fechas de siempre la
+            # interpreta con sus reglas, sin ambigüedad de día/mes.
+            reescrito = local.dt.strftime("%Y-%m-%d %H:%M:%S")
+            validos = reescrito.notna()
+            if not bool(validos.any()):
+                continue
+            nueva = serie.astype(object).copy()
+            nueva.loc[reescrito.index[validos]] = reescrito[validos]
+            df[col] = nueva
+            convertidas.append(str(col))
         except Exception:
             # Nunca tumbar la carga por esto: si una columna rara no se deja
             # normalizar, se queda como está y el resto del archivo carga.
+            continue
+
+    # ===== Red de seguridad =====
+    # Segunda pasada: si después de todo lo anterior QUEDA algún valor con
+    # zona horaria, se le arranca el desfase por texto plano. Es un recurso
+    # bruto —no convierte a hora de Colombia, solo deja el valor tal como
+    # está escrito, sin zona— y por eso va al final: solo actúa sobre lo que
+    # la conversión ordenada no supo interpretar.
+    #
+    # Existe porque este error tumbó la carga tres veces seguidas, cada vez
+    # por un camino distinto que no se había previsto. Perder la precisión
+    # de la zona en un puñado de valores raros es mucho mejor que dejar al
+    # usuario sin poder abrir su archivo.
+    for col in df.columns:
+        try:
+            serie = df[col]
+            if not (serie.dtype == object or pd.api.types.is_string_dtype(serie)):
+                continue
+            texto = serie.astype(str)
+            pendientes = texto.str.contains(_TZ_VALUE_RE, na=False)
+            if not bool(pendientes.any()):
+                continue
+            limpio = texto[pendientes].str.replace(r"\s*(?:Z|[+-]\d{2}:?\d{2})\s*$", "", regex=True)
+            nueva = serie.astype(object).copy()
+            nueva.loc[limpio.index] = limpio
+            df[col] = nueva
+            if str(col) not in convertidas:
+                convertidas.append(str(col))
+        except Exception:
             continue
     return convertidas
 

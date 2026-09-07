@@ -212,6 +212,23 @@ def main():
     check("columnas sin zona horaria quedan intactas",
           normalize_timezones(_intacto) == [] and all(list(_intacto[c]) == _antes[c] for c in _intacto.columns))
 
+    # Los casos que hicieron fallar los intentos anteriores: la zona horaria
+    # aparece en POCAS filas, o más abajo de las primeras que se miraban.
+    # Se revisa la columna entera y basta un valor con zona para actuar.
+    def _sin_zona(serie):
+        return int(serie.astype(str).str.contains(r"(?:Z|[+-]\d{2}:?\d{2})\s*$", regex=True).sum()) == 0
+
+    _rara = pd.DataFrame({"F": ["2026-01-15 10:00:00"] * 300 + ["2026-06-20 08:00:00+00:00"]})
+    check("una sola fila con zona, en la posición 301, también se normaliza",
+          normalize_timezones(_rara) == ["F"] and _sin_zona(_rara["F"]))
+
+    # Red de seguridad: valores que NO se pueden interpretar como fecha
+    # igual deben quedar sin zona, para que nada aguas abajo tropiece.
+    _rotas = pd.DataFrame({"F": ["15/13/2026 10:00:00+00:00", "xxx 10:00:00+02:00",
+                                 "2026-06-20 23:30:00-05:00", "sin dato"]})
+    normalize_timezones(_rotas)
+    check("hasta las fechas ilegibles quedan sin zona horaria", _sin_zona(_rotas["F"]))
+
     plans = pd.DataFrame({
         "Categoría": ["Hogar", "Hogar"],
         "Segmento": ["Residencial", "Residencial"],
