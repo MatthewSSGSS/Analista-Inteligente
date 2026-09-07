@@ -7,6 +7,7 @@ from ui.layouts.tabs import grouped_nav
 from ui.components.section import section_header
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
+from core.version import etiqueta_version
 
 
 @st.cache_data(show_spinner=False, max_entries=12, ttl=1800)
@@ -350,6 +351,13 @@ with st.sidebar:
         st.caption(f"{wb['filename']} · {wb['size_mb']:.2f} MB")
         st.caption(f"{len(df):,} registros · {len(df.columns)} columnas")
 
+
+    # Versión desplegada. Va al final del menú, discreta, pero siempre
+    # visible: cuando un cambio "no aparece", esto responde en un vistazo si
+    # la app está corriendo el código nuevo o uno anterior — que fue
+    # justamente lo que costó varias idas y vueltas averiguar.
+    st.markdown('<p class="sidebar-group-header">VERSIÓN</p>', unsafe_allow_html=True)
+    st.caption(f"Código en ejecución: {etiqueta_version()}")
 
     with st.expander("🧰 Herramientas avanzadas", expanded=False):
         st.markdown('<p class="sidebar-section-label" style="margin-top:0;">⚖️ Comparar periodos o archivos</p>', unsafe_allow_html=True)
