@@ -35,6 +35,7 @@ from ui.comparison import render_comparison
 from ui.person_profile import render_person_profile
 from ui.person_compare import render_person_compare
 from ui.executive import render_executive
+from ui.forecast import render_forecast
 from ui.home import render_home
 from ui.landing import render_landing
 from ui.login import render_login
@@ -570,6 +571,7 @@ else:
     # Executive mode is deliberately compact; Analyst mode exposes every tool.
     if st.session_state.get("view_mode", "Ejecutivo") == "Ejecutivo":
         analysis_views = [("Resumen ejecutivo", lambda: render_executive(df, schema, dashboard))]
+        analysis_views.append(("🔮 Predicciones", lambda: render_forecast(df, schema, dashboard)))
         if geo_enabled:
             analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
         if st.session_state.comparison_result:
@@ -600,6 +602,7 @@ else:
             analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
         analysis_views += [
             ("Analítica", lambda: render_explorer(df,schema)),
+            ("🔮 Predicciones", lambda: render_forecast(df, schema, dashboard)),
             ("Finanzas", _render_finanzas),
             ("Trabajo", _render_trabajo),
             ("Anomalías", lambda: render_anomalies(df, schema)),

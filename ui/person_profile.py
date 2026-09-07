@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.numeric import numeric_series
+from core.cross_sheet import encontrar_hojas_relacionadas, datos_de_entidad, resumir_filas
 from core.entity_engine import analyze_entity_candidates, describe_entity
 from core.universal_analysis import semantic_map, ADDITIVE, period_series
 from visualization.charts import metric_candidates, dimension_candidates, _label, chart_text_color
@@ -96,6 +97,66 @@ def has_entity(df, schema) -> bool:
         return resolve_entity(df, schema) is not None
     except Exception:
         return False
+
+
+def _relaciones_entre_hojas(columna_clave: str):
+    """Hojas del libro que hablan de la misma entidad, calculadas UNA vez
+    por hoja+columna y guardadas en la sesión.
+
+    Se cachea por el mismo motivo que las candidatas a entidad: comparar los
+    valores de todas las columnas de todas las hojas es caro, y Streamlit
+    reejecuta el script entero ante cualquier clic o cambio de filtro."""
+    workbook = st.session_state.get("workbook")
+    hoja = st.session_state.get("active_sheet")
+    if not workbook or not hoja:
+        return []
+    clave = (hoja, columna_clave, tuple(sorted((workbook.get("sheets") or {}).keys())))
+    cache = st.session_state.setdefault("_cross_sheet_cache", {})
+    if clave not in cache:
+        try:
+            cache[clave] = encontrar_hojas_relacionadas(workbook, hoja, columna_clave)
+        except Exception:
+            cache[clave] = []
+    return cache[clave]
+
+
+def _render_otras_hojas(columna_clave: str, valor, noun: str) -> None:
+    """Qué dicen las OTRAS hojas del libro sobre este mismo código.
+
+    Es la pregunta que quedaba sin responder: el perfil mostraba todo lo que
+    sabía la hoja actual, pero si el mismo código aparecía en otra hoja
+    —el maestro de locales, el de responsables, un histórico— esa
+    información no se veía por ningún lado, aunque estuviera en el mismo
+    archivo. El emparejamiento es por valores (ver core/cross_sheet.py), así
+    que funciona aunque cada hoja llame distinto a su columna de código.
+    """
+    relaciones = _relaciones_entre_hojas(columna_clave)
+    if not relaciones:
+        return
+    workbook = st.session_state.get("workbook")
+    st.markdown(
+        section_header(
+            f"En otras hojas del archivo",
+            eyebrow="INFORMACIÓN RELACIONADA",
+            subtitle=f"Lo que el resto del libro sabe sobre este {noun}, cruzado por su valor.",
+            compact=True,
+        ),
+        unsafe_allow_html=True,
+    )
+    for rel in relaciones:
+        filas = datos_de_entidad(workbook, rel, valor)
+        cabecera = (f"**{rel['hoja']}** · vinculada por `{rel['columna']}` "
+                    f"({rel['coincidencia'] * 100:.0f}% de coincidencia)")
+        if filas.empty:
+            st.markdown(f"{cabecera} — sin registros para este {noun}.")
+            continue
+        st.markdown(f"{cabecera} · {len(filas):,} registro(s)")
+        ficha = resumir_filas(filas, rel["columna"])
+        if ficha:
+            st.dataframe(pd.DataFrame(ficha), use_container_width=True, hide_index=True)
+        if len(filas) > 1:
+            with st.expander(f"Ver los {len(filas):,} registros de {rel['hoja']}", expanded=False):
+                st.dataframe(filas.head(300), use_container_width=True, hide_index=True)
 
 
 def _card(label, value, delta=None):
@@ -316,6 +377,8 @@ def render_person_profile(df, schema, dashboard=None):
         context_rows.append({"Campo": _label(schema, c), "Información encontrada": value})
     if context_rows:
         st.dataframe(pd.DataFrame(context_rows), use_container_width=True, hide_index=True)
+
+    _render_otras_hojas(person_col, selected, noun)
 
     with st.expander("Ver registros originales relacionados", expanded=False):
         visible = [c for c in rows.columns if not str(c).startswith("__") and not str(c).startswith("_geo_")]

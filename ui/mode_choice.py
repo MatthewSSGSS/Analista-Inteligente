@@ -99,7 +99,10 @@ def render_mode_choice() -> str | None:
             """,
             unsafe_allow_html=True,
         )
-        if st.button("🧭 Ir a Análisis Avanzado", use_container_width=True, key="choose_avanzado"):
+        # Mismo `type="primary"` que el botón de al lado: son dos caminos
+        # equivalentes, no uno principal y uno secundario. Verlos con peso
+        # visual distinto sugería que el de la derecha era la opción menor.
+        if st.button("🧭 Ir a Análisis Avanzado", type="primary", use_container_width=True, key="choose_avanzado"):
             choice = "avanzado"
 
     return choice
