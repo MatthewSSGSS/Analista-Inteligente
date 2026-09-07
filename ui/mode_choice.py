@@ -44,6 +44,22 @@ def render_mode_choice() -> str | None:
         .mode-card ul{margin:10px 0 0;padding-left:18px;font-size:12px;color:var(--muted)}
         .mode-card li{margin-bottom:3px}
         @media(max-width:760px){.mode-cards{grid-template-columns:1fr}.mode-card-cover{height:104px}}
+        /* Los dos botones, del mismo color. Son dos caminos equivalentes:
+           uno rojo y otro blanco hacía leer el de la derecha como la opción
+           menor, cuando es la más completa.
+           Se fuerza aquí además de pasar type="primary" a los dos: esta
+           pantalla es lo primero que se ve y no debe depender de que el tema
+           global gane la pelea de estilos. La regla es segura porque en este
+           punto de app.py todavía no se dibujó nada más —ni el sidebar—, así
+           que los únicos botones en pantalla son estos dos. */
+        .stButton>button{
+          background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;
+          border:1px solid #c8001f!important;color:#fff!important;font-weight:750!important;
+          box-shadow:0 4px 12px rgba(228,0,43,.25)!important}
+        .stButton>button:hover{
+          background:linear-gradient(180deg,#ff5464,#e4002b)!important;
+          transform:translateY(-1px);box-shadow:0 6px 16px rgba(228,0,43,.3)!important}
+        .stButton>button p{color:#fff!important;font-weight:750!important}
         </style>
         <div class="mode-hero">
           <h1>¿Cómo quieres analizar tu Excel hoy?</h1>
