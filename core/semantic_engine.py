@@ -5,6 +5,7 @@ layer using column names, dtypes, value patterns, cardinality and ranges.
 """
 from __future__ import annotations
 from .numeric import numeric_series
+from .dates import TZ_SUFFIX_RE
 
 import re
 import unicodedata
@@ -159,6 +160,20 @@ def _date_rate(s: pd.Series) -> float:
             return 0.0
         if not bool(((finite >= 20000) & (finite <= 60000)).mean() > 0.9):
             return 0.0
+    # Se recorta el sufijo de zona horaria antes de convertir, igual que en
+    # core/dates.py::detect_date. Sin esto, una columna con desfases
+    # distintos entre filas ("+00:00" en unas, "-05:00" en otras) hace que
+    # pandas se niegue a construirla ("Mixed timezones detected") y tumbe la
+    # carga del archivo COMPLETO.
+    #
+    # Y este es el punto que de verdad importa: la clasificación semántica
+    # (esta función) corre ANTES que la conversión de core/dates.py, dentro
+    # de detect_schema(). Arreglarlo solo allá no servía de nada — el
+    # archivo ya había reventado aquí. Aquí solo se estima una proporción
+    # ("¿qué % parece fecha?"), así que quitar la zona no altera ningún dato:
+    # la conversión real, con sus reglas, sigue viviendo en core/dates.py.
+    if not pd.api.types.is_numeric_dtype(x):
+        x = x.astype(str).str.strip().str.replace(TZ_SUFFIX_RE, "", regex=True)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         parsed = pd.to_datetime(x, errors="coerce", dayfirst=True)

@@ -165,6 +165,31 @@ def main():
     check("las fechas quedan sin hora", (dt_mix.dt.normalize() == dt_mix).all())
     check("un registro nocturno no se corre al día siguiente", str(dt_mix.iloc[1].date()) == "2026-06-20")
 
+    # El arreglo anterior (solo en core/dates.py) NO alcanzaba: la
+    # clasificación semántica corre ANTES que la conversión, dentro de
+    # detect_schema(), y reventaba primero en semantic_engine._date_rate.
+    # Esta prueba recorre el flujo COMPLETO de carga y, además, convierte
+    # el aviso de pandas en error para reproducir el pandas de producción
+    # (en el entorno de desarrollo esa misma situación solo advierte, que
+    # es justo por lo que el fallo se escapó a producción la primera vez).
+    import io as _io
+    import warnings as _warnings
+    from core.loader import load_workbook as _load_workbook
+    _csv = (
+        "Ref,Fecha,Venta\n"
+        "D01,2026-01-15 10:00:00+00:00,100\n"
+        "D02,2026-06-20 23:30:00-05:00,340\n"
+        "D03,2026-03-10 08:15:00Z,120\n"
+        "D04,2026-04-02 14:45:00,210\n"
+    ).encode("utf-8")
+    _upload = type("Upload", (), {"getvalue": lambda self: _csv, "name": "zonas.csv"})()
+    with _warnings.catch_warnings():
+        _warnings.filterwarnings("error", message=".*mixed time zones.*")
+        _warnings.filterwarnings("error", message=".*Mixed timezones.*")
+        _tz_item = _load_workbook(_upload)["sheets"]["CSV"]
+    check("carga completa con zonas mezcladas no rompe (simulando pandas de producción)",
+          list(_tz_item["processed"]["Fecha"].astype(str)) == ["2026-01-15", "2026-06-20", "2026-03-10", "2026-04-02"])
+
     plans = pd.DataFrame({
         "Categoría": ["Hogar", "Hogar"],
         "Segmento": ["Residencial", "Residencial"],

@@ -148,7 +148,8 @@ def yyyymm_series(s):
 
 # Sufijo de zona horaria al final de una fecha escrita como texto:
 # "+00:00", "-05:00", "-0500" o la "Z" de UTC.
-_TZ_SUFFIX_RE = re.compile(r"\s*(?:Z|[+-]\d{2}:?\d{2})$", re.I)
+TZ_SUFFIX_RE = re.compile(r"\s*(?:Z|[+-]\d{2}:?\d{2})$", re.I)
+_TZ_SUFFIX_RE = TZ_SUFFIX_RE  # alias interno histórico
 
 
 def date_only(series):
