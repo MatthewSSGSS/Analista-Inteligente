@@ -108,6 +108,42 @@ def test_usa_estacionalidad_con_dos_anios():
           r["metodo"] in {"estacional", "suavizado"})
 
 
+# ── La prueba más importante: que la confianza NO mienta ──
+def test_la_confianza_no_miente():
+    """Se le piden meses que YA sabemos qué pasó, y se comprueba que la
+    realidad caiga dentro del rango que prometió.
+
+    Nace de un fallo real: con una serie de fuerte estacionalidad y sin dos
+    años de historia, declaraba *confianza alta* con 6% de error y luego se
+    desviaba un 42%, fuera del rango las tres veces. Dos causas: medía su
+    error a UN periodo aunque mostrara pronósticos a tres, y probaba en tan
+    pocos puntos de corte que nunca se enfrentaba al pico de fin de año.
+    """
+    escenarios = {
+        "tendencia estable": [100, 108, 115, 124, 131, 140, 148, 157, 165, 174, 182, 190, 199, 207, 216],
+        "estacional sin dos años": ([100, 95, 110, 120, 130, 125, 140, 135, 150, 160, 200, 260] * 2)[:27],
+        "errático": [412, 1890, 230, 3100, 780, 2450, 190, 3980, 1120, 640, 2870, 350, 1560, 920, 2210],
+    }
+    for nombre, valores in escenarios.items():
+        conocidos, ocultos = valores[:-3], valores[-3:]
+        df, sc = _datos(conocidos)
+        r = pronosticar(df, sc, "Ingresos", horizonte=3)
+        dentro = sum(1 for i, real in enumerate(ocultos)
+                     if r["prediccion"]["minimo"].iloc[i] <= real <= r["prediccion"]["maximo"].iloc[i])
+        print(f"      {nombre:<26} confianza={r['confianza']:<6} aciertos en rango={dentro}/3")
+        check(f"el rango contiene la realidad: {nombre}", dentro == 3)
+        # Y si acertó poco, jamás debe haberse declarado confiable.
+        if dentro < 3:
+            check(f"no se declara confiable si falla: {nombre}", r["confianza"] != "alta")
+
+    # Caso puntual del fallo original: con saltos y menos de dos años, nunca
+    # puede declararse confianza alta — no ha visto un diciembre repetido.
+    df, sc = _datos(([100, 95, 110, 120, 130, 125, 140, 135, 150, 160, 200, 260] * 2)[:21])
+    r = pronosticar(df, sc, "Ingresos", horizonte=3)
+    check("sin dos años de historia y con saltos, no declara confianza alta", r["confianza"] != "alta")
+    check("y avisa de la posible estacionalidad", "temporada" in explicar(r).lower())
+
+
 if __name__ == "__main__":
     test_se_niega_con_poca_historia()
     test_se_niega_si_no_varia()
@@ -116,4 +152,5 @@ if __name__ == "__main__":
     test_incertidumbre_crece()
     test_no_proyecta_negativos()
     test_usa_estacionalidad_con_dos_anios()
+    test_la_confianza_no_miente()
     print("\nForecast test completado sin errores.")

@@ -102,46 +102,100 @@ def _ajustar_suavizado(valores: np.ndarray, pasos: int, estacional: bool) -> np.
         return np.asarray(modelo.forecast(pasos), dtype="float64")
 
 
-def _predecir(valores: np.ndarray, pasos: int) -> tuple[np.ndarray, str]:
-    """Aplica el mejor método que la cantidad de datos permita, con
-    respaldo a la recta si el modelo no converge."""
-    n = len(valores)
-    if n >= MINIMO_ESTACIONAL:
-        try:
-            return _ajustar_suavizado(valores, pasos, estacional=True), "estacional"
-        except Exception:
-            pass
+def _metodos_disponibles(n: int) -> list[tuple[str, object]]:
+    """Métodos que la cantidad de datos permite intentar. La recta siempre
+    entra: es el respaldo cuando ninguna otra converge."""
+    metodos = [("tendencia", lambda v, h: _ajustar_lineal(v, h))]
     if n >= MINIMO_SUAVIZADO:
-        try:
-            return _ajustar_suavizado(valores, pasos, estacional=False), "suavizado"
-        except Exception:
-            pass
-    return _ajustar_lineal(valores, pasos), "tendencia"
+        metodos.append(("suavizado", lambda v, h: _ajustar_suavizado(v, h, estacional=False)))
+    if n >= MINIMO_ESTACIONAL:
+        metodos.append(("estacional", lambda v, h: _ajustar_suavizado(v, h, estacional=True)))
+    return metodos
 
 
-def _autoevaluar(valores: np.ndarray) -> float | None:
-    """Error típico del método sobre ESTA serie, medido de verdad.
+def _error_al_plazo(valores: np.ndarray, horizonte: int, ajustar) -> float | None:
+    """Cuánto se equivoca este método al predecir `horizonte` periodos.
 
-    Se ocultan los últimos periodos, se predicen como si no se conocieran y
-    se compara con lo que realmente pasó. Es la única forma honesta de
-    decirle a alguien cuánto puede confiar: no "el modelo asume errores
-    normales", sino "con tus datos, se equivocó un 12% en promedio".
+    Dos cosas que la versión anterior hacía mal y aquí se corrigen:
+
+    1. Medía siempre a UN periodo, aunque el pronóstico mostrado fuera a
+       tres. Predecir el mes que viene es mucho más fácil que predecir el
+       trimestre: el error reportado salía optimista y la confianza mentía.
+       Ahora se mide exactamente al plazo que se va a mostrar.
+
+    2. Probaba en un solo punto de corte. Ahora prueba en varios (origen
+       móvil), para que un acierto de casualidad no se confunda con un
+       método que de verdad funciona.
     """
     n = len(valores)
-    reservados = min(3, max(1, n // 4))
-    if n - reservados < MINIMO_PERIODOS - 1:
-        return None
     errores = []
-    for i in range(reservados, 0, -1):
-        entrenamiento = valores[: n - i]
-        real = valores[n - i]
+    # Se prueba en tantos puntos de corte como la serie permita (hasta 6, no
+    # 3): con pocos cortes es fácil que todos caigan en un tramo tranquilo y
+    # el método nunca se enfrente a la parte difícil. Fue justo lo que pasó
+    # con una serie de fuerte estacionalidad: declaró 6% de error porque los
+    # cortes evitaron el pico de fin de año, y luego falló un 42%.
+    for atras in range(6):
+        fin = n - horizonte - atras
+        if fin < MINIMO_PERIODOS:
+            break
+        entrenamiento, reales = valores[:fin], valores[fin:fin + horizonte]
         try:
-            estimado = float(_predecir(entrenamiento, 1)[0][0])
+            estimados = ajustar(entrenamiento, horizonte)
         except Exception:
             continue
-        if real != 0:
-            errores.append(abs(estimado - real) / abs(real))
+        for est, real in zip(estimados, reales):
+            if real != 0:
+                errores.append(abs(float(est) - float(real)) / abs(float(real)))
     return float(np.mean(errores)) if errores else None
+
+
+def _error_peor_caso(valores: np.ndarray, horizonte: int, ajustar) -> float | None:
+    """El PEOR error observado en las pruebas, no el promedio.
+
+    El rango se dimensiona con esto y no con la media: la función del rango
+    es contener lo que pueda pasar, y un promedio lo deja corto justo en los
+    casos que importan. El promedio se sigue reportando como "error típico",
+    porque es lo que responde "¿cuánto suele fallar?".
+    """
+    n = len(valores)
+    peores = []
+    for atras in range(6):
+        fin = n - horizonte - atras
+        if fin < MINIMO_PERIODOS:
+            break
+        entrenamiento, reales = valores[:fin], valores[fin:fin + horizonte]
+        try:
+            estimados = ajustar(entrenamiento, horizonte)
+        except Exception:
+            continue
+        for est, real in zip(estimados, reales):
+            if real != 0:
+                peores.append(abs(float(est) - float(real)) / abs(float(real)))
+    return float(np.max(peores)) if peores else None
+
+
+def _elegir_metodo(valores: np.ndarray, horizonte: int) -> tuple[str, object, float | None]:
+    """Elige el método PROBÁNDOLOS, no por cuántos datos hay.
+
+    Antes se asumía que más historia = mejor método, y con 24 periodos se
+    usaba el modelo estacional aunque en esa serie concreta fallara. Se
+    detectó comparando contra meses reales ocultos: declaraba 6% de error y
+    se equivocaba 42%. Ahora cada método se mide sobre la propia serie y
+    gana el que menos se equivoca — si el estacional no aporta, no se usa.
+    """
+    mejor = (None, None, None)
+    for nombre, ajustar in _metodos_disponibles(len(valores)):
+        error = _error_al_plazo(valores, horizonte, ajustar)
+        if error is None:
+            continue
+        if mejor[2] is None or error < mejor[2]:
+            mejor = (nombre, ajustar, error)
+    if mejor[0] is not None:
+        return mejor
+    # Sin historia suficiente para medir: se usa el método más simple y se
+    # devuelve None como error, que la interfaz traduce en "no se pudo
+    # comprobar qué tan acertado es".
+    return "tendencia", (lambda v, h: _ajustar_lineal(v, h)), None
 
 
 def pronosticar(df: pd.DataFrame, schema: dict, metric: str, horizonte: int = 3,
@@ -157,18 +211,35 @@ def pronosticar(df: pd.DataFrame, schema: dict, metric: str, horizonte: int = 3,
         return {**diag, "metric": metric, "historico": serie}
 
     valores = serie.to_numpy(dtype="float64")
-    estimados, metodo = _predecir(valores, horizonte)
-    error = _autoevaluar(valores)
+    metodo, ajustar, error = _elegir_metodo(valores, horizonte)
+    peor = _error_peor_caso(valores, horizonte, ajustar)
+    try:
+        estimados = np.asarray(ajustar(valores, horizonte), dtype="float64")
+    except Exception:
+        estimados, metodo = _ajustar_lineal(valores, horizonte), "tendencia"
 
-    # El rango sale del error medido en la autoevaluación. Si no se pudo
-    # medir (serie muy corta), se usa la dispersión del propio histórico,
-    # que es una cota prudente.
+    # ¿Puede haber estacionalidad que no se alcanza a ver? Con menos de dos
+    # años no hay forma de saberlo: un pico de diciembre no se puede
+    # aprender si solo se ha visto una vez, o ninguna. Se detecta si la
+    # serie ya viene dando saltos grandes y, en ese caso, ni se declara
+    # confianza alta ni se muestra un rango estrecho — porque el modelo
+    # está proyectando una curva suave sobre un negocio que no lo es.
+    variacion = float(np.std(np.diff(valores)) / abs(np.mean(valores))) if len(valores) > 1 and np.mean(valores) else 0.0
+    estacionalidad_no_verificable = bool(len(valores) < MINIMO_ESTACIONAL and variacion > 0.10)
+
+    # El rango se dimensiona con el PEOR error observado, no con el
+    # promedio: su trabajo es contener lo que pueda pasar. Si no se pudo
+    # medir (serie muy corta), se usa la dispersión del propio histórico.
+    error_medido = error
     if error is None:
         margen_rel = float(np.std(valores) / abs(np.mean(valores))) if np.mean(valores) else 0.25
-        error_medido = None
     else:
-        margen_rel = max(error, 0.05)
-        error_medido = error
+        margen_rel = max(peor if peor is not None else error, 0.05)
+    # Si la serie da saltos y no hay dos años para descartar estacionalidad,
+    # el rango se ensancha: el modelo está dibujando una curva suave sobre
+    # algo que no lo es, y estrecharlo sería fingir una precisión que no hay.
+    if estacionalidad_no_verificable:
+        margen_rel = max(margen_rel, variacion * 2.0)
 
     # El margen se abre a futuro: predecir el mes que viene es más seguro
     # que predecir dentro de tres.
@@ -215,9 +286,18 @@ def pronosticar(df: pd.DataFrame, schema: dict, metric: str, horizonte: int = 3,
         "maximo": maximos,
     })
 
+    # La confianza se juzga por el PEOR error observado, no por el promedio:
+    # un método que suele acertar pero falla feo cuando importa no merece
+    # llamarse "confianza alta".
+    referencia = peor if peor is not None else error_medido
     confianza = "baja"
-    if error_medido is not None:
-        confianza = "alta" if error_medido <= 0.10 else "media" if error_medido <= ERROR_ALTO else "baja"
+    if referencia is not None:
+        confianza = "alta" if referencia <= 0.10 else "media" if referencia <= ERROR_ALTO else "baja"
+    # Y nunca se declara confianza alta si no se pudo descartar que el
+    # negocio tenga estacionalidad: sin dos años de historia, el modelo no
+    # ha visto siquiera un diciembre repetido.
+    if estacionalidad_no_verificable and confianza == "alta":
+        confianza = "media"
 
     # De dónde salió el número: qué columna de fecha se usó, qué se sumó y
     # entre qué periodos. Sin esto, quien presenta el pronóstico no puede
@@ -233,6 +313,8 @@ def pronosticar(df: pd.DataFrame, schema: dict, metric: str, horizonte: int = 3,
         "prediccion": prediccion,
         "metodo": metodo,
         "error_tipico": error_medido,
+        "error_peor_caso": peor,
+        "estacionalidad_no_verificable": estacionalidad_no_verificable,
         "confianza": confianza,
         "grain": grain,
         "columna_fecha": columnas_fecha[0] if columnas_fecha else None,
@@ -261,7 +343,14 @@ def explicar(resultado: dict) -> str:
                       "el rango se basa en la variación del propio indicador, tómalo como una referencia amplia.")
     else:
         partes.append(f"Puesto a prueba sobre tus propios datos, se equivocó en promedio un {error * 100:.0f}%.")
+        peor = resultado.get("error_peor_caso")
+        if peor is not None and peor > error * 1.5:
+            partes.append(f"En su peor prueba se desvió un {peor * 100:.0f}%, y el rango se dimensionó con ese peor caso.")
         if error > ERROR_ALTO:
             partes.append("Es un margen alto: el indicador varía demasiado entre periodos, "
                           "así que conviene leer el rango y no el valor central.")
+    if resultado.get("estacionalidad_no_verificable"):
+        partes.append("Ojo: hay menos de dos años de historia y el indicador da saltos entre periodos, "
+                      "así que no se puede descartar un efecto de temporada (un diciembre fuerte, "
+                      "una temporada baja). El rango se amplió por eso.")
     return " ".join(partes)
