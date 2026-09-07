@@ -146,9 +146,42 @@ def yyyymm_series(s):
     return result
 
 
+# Sufijo de zona horaria al final de una fecha escrita como texto:
+# "+00:00", "-05:00", "-0500" o la "Z" de UTC.
+_TZ_SUFFIX_RE = re.compile(r"\s*(?:Z|[+-]\d{2}:?\d{2})$", re.I)
+
+
+def date_only(series):
+    """Deja solo la FECHA: sin hora y sin zona horaria.
+
+    Decisión de negocio (pedida explícitamente): en estos informes la hora
+    no aporta y sí estorba. Quitarla además elimina de raíz el error
+    "Mixed timezones detected" que tumbaba la carga: ese error aparece
+    cuando una misma columna trae filas con desfases distintos
+    ("10:00+00:00" junto a "14:30-05:00") y pandas no sabe a qué zona
+    referirlas. Sin hora, no hay nada que reconciliar.
+
+    Se conserva la fecha TAL COMO ESTÁ ESCRITA en el archivo, sin convertir
+    a UTC. Es a propósito: convertir movería la hora y, en un registro de
+    la noche ("20/06 23:30 -05:00"), lo empujaría al día siguiente. Para
+    quien lee el informe, ese movimiento es un error — el hecho ocurrió el
+    20, y así debe reportarse.
+    """
+    if series is None:
+        return series
+    out = pd.to_datetime(series, errors="coerce")
+    # Una columna con zona horaria única: se le quita la zona conservando la
+    # hora local (tz_localize(None) mantiene el reloj de pared, no el
+    # instante), y después se normaliza a medianoche.
+    tz = getattr(getattr(out, "dt", None), "tz", None)
+    if tz is not None:
+        out = out.dt.tz_localize(None)
+    return out.dt.normalize()
+
+
 def detect_date(s, name):
     if pd.api.types.is_datetime64_any_dtype(s):
-        converted = pd.to_datetime(s, errors="coerce")
+        converted = date_only(s)
         return converted, converted.notna().mean(), "datetime"
 
     x = s.dropna()
@@ -158,7 +191,7 @@ def detect_date(s, name):
     if is_month_name_series(x) and ("mes" in _norm(name) or "month" in _norm(name) or "period" in _norm(name)):
         # A month-only column is still a valid period. The schema layer can
         # replace the placeholder year with a real year column or file/sheet hint.
-        result = month_year_series(x, year_hint=2000)
+        result = date_only(month_year_series(x, year_hint=2000))
         return result.reindex(s.index), result.notna().mean(), "month_name"
 
     numeric = pd.to_numeric(x, errors="coerce")
@@ -172,7 +205,7 @@ def detect_date(s, name):
             ):
                 result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
                 result.loc[x.index] = unix
-                return result, unix.notna().mean(), "unix_timestamp"
+                return date_only(result), unix.notna().mean(), "unix_timestamp"
 
         excel = excel_serial(x)
         valid = excel.dropna()
@@ -181,7 +214,7 @@ def detect_date(s, name):
             if years.between(1990, 2100).mean() > 0.95 and DATE_NAME.search(str(name)):
                 result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
                 result.loc[x.index] = excel
-                return result, excel.notna().mean(), "excel_serial"
+                return date_only(result), excel.notna().mean(), "excel_serial"
 
         # "Periodo" AAAAMM (p. ej. 202608 = agosto 2026) — columna numérica,
         # sin separador, muy común en exportes de BI/ERP. Se exige que el
@@ -197,9 +230,16 @@ def detect_date(s, name):
             if years.between(1990, 2100).mean() > 0.95 and DATE_NAME.search(str(name)):
                 result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
                 result.loc[x.index] = yyyymm
-                return result, yyyymm.notna().mean(), "yyyymm_period"
+                return date_only(result), yyyymm.notna().mean(), "yyyymm_period"
 
     text = x.astype(str).str.strip()
+    # Se recorta el sufijo de zona horaria ANTES de convertir. Si se dejara,
+    # una columna con desfases distintos entre filas ("+00:00" en unas,
+    # "-05:00" en otras) hace que pandas se niegue a construir la columna y
+    # corte la carga del archivo entero ("Mixed timezones detected"). Al
+    # quitarlo, cada valor se lee con su hora local tal como está escrita —
+    # que es la que después date_only() reduce a solo la fecha.
+    text = text.str.replace(_TZ_SUFFIX_RE, "", regex=True)
     iso_ratio = text.str.match(ISO_DATE_RE).mean() if len(text) else 0
     # Si la mayoría de los valores ya vienen en formato ISO (típico tras
     # convertir una columna datetime a texto en el pipeline de limpieza),
@@ -232,6 +272,6 @@ def detect_date(s, name):
         if len(years) and years.between(1900, 2100).mean() >= 0.95:
             result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
             result.loc[x.index] = parsed
-            return result, rate, "text_date"
+            return date_only(result), rate, "text_date"
 
     return None, rate, None

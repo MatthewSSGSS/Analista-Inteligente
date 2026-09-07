@@ -256,6 +256,166 @@ def _narrative_summary(df: pd.DataFrame, schema: dict, dashboard: dict, primary,
     return ", ".join(parts) + "."
 
 
+def _executive_block(dashboard: dict) -> str:
+    """Lectura ejecutiva: el titular, su explicación y las dos listas que el
+    motor ya separa (señales a favor y puntos de atención).
+
+    Todo esto ya se calculaba en core/executive.py y se mostraba en la app,
+    pero el informe exportado —el que de verdad se presenta— lo ignoraba por
+    completo. Es la sección que más rinde en una presentación: dice en dos
+    líneas cómo va el negocio antes de que nadie mire un gráfico.
+    """
+    ex = dashboard.get("executive") or {}
+    if not ex or not ex.get("headline"):
+        return ""
+    status = ex.get("status", "neutral")
+    positive = [p for p in (ex.get("positive") or []) if p]
+    watch = [w for w in (ex.get("watch") or []) if w]
+    chips = ""
+    if ex.get("change") is not None:
+        pct = float(ex["change"])
+        arrow = "▲" if pct > 0 else "▼" if pct < 0 else "="
+        chips = f"<div class='exec-delta {status}'>{arrow} {abs(pct):.1f}%</div>"
+    lists = ""
+    if positive:
+        items = "".join(f"<li>{_esc(clean_display_text(p))}</li>" for p in positive[:5])
+        lists += f"<div class='signal positive'><h4>A favor</h4><ul>{items}</ul></div>"
+    if watch:
+        items = "".join(f"<li>{_esc(clean_display_text(w))}</li>" for w in watch[:5])
+        lists += f"<div class='signal watch'><h4>Requiere atención</h4><ul>{items}</ul></div>"
+    return (
+        f"<section class='section' id='lectura-ejecutiva'>"
+        f"<div class='sec-head'><span class='sec-num'>01</span><div><h2>Lectura ejecutiva</h2>"
+        f"<p>La conclusión primero: cómo cerró el indicador principal y qué lo explica.</p></div></div>"
+        f"<div class='exec-card {status}'>"
+        f"<div class='exec-main'><h3>{_esc(clean_display_text(ex.get('headline', '')))}</h3>"
+        f"<p>{_esc(clean_display_text(ex.get('detail', '')))}</p></div>{chips}</div>"
+        f"{f'<div class=chartrow>{lists}</div>' if lists else ''}</section>"
+    )
+
+
+def _concentration_block(dashboard: dict, schema: dict) -> str:
+    """Concentración: cuánto pesa cada grupo sobre el total, y cuánto se
+    acumula en los primeros. Responde la pregunta que sigue siempre a un
+    total ("¿de dónde sale?") y detecta dependencia excesiva de un solo
+    grupo, que es un riesgo de negocio real.
+
+    Se apoya en dashboard["performance"], que el motor ya calculaba y el
+    informe tampoco usaba.
+    """
+    perf = dashboard.get("performance") or {}
+    top = perf.get("top") or []
+    total = perf.get("total")
+    if not top or not total:
+        return ""
+    dim_label = _label(schema, perf.get("dimension", ""))
+    metric_label = _label(schema, perf.get("metric", ""))
+    rows, acumulado = [], 0.0
+    for name, value in top[:10]:
+        share = (float(value) / float(total) * 100) if total else 0.0
+        acumulado += share
+        rows.append(
+            f"<tr><td><b>{_esc(clean_display_text(name))}</b></td><td class='num'>{_fmt(value)}</td>"
+            f"<td class='num'>{share:.1f}%</td><td class='num muted'>{acumulado:.1f}%</td>"
+            f"<td class='barcell'><span class='bar' style='width:{min(share, 100):.1f}%'></span></td></tr>"
+        )
+    lider, lider_val = top[0]
+    lider_share = (float(lider_val) / float(total) * 100) if total else 0.0
+    top3 = sum(float(v) for _, v in top[:3]) / float(total) * 100 if total else 0.0
+    groups = perf.get("groups") or len(top)
+    # "sobre N valores de X" y no "N Xs": el nombre de la dimensión lo pone
+    # el archivo del usuario (Ciudad, Local, Canal...) y pluralizarlo a mano
+    # produce cosas como "5 ciudads". Esta forma funciona con cualquier
+    # nombre, venga como venga escrito.
+    universo = f"{groups:,} valores de {_esc(dim_label.lower())}"
+    if lider_share >= 50:
+        veredicto = (f"Alta concentración: <b>{_esc(clean_display_text(str(lider)))}</b> concentra el "
+                     f"{lider_share:.1f}% del total sobre {universo}. Una caída ahí arrastra el resultado completo.")
+    elif top3 >= 70:
+        veredicto = (f"Concentración moderada-alta: los 3 primeros suman el {top3:.1f}% del total, "
+                     f"sobre {universo}.")
+    else:
+        veredicto = (f"Distribución repartida: los 3 primeros suman el {top3:.1f}% del total "
+                     f"sobre {universo}, sin dependencia de un solo grupo.")
+    return (
+        f"<section class='section' id='concentracion'>"
+        f"<div class='sec-head'><span class='sec-num'>04</span><div><h2>Concentración del resultado</h2>"
+        f"<p>De dónde sale {_esc(metric_label.lower())}: peso de cada {_esc(dim_label.lower())} sobre el total.</p></div></div>"
+        f"<div class='callout'>{veredicto}</div>"
+        f"<div class='table-card'><table><thead><tr><th>{_esc(dim_label)}</th><th class='num'>{_esc(metric_label)}</th>"
+        f"<th class='num'>% del total</th><th class='num'>Acumulado</th><th>Peso</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div></section>"
+    )
+
+
+def _statistics_block(dashboard: dict, schema: dict) -> str:
+    """Estadística descriptiva por métrica: promedio, mediana, dispersión y
+    cuartiles. Es lo que permite decir si un promedio representa al conjunto
+    o lo distorsiona un puñado de valores extremos."""
+    stats = dashboard.get("statistics")
+    if stats is None or not hasattr(stats, "empty") or stats.empty:
+        return ""
+    rows = []
+    for _, r in stats.head(12).iterrows():
+        col = r.get("Columna", "")
+        media, mediana = r.get("Media"), r.get("Mediana")
+        lectura = ""
+        try:
+            if pd.notna(media) and pd.notna(mediana) and float(mediana) != 0:
+                sesgo = (float(media) - float(mediana)) / abs(float(mediana)) * 100
+                if sesgo > 25:
+                    lectura = "Promedio inflado por valores altos: la mediana representa mejor el caso típico."
+                elif sesgo < -25:
+                    lectura = "Promedio arrastrado por valores bajos: revisar la cola inferior."
+                else:
+                    lectura = "Promedio y mediana cercanos: el promedio es representativo."
+        except (TypeError, ValueError):
+            lectura = ""
+        rows.append(
+            f"<tr><td><b>{_esc(_label(schema, col))}</b></td><td class='num'>{_fmt(r.get('Media'))}</td>"
+            f"<td class='num'>{_fmt(r.get('Mediana'))}</td><td class='num'>{_fmt(r.get('Std'))}</td>"
+            f"<td class='num'>{_fmt(r.get('Min'))}</td><td class='num'>{_fmt(r.get('Max'))}</td>"
+            f"<td class='muted'>{_esc(lectura)}</td></tr>"
+        )
+    return (
+        f"<section class='section' id='estadistica'>"
+        f"<div class='sec-head'><span class='sec-num'>07</span><div><h2>Estadística descriptiva</h2>"
+        f"<p>Cómo se comporta cada métrica: valor típico, dispersión y extremos.</p></div></div>"
+        f"<div class='table-card'><table><thead><tr><th>Métrica</th><th class='num'>Promedio</th>"
+        f"<th class='num'>Mediana</th><th class='num'>Desviación</th><th class='num'>Mínimo</th>"
+        f"<th class='num'>Máximo</th><th>Lectura</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></section>"
+    )
+
+
+def _anomalies_block(dashboard: dict, schema: dict) -> str:
+    """Valores atípicos detectados. Se muestran los primeros y se dice
+    cuántos hay en total: en una presentación importa el orden de magnitud
+    ("hay 27 que revisar"), no la lista completa."""
+    anomalies = dashboard.get("anomalies")
+    if anomalies is None or not hasattr(anomalies, "empty") or anomalies.empty:
+        return ""
+    total = len(anomalies)
+    rows = []
+    for _, r in anomalies.head(12).iterrows():
+        rows.append(
+            f"<tr><td class='num muted'>{_esc(r.get('fila', ''))}</td>"
+            f"<td><b>{_esc(_label(schema, r.get('columna', '')))}</b></td>"
+            f"<td class='num'>{_fmt(r.get('valor'))}</td>"
+            f"<td><span class='pill'>{_esc(clean_display_text(str(r.get('tipo', ''))))}</span></td></tr>"
+        )
+    extra = (f"<p class='muted' style='margin-top:10px'>Se muestran 12 de {total:,} valores atípicos detectados.</p>"
+             if total > 12 else "")
+    return (
+        f"<section class='section' id='atipicos'>"
+        f"<div class='sec-head'><span class='sec-num'>08</span><div><h2>Valores atípicos</h2>"
+        f"<p>Registros que se salen del comportamiento normal del conjunto. No son errores por definición, "
+        f"pero conviene confirmarlos antes de dar el dato por bueno.</p></div></div>"
+        f"<div class='callout warn'><b>{total:,}</b> registro(s) fuera de rango esperado.</div>"
+        f"<div class='table-card'><table><thead><tr><th class='num'>Fila</th><th>Columna</th>"
+        f"<th class='num'>Valor</th><th>Tipo</th></tr></thead><tbody>{''.join(rows)}</tbody></table>{extra}</div></section>"
+    )
+
+
 def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename: str, sheet: str, scope_label: str = "Selección actual") -> str:
     generated = datetime.now().strftime("%d/%m/%Y %H:%M")
     metrics = metric_candidates(df, schema)
@@ -269,6 +429,10 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     for k in kpis[:8]:
         kpi_html_all.append(f"<div class='kpi'><div class='kpi-label'>{_esc(_kpi_label(k, schema))}</div><div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>")
     kpi_html_top4 = "".join(kpi_html_all[:4])
+    # La portada ya destaca el indicador principal y el cambio, así que la
+    # sección de KPIs puede mostrarlos todos sin resultar repetitiva (antes
+    # se recortaba a 4 porque era lo primero que se veía del informe).
+    kpi_html_all_html = "".join(kpi_html_all)
 
     insights = dashboard.get("insights") or []
     insight_html = []
@@ -336,7 +500,7 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
 
     schema_summary = f"""
     <section class="table-card" id="motor">
-      <h2>Qué encontró el motor</h2>
+      <div class="sec-head"><span class="sec-num">11</span><div><h2>Cómo se interpretó el archivo</h2><p>Qué reconoció el motor en esta hoja.</p></div></div>
       <div class="meta-grid">
         <div><b>{len(metrics)}</b><span>Métricas</span></div>
         <div><b>{len(schema.get('dates', []))}</b><span>Fechas</span></div>
@@ -347,21 +511,68 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     </section>
     """
 
-    # Menú de navegación lateral: solo enlaza a secciones que realmente
-    # existen en este informe, para no dejar enlaces muertos.
-    nav_items = [("resumen", "Resumen ejecutivo"), ("vista-principal", "Gráficos principales")]
+    # ── Secciones de análisis que el motor ya calculaba y este informe no
+    # mostraba (lectura ejecutiva, concentración, estadística y atípicos).
+    # Cada una se autodescarta si el archivo no da para ella. ──
+    executive_html = _executive_block(dashboard)
+    concentration_html = _concentration_block(dashboard, schema)
+    statistics_html = _statistics_block(dashboard, schema)
+    anomalies_html = _anomalies_block(dashboard, schema)
+
+    # ── Portada: los números que abren la presentación ──
+    growth = dashboard.get("growth")
+    growth_stat = ""
+    if growth is not None:
+        tone = "up" if growth > 0 else "down" if growth < 0 else ""
+        arrow = "▲" if growth > 0 else "▼" if growth < 0 else "="
+        growth_stat = (f"<div class='cover-stat {tone}'><b>{arrow} {abs(growth):.1f}%</b>"
+                       f"<span>vs periodo anterior</span></div>")
+    headline_kpi = ""
+    for k in kpis:
+        if isinstance(k, dict) and k.get("kind") == "primary":
+            headline_kpi = (f"<div class='cover-stat'><b>{_esc(_kpi_value(k))}</b>"
+                            f"<span>{_esc(_kpi_label(k, schema))}</span></div>")
+            break
+    cover_stats = (
+        f"<div class='cover-stat'><b>{len(df):,}</b><span>Registros analizados</span></div>"
+        f"{headline_kpi}{growth_stat}"
+        f"<div class='cover-stat'><b>{len(dims):,}</b><span>Dimensiones</span></div>"
+    )
+
+    # ── Menú lateral: agrupado por bloques y numerado. Solo enlaza a
+    # secciones que de verdad existen en este informe, para no dejar
+    # enlaces muertos cuando el archivo no da para alguna. ──
+    nav_groups = [("Resumen", []), ("Análisis", []), ("Detalle y soporte", [])]
+    if executive_html:
+        nav_groups[0][1].append(("lectura-ejecutiva", "Lectura ejecutiva"))
+    nav_groups[0][1].append(("resumen", "Indicadores clave"))
+    nav_groups[1][1].append(("vista-principal", "Gráficos principales"))
+    if concentration_html:
+        nav_groups[1][1].append(("concentracion", "Concentración"))
     if top_bottom_html:
-        nav_items.append(("top-bottom", "Top y Bottom 10"))
-    nav_items.append(("detalle", "Detalle adicional"))
+        nav_groups[1][1].append(("top-bottom", "Top y Bottom 10"))
     if change_html:
-        nav_items.append(("cambio", "Cambio principal"))
-    nav_items.append(("lectura", "Lectura analítica"))
-    nav_items.append(("alertas", "Alertas"))
-    nav_items.append(("motor", "Qué encontró el motor"))
+        nav_groups[1][1].append(("cambio", "Cambio principal"))
+    nav_groups[1][1].append(("lectura", "Lectura analítica"))
+    if statistics_html:
+        nav_groups[2][1].append(("estadistica", "Estadística"))
+    if anomalies_html:
+        nav_groups[2][1].append(("atipicos", "Valores atípicos"))
+    nav_groups[2][1].append(("alertas", "Alertas"))
     if secondary_chart_html:
-        nav_items.append(("graficos", "Otros gráficos"))
-    nav_items.append(("calidad", "Calidad del dato"))
-    nav_html = "".join(f'<a href="#{sid}">{_esc(label)}</a>' for sid, label in nav_items)
+        nav_groups[2][1].append(("graficos", "Otros gráficos"))
+    nav_groups[2][1].append(("motor", "Cómo se interpretó"))
+    nav_groups[2][1].append(("calidad", "Calidad del dato"))
+
+    nav_parts, counter = [], 0
+    for group_label, items in nav_groups:
+        if not items:
+            continue
+        nav_parts.append(f'<div class="nav-group">{_esc(group_label)}</div>')
+        for sid, label in items:
+            counter += 1
+            nav_parts.append(f'<a href="#{sid}"><i>{counter:02d}</i>{_esc(label)}</a>')
+    nav_html = "".join(nav_parts)
 
     return f"""<!doctype html>
 <html lang="es">
@@ -370,51 +581,181 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Resumen analítico — {_esc(filename)}</title>
 <style>
-:root{{--bg:#f5f7fb;--card:#fff;--text:#172033;--muted:#667085;--line:#e1e6ef;--blue:#e4002b;--teal:#10b9a6;--green:#22a06b;--amber:#f59e0b;--red:#e05252;--shadow:0 5px 18px rgba(23,32,51,.06);--glow:0 0 0 1px rgba(228,0,43,.08),0 10px 24px rgba(228,0,43,.06)}}
-*{{box-sizing:border-box}}body{{margin:0;background:
-    radial-gradient(ellipse 900px 480px at 100% 0%,rgba(228,0,43,.05),transparent 60%),
-    radial-gradient(ellipse 900px 480px at 0% 100%,rgba(228,0,43,.035),transparent 60%),
-    var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.45;scroll-behavior:smooth}}
-.report-shell{{display:flex;align-items:flex-start;gap:24px;max-width:1500px;margin:0 auto;padding:32px 24px 60px}}
-.side-nav{{width:206px;flex:0 0 206px;position:sticky;top:22px;align-self:flex-start;max-height:calc(100vh - 44px);overflow-y:auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px;box-shadow:var(--shadow)}}
-.side-nav .nav-title{{font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin:0 0 10px}}
-.side-nav a{{display:block;padding:7px 9px;border-radius:8px;font-size:12.5px;color:var(--text);text-decoration:none;margin-bottom:2px;border-left:3px solid transparent;transition:background .12s ease,color .12s ease}}
-.side-nav a:hover{{background:#f7f9fc;color:var(--blue)}}
-.side-nav a.active{{background:#fde8ea;color:var(--blue);border-left-color:var(--blue);font-weight:700}}
+/* ===== Paleta del informe =====
+   Antes el token de marca se llamaba --blue pero valía rojo, y el rojo
+   "negativo" era casi el mismo tono: en una tabla no se distinguía un dato
+   de marca de una alerta. Ahora la marca es --brand y los colores de estado
+   (bien / atención / mal) son familias aparte, para que el color signifique
+   algo. La tinta del texto sube de contraste (#0f172a) porque este
+   documento se proyecta y se imprime, no solo se lee en pantalla. */
+:root{{--bg:#eef1f7;--card:#fff;--ink:#0f172a;--text:#1e293b;--muted:#64748b;--soft:#94a3b8;
+--line:#e2e8f0;--line-soft:#eef2f7;--brand:#e4002b;--brand-dark:#b00020;--brand-soft:#fff1f3;
+--pos:#0f8a5f;--pos-soft:#e8f7f0;--warn:#b45309;--warn-soft:#fef6e7;--neg:#be123c;--neg-soft:#fff1f3;
+--shadow:0 1px 2px rgba(15,23,42,.04),0 6px 20px rgba(15,23,42,.06);
+--shadow-lg:0 2px 4px rgba(15,23,42,.04),0 16px 40px rgba(15,23,42,.10)}}
+*{{box-sizing:border-box}}
+body{{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.5;scroll-behavior:smooth;-webkit-font-smoothing:antialiased}}
+.report-shell{{display:flex;align-items:flex-start;gap:26px;max-width:1560px;margin:0 auto;padding:26px 24px 70px}}
 .wrap{{flex:1;min-width:0}}
-.header{{background:#fff;border:1px solid var(--line);border-top:5px solid #e4002b;border-radius:16px;padding:28px 30px;box-shadow:var(--shadow),var(--glow)}}
-.kicker{{font-size:11px;font-weight:800;letter-spacing:.13em;color:#e4002b;text-transform:uppercase}}h1{{margin:6px 0 5px;font-size:30px;letter-spacing:-.03em}}.subtitle{{color:var(--muted);font-size:14px}}.meta{{display:flex;flex-wrap:wrap;gap:8px;margin-top:17px}}.meta span{{background:#f7f9fc;border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:11px;color:var(--muted)}}
-.section{{margin-top:28px;scroll-margin-top:20px}}.section>h2,.table-card h2{{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}}.section>p,.table-card>p{{margin:0 0 14px;color:var(--muted);font-size:13px}}
-.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}}.kpi{{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:12px;padding:16px;box-shadow:var(--shadow),var(--glow)}}.kpi-label{{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.03em}}.kpi-value{{font-size:25px;font-weight:800;margin-top:8px;letter-spacing:-.01em}}
-.narrative{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:14px 16px;font-size:13.5px;color:var(--text);margin:0 0 14px;box-shadow:var(--shadow)}}
-#detalle{{border-top:2px solid #e4e8ef;padding-top:22px;margin-top:36px}}
-.change-box{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:13px;padding:18px 20px;box-shadow:var(--shadow),var(--glow);display:grid;grid-template-columns:1fr auto;gap:4px 18px;scroll-margin-top:20px}}.change-box span{{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--blue)}}.change-box h2{{margin:3px 0 0;font-size:19px}}.change-value{{font-size:30px;font-weight:900;align-self:center;color:var(--blue)}}.change-box p{{grid-column:1/-1;color:var(--muted);margin:6px 0 0}}
-.insights{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}}.insight{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:15px;box-shadow:var(--shadow)}}.insight.warning{{border-left-color:var(--amber)}}.insight.positive{{border-left-color:var(--green)}}.insight-tag{{font-size:9px;letter-spacing:.11em;font-weight:800;color:var(--muted)}}.insight h3{{margin:5px 0 6px;font-size:14px}}.insight p{{margin:0;font-size:13px}}.action,.implication{{margin-top:9px;background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}}
-.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}.chart-card,.table-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 17px;box-shadow:var(--shadow),var(--glow);margin-top:14px;scroll-margin-top:20px}}.chart-head span{{font-size:9px;color:var(--blue);font-weight:800;letter-spacing:.13em}}.chart-head h3{{margin:4px 0 2px;font-size:15px}}.chart-head p{{margin:0 0 5px;color:var(--muted);font-size:11px}}.table-card table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left}}th{{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}}.muted{{color:var(--muted)}}.severity{{font-size:10px;font-weight:800;padding:4px 7px;border-radius:999px;background:#fff3dc;color:#a86000}}.empty{{padding:24px;background:#fff;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}}.meta-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:15px 0}}.meta-grid div{{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:13px}}.meta-grid b{{display:block;font-size:20px}}.meta-grid span{{color:var(--muted);font-size:11px}}.footer{{margin-top:35px;color:#7a8495;font-size:11px;text-align:center}}
-@media(max-width:1000px){{.side-nav{{display:none}}}}
-@media(max-width:850px){{.report-shell{{padding:18px 12px}}h1{{font-size:24px}}.grid2{{grid-template-columns:1fr}}.meta-grid{{grid-template-columns:repeat(2,1fr)}}}}
-@media print{{.side-nav{{display:none}}.report-shell{{padding:0;display:block}}body{{background:#fff}}.header,.kpi,.narrative,.change-box,.insight,.chart-card,.table-card{{box-shadow:none!important}}}}
+
+/* ===== Menú: agrupado por bloques y numerado. Antes era una lista plana de
+   10 enlaces sin jerarquía; con el informe más largo hace falta saber en qué
+   parte del documento se está parado. ===== */
+.side-nav{{width:232px;flex:0 0 232px;position:sticky;top:20px;align-self:flex-start;max-height:calc(100vh - 40px);overflow-y:auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 14px;box-shadow:var(--shadow)}}
+.side-nav .nav-brand{{display:flex;align-items:center;gap:9px;padding:0 6px 14px;border-bottom:1px solid var(--line-soft);margin-bottom:12px}}
+.side-nav .nav-dot{{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#ff4d5f,var(--brand) 60%,var(--brand-dark));flex:0 0 26px}}
+.side-nav .nav-brand b{{font-size:12.5px;letter-spacing:-.01em;color:var(--ink);line-height:1.2;display:block}}
+.side-nav .nav-brand small{{font-size:10px;color:var(--soft)}}
+.nav-group{{font-size:9.5px;font-weight:800;letter-spacing:.12em;color:var(--soft);text-transform:uppercase;margin:14px 8px 6px}}
+.nav-group:first-of-type{{margin-top:2px}}
+.side-nav a{{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;font-size:12.5px;color:var(--text);text-decoration:none;margin-bottom:1px;border-left:3px solid transparent;transition:background .12s ease,color .12s ease}}
+.side-nav a i{{font-style:normal;font-size:9.5px;font-weight:800;color:var(--soft);min-width:15px}}
+.side-nav a:hover{{background:var(--line-soft);color:var(--brand)}}
+.side-nav a.active{{background:var(--brand-soft);color:var(--brand-dark);border-left-color:var(--brand);font-weight:700}}
+.side-nav a.active i{{color:var(--brand)}}
+
+/* ===== Portada ===== */
+.cover{{background:linear-gradient(135deg,#12172b 0%,#1e2440 55%,#3a1020 100%);border-radius:18px;padding:30px 34px;color:#fff;box-shadow:var(--shadow-lg);position:relative;overflow:hidden}}
+.cover:before{{content:"";position:absolute;right:-90px;top:-90px;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(228,0,43,.42),transparent 68%)}}
+.cover-kicker{{font-size:10.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#ff8095;position:relative}}
+.cover h1{{margin:9px 0 8px;font-size:31px;letter-spacing:-.03em;line-height:1.12;position:relative}}
+.cover .lead{{color:#c7cede;font-size:14px;max-width:640px;position:relative;margin:0}}
+.cover-stats{{display:flex;flex-wrap:wrap;gap:26px;margin-top:22px;padding-top:19px;border-top:1px solid rgba(255,255,255,.14);position:relative}}
+.cover-stat b{{display:block;font-size:23px;font-weight:800;letter-spacing:-.02em}}
+.cover-stat span{{font-size:10.5px;color:#9aa3bb;text-transform:uppercase;letter-spacing:.08em;font-weight:700}}
+.cover-stat.up b{{color:#5ee0a4}}
+.cover-stat.down b{{color:#ff8095}}
+.meta{{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}}
+.meta span{{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:11px;color:var(--muted)}}
+
+/* ===== Secciones ===== */
+.section{{margin-top:34px;scroll-margin-top:18px}}
+.sec-head{{display:flex;gap:13px;align-items:flex-start;margin-bottom:14px;padding-bottom:11px;border-bottom:2px solid var(--line)}}
+.sec-num{{font-size:11px;font-weight:800;color:var(--brand);background:var(--brand-soft);border-radius:7px;padding:5px 8px;letter-spacing:.04em;flex:0 0 auto;margin-top:2px}}
+.sec-head h2,.section>h2,.table-card h2{{font-size:20px;margin:0;letter-spacing:-.022em;color:var(--ink)}}
+.sec-head p,.section>p,.table-card>p{{margin:4px 0 0;color:var(--muted);font-size:12.5px;max-width:78ch}}
+.section>h2{{margin-bottom:5px}}
+
+/* ===== KPIs ===== */
+.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:12px}}
+.kpi{{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 17px;box-shadow:var(--shadow);position:relative;overflow:hidden}}
+.kpi:before{{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--brand)}}
+.kpi-label{{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}}
+.kpi-value{{font-size:26px;font-weight:800;margin-top:7px;letter-spacing:-.025em;color:var(--ink)}}
+.narrative{{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:12px;padding:15px 17px;font-size:13.5px;margin:0 0 15px;box-shadow:var(--shadow)}}
+
+/* ===== Lectura ejecutiva ===== */
+.exec-card{{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--muted);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow)}}
+.exec-card.positive{{border-left-color:var(--pos)}}
+.exec-card.negative{{border-left-color:var(--neg)}}
+.exec-card.warning{{border-left-color:var(--warn)}}
+.exec-main h3{{margin:0 0 6px;font-size:19px;letter-spacing:-.02em;color:var(--ink);line-height:1.3}}
+.exec-main p{{margin:0;color:var(--muted);font-size:13px}}
+.exec-delta{{font-size:27px;font-weight:800;letter-spacing:-.02em;white-space:nowrap;padding:9px 15px;border-radius:12px;background:var(--line-soft);color:var(--muted)}}
+.exec-delta.positive{{background:var(--pos-soft);color:var(--pos)}}
+.exec-delta.negative{{background:var(--neg-soft);color:var(--neg)}}
+.exec-delta.warning{{background:var(--warn-soft);color:var(--warn)}}
+.chartrow{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:13px;margin-top:13px}}
+.signal{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}}
+.signal h4{{margin:0 0 8px;font-size:11px;letter-spacing:.09em;text-transform:uppercase}}
+.signal.positive h4{{color:var(--pos)}}
+.signal.watch h4{{color:var(--warn)}}
+.signal ul{{margin:0;padding-left:17px;font-size:13px}}
+.signal li{{margin-bottom:4px}}
+
+/* ===== Avisos y píldoras ===== */
+.callout{{background:var(--brand-soft);border:1px solid rgba(228,0,43,.18);border-radius:11px;padding:12px 15px;font-size:13px;margin-bottom:13px;color:var(--ink)}}
+.callout.warn{{background:var(--warn-soft);border-color:rgba(180,83,9,.2)}}
+.pill{{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--line-soft);color:var(--muted)}}
+.severity{{font-size:10px;font-weight:800;padding:4px 8px;border-radius:999px;background:var(--warn-soft);color:var(--warn)}}
+
+.change-box{{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--brand);border-radius:14px;padding:19px 21px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;gap:4px 18px;scroll-margin-top:18px}}
+.change-box span{{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--brand)}}
+.change-box h2{{margin:3px 0 0;font-size:19px}}
+.change-value{{font-size:31px;font-weight:800;align-self:center;color:var(--brand);letter-spacing:-.02em}}
+.change-box p{{grid-column:1/-1;color:var(--muted);margin:7px 0 0}}
+
+/* ===== Hallazgos ===== */
+.insights{{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:13px}}
+.insight{{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:12px;padding:16px 17px;box-shadow:var(--shadow)}}
+.insight.warning{{border-left-color:var(--warn)}}
+.insight.positive{{border-left-color:var(--pos)}}
+.insight-tag{{font-size:9px;letter-spacing:.12em;font-weight:800;color:var(--soft)}}
+.insight h3{{margin:6px 0 7px;font-size:14.5px;color:var(--ink)}}
+.insight p{{margin:0;font-size:13px}}
+.action,.implication{{margin-top:9px;background:var(--line-soft);border-radius:8px;padding:9px 10px;font-size:12px}}
+
+/* ===== Tarjetas, tablas y barras ===== */
+.grid2{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+.chart-card,.table-card{{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow);margin-top:13px;scroll-margin-top:18px}}
+.chart-head span{{font-size:9px;color:var(--brand);font-weight:800;letter-spacing:.13em}}
+.chart-head h3{{margin:4px 0 2px;font-size:15px;color:var(--ink)}}
+.chart-head p{{margin:0 0 6px;color:var(--muted);font-size:11.5px}}
+table{{width:100%;border-collapse:collapse;font-size:12.5px}}
+th,td{{padding:10px 9px;border-bottom:1px solid var(--line-soft);text-align:left;vertical-align:middle}}
+thead th{{color:var(--soft);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1.5px solid var(--line)}}
+tbody tr:hover{{background:var(--line-soft)}}
+td.num,th.num{{text-align:right;font-variant-numeric:tabular-nums}}
+.barcell{{width:110px}}
+.bar{{display:block;height:7px;border-radius:4px;background:linear-gradient(90deg,var(--brand),#ff5b73);min-width:2px}}
+.muted{{color:var(--muted)}}
+.empty{{padding:26px;background:var(--card);border:1px dashed var(--line);border-radius:12px;color:var(--muted)}}
+.meta-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin:15px 0}}
+.meta-grid div{{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px}}
+.meta-grid b{{display:block;font-size:20px;color:var(--ink)}}
+.meta-grid span{{color:var(--muted);font-size:11px}}
+.footer{{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--soft);font-size:11px;text-align:center}}
+
+@media(max-width:1080px){{.side-nav{{display:none}}}}
+@media(max-width:850px){{.report-shell{{padding:16px 12px}}.cover{{padding:22px 20px}}.cover h1{{font-size:24px}}.grid2,.exec-card{{grid-template-columns:1fr}}.meta-grid{{grid-template-columns:repeat(2,1fr)}}.cover-stats{{gap:16px}}}}
+
+/* ===== Impresión / PDF =====
+   Es un documento para presentar, así que las secciones grandes arrancan en
+   página nueva y ninguna tarjeta se parte por la mitad. */
+@media print{{
+  @page{{margin:14mm}}
+  .side-nav{{display:none}}
+  .report-shell{{padding:0;display:block;max-width:none}}
+  body{{background:#fff}}
+  .cover{{background:#12172b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  .section{{margin-top:24px}}
+  #concentracion,#estadistica,#atipicos,#calidad{{break-before:page;page-break-before:always}}
+  .kpi,.insight,.chart-card,.table-card,.exec-card,.signal,.change-box{{box-shadow:none!important;break-inside:avoid;page-break-inside:avoid}}
+  a[href^="#"]{{text-decoration:none;color:inherit}}
+}}
 </style>
 </head>
 <body>
 <div class="report-shell">
-<nav class="side-nav"><div class="nav-title">En este informe</div>{nav_html}</nav>
+<nav class="side-nav">
+  <div class="nav-brand"><div class="nav-dot"></div><div><b>Informe analítico</b><small>{_esc(sheet)}</small></div></div>
+  {nav_html}
+</nav>
 <main class="wrap">
-<header class="header"><div class="kicker">Excel Intelligence · Informe ejecutivo</div><h1>Resumen analítico del Excel</h1><div class="subtitle">Una lectura lista para compartir: qué pasó, dónde se concentra, qué cambió y qué conviene revisar.</div><div class="meta"><span>Archivo: {_esc(filename)}</span><span>Hoja: {_esc(sheet)}</span><span>Alcance: {_esc(scope_label)}</span><span>Periodo: {_esc(_date_range(df, schema))}</span><span>Generado: {_esc(generated)}</span><span>Registros: {len(df):,}</span></div></header>
+<header class="cover">
+  <div class="cover-kicker">Panel Analítico Universal · Informe ejecutivo</div>
+  <h1>{_esc(sheet)}</h1>
+  <p class="lead">Qué pasó, dónde se concentra el resultado, qué cambió frente al periodo anterior y qué conviene revisar antes de decidir.</p>
+  <div class="cover-stats">{cover_stats}</div>
+</header>
+<div class="meta"><span>Archivo: {_esc(filename)}</span><span>Hoja: {_esc(sheet)}</span><span>Alcance: {_esc(scope_label)}</span><span>Periodo: {_esc(_date_range(df, schema))}</span><span>Generado: {_esc(generated)}</span></div>
+{executive_html}
 <section class="section" id="resumen">
+  <div class="sec-head"><span class="sec-num">02</span><div><h2>Indicadores clave</h2><p>Las cifras que resumen la selección analizada.</p></div></div>
   <p class="narrative">{_esc(narrative)}</p>
-  <div class="kpis">{kpi_html_top4 or '<div class="empty">No se detectaron KPIs universales.</div>'}</div>
+  <div class="kpis">{kpi_html_all_html or '<div class="empty">No se detectaron KPIs universales.</div>'}</div>
 </section>
-<section class="section" id="vista-principal"><h2>Gráficos principales</h2><p>Los indicadores más representativos detectados para esta hoja.</p><div class="grid2">{primary_charts_html}</div></section>
-{f'<section class="section" id="top-bottom"><h2>Top y Bottom 10</h2><p>Extremos por {_esc(_label(schema, primary))}, usando {_esc(_label(schema, dims[0]))} como categoría.</p><div class="grid2">{top_bottom_html}</div></section>' if top_bottom_html else ''}
-
-<section class="section" id="detalle"><h2>Detalle adicional</h2><p class="muted">El resto del análisis completo: qué cambió, hallazgos, alertas, cómo se interpretó el archivo y calidad del dato.</p></section>
+<section class="section" id="vista-principal"><div class="sec-head"><span class="sec-num">03</span><div><h2>Gráficos principales</h2><p>Los indicadores más representativos detectados para esta hoja.</p></div></div><div class="grid2">{primary_charts_html}</div></section>
+{concentration_html}
+{f'<section class="section" id="top-bottom"><div class="sec-head"><span class="sec-num">05</span><div><h2>Top y Bottom 10</h2><p>Extremos por {_esc(_label(schema, primary))}, usando {_esc(_label(schema, dims[0]))} como categoría.</p></div></div><div class="grid2">{top_bottom_html}</div></section>' if top_bottom_html else ''}
 {change_html.replace('<section class="change-box">', '<section class="change-box" id="cambio">', 1)}
-<section class="section" id="lectura"><h2>Lectura analítica</h2><p>Hallazgos priorizados por el motor universal, con contexto y acción cuando existe.</p><div class="insights">{''.join(insight_html) or '<div class="empty">No se detectaron hallazgos suficientes para esta selección.</div>'}</div></section>
-<section class="section" id="alertas"><h2>Alertas y puntos de atención</h2><div class="table-card"><table><thead><tr><th>Nivel</th><th>Hallazgo</th><th>Qué hacer</th></tr></thead><tbody>{''.join(alert_html) or '<tr><td colspan="3">No hay alertas relevantes.</td></tr>'}</tbody></table></div></section>
+<section class="section" id="lectura"><div class="sec-head"><span class="sec-num">06</span><div><h2>Lectura analítica</h2><p>Hallazgos priorizados por el motor universal, con contexto y acción cuando existe.</p></div></div><div class="insights">{''.join(insight_html) or '<div class="empty">No se detectaron hallazgos suficientes para esta selección.</div>'}</div></section>
+{statistics_html}
+{anomalies_html}
+<section class="section" id="alertas"><div class="sec-head"><span class="sec-num">09</span><div><h2>Alertas y puntos de atención</h2><p>Lo que el motor marca como revisable, con la acción sugerida.</p></div></div><div class="table-card"><table><thead><tr><th>Nivel</th><th>Hallazgo</th><th>Qué hacer</th></tr></thead><tbody>{''.join(alert_html) or '<tr><td colspan="3">No hay alertas relevantes.</td></tr>'}</tbody></table></div></section>
 {schema_summary}
-{f'<section class="section" id="graficos"><h2>Otros gráficos disponibles</h2><p>Visualizaciones adicionales que complementan la vista principal.</p><div class="grid2">{secondary_chart_html}</div></section>' if secondary_chart_html else ''}
-<section class="section" id="calidad"><div class="table-card"><h2>Calidad del dato</h2><p>Indicadores básicos para saber si el análisis merece confianza antes de tomar decisiones.</p><table><thead><tr><th>Indicador</th><th>Valor</th><th>Interpretación</th></tr></thead><tbody>{quality_rows}</tbody></table></div></section>
+{f'<section class="section" id="graficos"><div class="sec-head"><span class="sec-num">10</span><div><h2>Otros gráficos disponibles</h2><p>Visualizaciones adicionales que complementan la vista principal.</p></div></div><div class="grid2">{secondary_chart_html}</div></section>' if secondary_chart_html else ''}
+<section class="section" id="calidad"><div class="sec-head"><span class="sec-num">12</span><div><h2>Calidad del dato</h2><p>Indicadores básicos para saber si el análisis merece confianza antes de tomar decisiones.</p></div></div><div class="table-card"><table><thead><tr><th>Indicador</th><th>Valor</th><th>Interpretación</th></tr></thead><tbody>{quality_rows}</tbody></table></div></section>
 <footer class="footer">Generado automáticamente por Panel Analítico Universal · El contenido se adapta a la estructura real del Excel.</footer>
 </main>
 </div>

@@ -146,6 +146,25 @@ def main():
     build_dashboard(spi["processed"], spi["profile"])
     check("archivo con solo una columna de fecha no rompe build_dashboard", True)
 
+    # Regresión de un crash real en producción: una columna de fechas donde
+    # cada fila trae un desfase horario distinto ("+00:00" en unas, "-05:00"
+    # en otras, "Z" en otras). pandas se niega a construir la columna con
+    # zonas mezcladas ("Mixed timezones detected") y tumbaba la carga del
+    # archivo completo. Se resolvió quitando la hora (decisión de negocio:
+    # en estos informes solo importa la fecha), lo que elimina el conflicto
+    # de raíz. Ver core/dates.py::date_only.
+    from core.dates import detect_date
+    mezcla = pd.Series([
+        "2026-01-15 10:00:00+00:00",
+        "2026-06-20 23:30:00-05:00",   # registro nocturno: debe quedarse en el 20
+        "2026-03-10 08:15:00Z",
+        "2026-04-02 14:45:00",         # sin zona horaria
+    ])
+    dt_mix, rate_mix, _ = detect_date(mezcla, "Fecha")
+    check("zonas horarias mezcladas ya no rompen la lectura", dt_mix is not None and rate_mix == 1.0)
+    check("las fechas quedan sin hora", (dt_mix.dt.normalize() == dt_mix).all())
+    check("un registro nocturno no se corre al día siguiente", str(dt_mix.iloc[1].date()) == "2026-06-20")
+
     plans = pd.DataFrame({
         "Categoría": ["Hogar", "Hogar"],
         "Segmento": ["Residencial", "Residencial"],
