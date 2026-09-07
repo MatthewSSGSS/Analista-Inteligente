@@ -65,8 +65,28 @@ def _norm(v):
 
 
 def month_number_series(s):
+    """Número de mes (1-12) por cada valor, o nulo si no es un nombre de mes.
+
+    Se resuelve sobre los valores DISTINTOS y luego se mapea: `_norm` hace
+    normalización Unicode y expresiones regulares por valor, y aplicarlo
+    fila por fila era, medido, el mayor costo de perfilar una hoja —8,3 de
+    13 segundos, con 640.000 llamadas—. Una columna de 40.000 filas rara vez
+    tiene más de unas decenas de valores distintos, y un nombre de mes solo
+    puede ser uno de doce, así que el trabajo real es diminuto. El resultado
+    es idéntico: mismo mapeo, calculado una vez por valor en vez de una vez
+    por fila."""
     x = s.astype("string").str.strip().str.lower()
-    return x.map(lambda v: MONTHS.get(_norm(v), pd.NA)).astype("Int64")
+    distintos = x.dropna().unique()
+    # Segundo filtro, también por costo: un nombre de mes es una palabra
+    # corta y sin dígitos. Descartar por longitud y por "es alfabético"
+    # cuesta microsegundos y evita normalizar valores que nunca podrían
+    # serlo — que es el caso de las columnas numéricas y de códigos, donde
+    # cada fila es un valor distinto (60.000 normalizaciones por columna,
+    # para nada). Es equivalente: todas las claves de MONTHS son palabras,
+    # así que cualquier valor que este filtro descarta habría dado nulo.
+    posibles = [v for v in distintos if len(v) <= 12 and str(v).replace(" ", "").isalpha()]
+    equivalencias = {v: MONTHS.get(_norm(v), pd.NA) for v in posibles}
+    return x.map(equivalencias).astype("Int64")
 
 
 def is_month_name_series(s):

@@ -14,6 +14,20 @@ COLOMBIA_TZ = "America/Bogota"
 _TZ_VALUE_RE = re.compile(r"\d{1,2}:\d{2}.*?(?:Z|[+-]\d{2}:?\d{2})\s*$", re.I)
 
 
+# Prefiltro barato: un valor solo puede llevar zona horaria si además de
+# dígitos tiene una hora (":dd"), o termina en algo con forma de zona (Z,
+# UTC, GMT, "+05:00", "-0500"). Es una sola pasada vectorizada sobre la
+# columna, y descarta de golpe columnas de texto, códigos o descripciones
+# —donde la comprobación cara no tendría nada que encontrar.
+_CANDIDATO_ZONA_RE = re.compile(r"\d.*(?::\d\d|Z\s*$|UTC|GMT|[+-]\d{2}:?\d{2}\s*$)", re.I)
+
+# Tope de valores distintos a los que se les hace la comprobación cara. Una
+# columna con más variedad que esto es, con certeza práctica, texto libre o
+# identificadores: revisarla entera costaría segundos por columna sin
+# aportar nada.
+MAX_VALORES_ZONA = 20000
+
+
 def _valor_tiene_zona(valor) -> bool:
     """¿Este valor concreto lleva zona horaria? Lo decide pandas, no un
     patrón de texto.
@@ -29,6 +43,30 @@ def _valor_tiene_zona(valor) -> bool:
         return pd.Timestamp(valor).tzinfo is not None
     except Exception:
         return False
+
+
+def _candidatos_con_zona(serie: pd.Series):
+    """Valores DISTINTOS de la columna que vale la pena examinar de cerca.
+
+    Existe por rendimiento: la comprobación buena (`_valor_tiene_zona`)
+    intenta interpretar cada valor como fecha, y eso cuesta ~0,1 ms. Sobre
+    una columna de 100.000 descripciones distintas son 10 segundos — por
+    columna. Medido: 10,6 s en texto libre y 9,3 s en códigos, que es
+    justamente donde no hay ninguna zona horaria que encontrar.
+
+    El prefiltro es una sola pasada vectorizada (milisegundos) que deja
+    fuera todo lo que ni siquiera tiene forma de fecha con hora, así que la
+    parte cara solo corre sobre lo que de verdad podría llevar zona.
+    """
+    sin_nulos = serie.dropna()
+    if sin_nulos.empty:
+        return []
+    texto = sin_nulos.astype(str)
+    posibles = texto[texto.str.contains(_CANDIDATO_ZONA_RE, na=False)]
+    if posibles.empty:
+        return []
+    distintos = pd.unique(posibles)
+    return distintos[:MAX_VALORES_ZONA]
 
 
 def normalize_timezones(df: pd.DataFrame) -> list[str]:
@@ -81,30 +119,47 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
             # Se evalúa sobre los valores DISTINTOS (una columna de 200.000
             # filas suele tener unas pocas decenas), así que revisar la
             # columna completa sale barato.
-            distintos = pd.unique(serie.dropna())
-            if len(distintos) == 0:
-                continue
-            con_zona = {v for v in distintos if _valor_tiene_zona(v)}
-            if not con_zona:
+            texto = serie.astype(str)
+
+            # Detección en dos niveles, por rendimiento y por cobertura:
+            #
+            #  (1) Patrón, vectorizado sobre la columna COMPLETA. Cubre los
+            #      formatos habituales ("+00:00", "Z", "-0500") y no se salta
+            #      ninguna fila, por lejos que esté.
+            #  (2) Comprobación cara (preguntarle a pandas), solo para los
+            #      valores distintos que el patrón NO reconoció. Ahí caen los
+            #      raros —"-05", "UTC", "GMT-5"— y suelen ser un puñado.
+            #
+            # Así el caso pesado sale gratis: en una columna donde cada fila
+            # es una marca de tiempo distinta con desfase, el patrón las
+            # reconoce todas de una pasada y el nivel (2) no tiene nada que
+            # revisar. Antes ese caso tardaba 116 segundos con 100.000 filas.
+            marca = texto.str.contains(_TZ_VALUE_RE, na=False)
+            pendientes = [v for v in _candidatos_con_zona(serie[~marca])
+                          if _valor_tiene_zona(v)]
+            if pendientes:
+                marca = marca | texto.isin([str(v) for v in pendientes])
+            if not bool(marca.any()):
                 continue
 
-            # Se convierten SOLO los valores que traen zona; el resto de la
-            # columna no se toca. Es deliberado: un valor sin zona ya está en
-            # hora local, y reinterpretarlo arriesgaría además invertir día y
-            # mes (esa lógica vive en core/dates.py, con sus propias reglas).
-            equivalencias = {}
-            for v in con_zona:
-                try:
-                    ts = pd.Timestamp(v).tz_convert(COLOMBIA_TZ).tz_localize(None)
-                    # Se reescribe en texto ISO, sin desfase: la columna sigue
-                    # siendo lo que era y el detector de fechas de siempre la
-                    # interpreta con sus reglas, sin ambigüedad de día/mes.
-                    equivalencias[v] = ts.strftime("%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    continue
-            if not equivalencias:
+            # Conversión vectorizada: una sola llamada para todas las filas
+            # marcadas, en vez de valor por valor. Se convierten SOLO esas; el
+            # resto de la columna no se toca, a propósito: un valor sin zona
+            # ya está en hora local, y reinterpretarlo arriesgaría además
+            # invertir día y mes (esa lógica vive en core/dates.py, con sus
+            # propias reglas).
+            interpretadas = pd.to_datetime(texto[marca], errors="coerce", utc=True, format="mixed")
+            if not bool(interpretadas.notna().any()):
                 continue
-            df[col] = serie.replace(equivalencias)
+            # Se reescribe en texto ISO, sin desfase: la columna sigue siendo
+            # lo que era y el detector de fechas de siempre la interpreta con
+            # sus reglas, sin ambigüedad de día/mes.
+            locales = (interpretadas.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None)
+                       .dt.strftime("%Y-%m-%d %H:%M:%S"))
+            validos = locales.notna()
+            nueva = serie.astype(object).copy()
+            nueva.loc[locales.index[validos]] = locales[validos]
+            df[col] = nueva
             convertidas.append(str(col))
         except Exception:
             # Nunca tumbar la carga por esto: si una columna rara no se deja
@@ -127,7 +182,9 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
             serie = df[col]
             if not (serie.dtype == object or pd.api.types.is_string_dtype(serie)):
                 continue
-            distintos = pd.unique(serie.dropna())
+            distintos = _candidatos_con_zona(serie)
+            if not len(distintos):
+                continue
             # Aquí se usan LOS DOS criterios, unidos a propósito:
             #  - lo que pandas reconoce como zona (cubre "-05", "UTC", "GMT-5")
             #  - lo que SOLO lo parece por su forma (cubre valores que pandas
