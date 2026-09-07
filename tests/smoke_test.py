@@ -190,6 +190,28 @@ def main():
     check("carga completa con zonas mezcladas no rompe (simulando pandas de producción)",
           list(_tz_item["processed"]["Fecha"].astype(str)) == ["2026-01-15", "2026-06-20", "2026-03-10", "2026-04-02"])
 
+    # La normalización ocurre en la ENTRADA (core/cleaner.py::normalize_timezones),
+    # antes de cualquier otra etapa, y pasa todo a hora de Colombia (UTC-5).
+    from core.cleaner import normalize_timezones
+    _tz = pd.DataFrame({"F": [
+        "2026-01-15 10:00:00+00:00",   # UTC 10:00  -> Colombia 05:00, mismo día
+        "2026-01-15 02:00:00+00:00",   # UTC 02:00  -> Colombia 21:00 del día anterior
+        "2026-06-20 23:30:00-05:00",   # ya viene en hora Colombia: no se mueve
+        "2026-05-05T14:00:00Z",        # otro formato (T y Z) en la misma columna
+    ]})
+    _conv = normalize_timezones(_tz)
+    check("se convierte a hora de Colombia (UTC-5)", _conv == ["F"] and str(_tz["F"].iloc[0]) == "2026-01-15 05:00:00")
+    check("una hora UTC de madrugada retrocede al día anterior en Colombia", str(_tz["F"].iloc[1]) == "2026-01-14 21:00:00")
+    check("una hora que ya venía en Colombia no se mueve", str(_tz["F"].iloc[2]) == "2026-06-20 23:30:00")
+    check("formatos distintos en la misma columna se leen igual", str(_tz["F"].iloc[3]) == "2026-05-05 09:00:00")
+    # Control: nada que no sea una fecha con zona debe tocarse.
+    _intacto = pd.DataFrame({"Codigo": ["D3243.00002", "D3244.00013", "D3251.00007"],
+                             "Hora": ["10:00", "14:30", "08:15"],
+                             "Fecha": ["2026-01-15 10:00:00", "2026-06-20 14:30:00", "2026-03-10 08:15:00"]})
+    _antes = {c: list(_intacto[c]) for c in _intacto.columns}
+    check("columnas sin zona horaria quedan intactas",
+          normalize_timezones(_intacto) == [] and all(list(_intacto[c]) == _antes[c] for c in _intacto.columns))
+
     plans = pd.DataFrame({
         "Categoría": ["Hogar", "Hogar"],
         "Segmento": ["Residencial", "Residencial"],

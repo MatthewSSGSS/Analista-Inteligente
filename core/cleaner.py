@@ -3,6 +3,69 @@ import unicodedata
 import pandas as pd
 from .numeric import normalize_missing_series
 
+# Zona horaria única de todo el análisis. Colombia no usa horario de verano,
+# así que es siempre UTC-5: no hay saltos ni ambigüedades a lo largo del año.
+COLOMBIA_TZ = "America/Bogota"
+
+# Un valor de fecha que TRAE zona horaria pegada: "...10:30:00+00:00",
+# "...14:45-0500", "...09:00Z". Se exige que haya una hora (\d{2}:\d{2})
+# antes del desfase para no confundirlo con cualquier texto que termine en
+# algo parecido a un número con signo.
+_TZ_VALUE_RE = re.compile(r"\d{1,2}:\d{2}.*?(?:Z|[+-]\d{2}:?\d{2})\s*$", re.I)
+
+
+def normalize_timezones(df: pd.DataFrame) -> list[str]:
+    """Pasa TODA columna con zona horaria a hora de Colombia y le quita la
+    zona. Devuelve los nombres de las columnas convertidas.
+
+    Por qué aquí y no en el detector de fechas: este es el primer punto que
+    toca los datos (`clean()` corre antes que `detect_schema`, que a su vez
+    corre antes que la conversión de core/dates.py). Los dos intentos
+    anteriores parchearon puntos más abajo del flujo y el archivo ya había
+    reventado antes de llegar: el error "Mixed timezones detected" aparecía
+    en la CLASIFICACIÓN semántica, no en la conversión. Normalizando una
+    sola vez en la entrada, ninguna parte del sistema vuelve a ver una
+    columna con zonas mezcladas — sin importar por dónde la lea.
+
+    El mecanismo es el que recomienda el propio mensaje de error de pandas:
+    `utc=True` al interpretar (eso nunca falla, aunque cada fila traiga un
+    desfase distinto) y después convertir a Colombia. Así "10:00+00:00" y
+    "14:30-05:00" quedan comparables entre sí, referidas al mismo reloj.
+    """
+    convertidas = []
+    for col in df.columns:
+        serie = df[col]
+        try:
+            # Caso 1: la columna ya es fecha CON zona (un solo desfase).
+            if isinstance(serie.dtype, pd.DatetimeTZDtype):
+                df[col] = serie.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None)
+                convertidas.append(str(col))
+                continue
+
+            # Caso 2: texto (u objetos de fecha sueltos) con el desfase
+            # pegado al valor — que es como Excel puede guardarlo, porque el
+            # formato de Excel NO admite zona horaria en una celda de fecha.
+            if serie.dtype == object or pd.api.types.is_string_dtype(serie):
+                muestra = serie.dropna().head(200).astype(str)
+                if muestra.empty or float(muestra.str.contains(_TZ_VALUE_RE).mean()) < 0.8:
+                    continue
+                # format="mixed" es imprescindible: sin él pandas deduce UN
+                # formato a partir del primer valor y descarta (NaT) los que
+                # no encajen. Basta con que el archivo combine
+                # "2026-05-05 14:00:00+00:00" y "2026-05-05T14:00:00Z"
+                # —espacio contra T, offset contra Z— para que se pierdan
+                # filas y la columna entera se descarte por bajo el umbral.
+                convertida = pd.to_datetime(serie, errors="coerce", utc=True, format="mixed")
+                if float(convertida.notna().mean()) < 0.9:
+                    continue  # no era una columna de fechas: se deja intacta
+                df[col] = convertida.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None)
+                convertidas.append(str(col))
+        except Exception:
+            # Nunca tumbar la carga por esto: si una columna rara no se deja
+            # normalizar, se queda como está y el resto del archivo carga.
+            continue
+    return convertidas
+
 
 def _normalize_key(value) -> str:
     s = str(value)
@@ -61,6 +124,17 @@ def _consolidate_spelling_variants(series: pd.Series):
 
 def clean(df):
     out=df.copy(deep=True); log=[]
+    # PRIMER paso, antes que cualquier otra cosa: unificar zonas horarias.
+    # Todo lo que venga con desfase horario pasa a hora de Colombia y pierde
+    # la zona, para que ninguna etapa posterior (limpieza, clasificación
+    # semántica, detección de fechas, gráficos) se encuentre nunca con una
+    # columna de zonas mezcladas.
+    zonas = normalize_timezones(out)
+    if zonas:
+        log.append(
+            f"{len(zonas)} columna(s) de fecha con zona horaria convertidas a hora de Colombia "
+            f"(UTC-5): {', '.join(zonas[:5])}" + ("…" if len(zonas) > 5 else "") + "."
+        )
     seen={}
     cols=[]
     for c in out.columns:
