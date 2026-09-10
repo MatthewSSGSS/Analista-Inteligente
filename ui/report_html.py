@@ -111,6 +111,26 @@ def _insight_text(item: dict) -> tuple[str, str, str, str]:
     return (clean_display_text(title), clean_display_text(finding), clean_display_text(action), clean_display_text(implication))
 
 
+def _evidence_html(item: dict) -> str:
+    """Los nombres y cifras que sostienen el hallazgo, dentro del informe.
+
+    El informe es lo que se comparte y se lee sin la app al lado, así que es
+    justo donde más falta hace que el hallazgo diga QUIÉN va mal y cuánto, y
+    no solo que algo va mal.
+    """
+    evidencia = item.get("evidence") if isinstance(item, dict) else None
+    if not evidencia:
+        return ""
+    filas = []
+    for e in list(evidencia)[:4]:
+        nombre = _esc(clean_display_text(e.get("nombre", "")))
+        valor = _esc(clean_display_text(e.get("valor", "")))
+        detalle = _esc(clean_display_text(e.get("detalle", "")))
+        filas.append(f"<li><span class='ev-name'>{nombre}</span><span class='ev-value'>{valor}</span>"
+                     f"<span class='ev-detail'>{detalle}</span></li>")
+    return f"<ul class='evidence'>{''.join(filas)}</ul>"
+
+
 def _date_range(df: pd.DataFrame, schema: dict) -> str:
     for col in schema.get("dates", []):
         if col not in df.columns:
@@ -441,7 +461,7 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
         kind = item.get("kind", "info") if isinstance(item, dict) else "info"
         insight_html.append(
             f"<article class='insight {kind}'><div class='insight-tag'>{_esc(kind.upper())}</div><h3>{_esc(title)}</h3>"
-            f"<p>{_esc(finding)}</p>"
+            f"<p>{_esc(finding)}</p>{_evidence_html(item if isinstance(item, dict) else {})}"
             f"{('<div class=\"action\"><b>Qué revisar:</b> '+_esc(action)+'</div>') if action else ''}"
             f"{('<div class=\"implication\"><b>Implicación:</b> '+_esc(implication)+'</div>') if implication else ''}</article>"
         )
@@ -452,7 +472,7 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
         if not isinstance(a, dict):
             continue
         alert_html.append(
-            f"<tr><td><span class='severity'>{_esc(clean_display_text(a.get('severity','')))}</span></td><td><b>{_esc(clean_display_text(a.get('title','Hallazgo')))}</b><br><span class='muted'>{_esc(clean_display_text(a.get('text','')))}</span></td>"
+            f"<tr><td><span class='severity'>{_esc(clean_display_text(a.get('severity','')))}</span></td><td><b>{_esc(clean_display_text(a.get('title','Hallazgo')))}</b><br><span class='muted'>{_esc(clean_display_text(a.get('text','')))}</span>{_evidence_html(a)}</td>"
             f"<td>{_esc(clean_display_text(a.get('action','')))}</td></tr>"
         )
 
@@ -677,6 +697,11 @@ body{{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI
 
 /* ===== Hallazgos ===== */
 .insights{{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:13px}}
+.evidence{{list-style:none;margin:9px 0 0;padding:8px 10px;background:#f6f8fb;border:1px solid var(--line);border-radius:9px}}
+.evidence li{{display:flex;align-items:baseline;gap:8px;font-size:11.5px;line-height:1.4;padding:1px 0}}
+.evidence .ev-name{{font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+.evidence .ev-value{{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}}
+.evidence .ev-detail{{color:var(--muted);white-space:nowrap}}
 .insight{{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:12px;padding:16px 17px;box-shadow:var(--shadow)}}
 .insight.warning{{border-left-color:var(--warn)}}
 .insight.positive{{border-left-color:var(--pos)}}

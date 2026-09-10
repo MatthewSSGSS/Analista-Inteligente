@@ -7,6 +7,7 @@ instead of being silently guessed.
 """
 from __future__ import annotations
 from .numeric import numeric_series
+from .gazetteer import buscar_lugar, columna_con_lugares
 
 from functools import lru_cache
 import re
@@ -62,42 +63,84 @@ def geo_columns(df: pd.DataFrame, schema: dict) -> dict:
 
 
 
-def supports_georeferencing(df: pd.DataFrame, schema: dict) -> tuple[bool, dict]:
-    """Decide whether the workbook deserves a georeferencing section.
+def _usable(df: pd.DataFrame, col) -> bool:
+    if not col or col not in df.columns:
+        return False
+    s = df[col]
+    return bool(s.notna().sum() and s.astype(str).str.strip().replace({"nan": "", "None": ""}).ne("").sum())
 
-    Geography is an optional capability: ordinary catalogs, plans, shopping
-    lists and reference tables must not receive an empty/useless map. The
-    decision is based on actual geographic columns *and* usable values.
-    Coordinates are the strongest signal; city/region/country headers are
-    accepted when they contain real values.
+
+_PERSONA_RE = re.compile(r"(^|\s)(apellido|apellidos|nombre completo|full name|first name|last name|surname)(\s|$)", re.I)
+
+
+def _columnas_de_persona(df: pd.DataFrame, schema: dict) -> set:
+    """Columnas que describen personas, no lugares.
+
+    Se excluyen de la búsqueda de lugares dentro del texto porque muchos
+    apellidos colombianos son también municipios —Córdoba, Pereira— y ubicar
+    a un cliente por su apellido sería peor que no ubicarlo.
+    """
+    persona = {c for c in df.columns if _PERSONA_RE.search(str(c))}
+    for item in schema.get("semantic", {}).get("columns", []):
+        if item.get("semantic_type") in {"employee", "customer", "person", "name"} and item.get("column") in df.columns:
+            persona.add(item["column"])
+    full = schema.get("full_name") if isinstance(schema.get("full_name"), dict) else {}
+    if full.get("column") in df.columns:
+        persona.add(full["column"])
+    return persona
+
+
+@st.cache_data(show_spinner=False, max_entries=8, ttl=1800)
+def _columna_con_lugares_cacheada(df: pd.DataFrame, excluir: tuple) -> tuple:
+    # La búsqueda recorre todas las columnas de texto del archivo, así que se
+    # cachea: `supports_georeferencing` se llama en cada rerun de Streamlit.
+    return columna_con_lugares(df, excluir=set(excluir))
+
+
+def modo_geografico(df: pd.DataFrame, schema: dict) -> tuple[str, dict]:
+    """Cómo se puede ubicar este archivo, en orden de confianza.
+
+    Coordenadas primero, luego columnas geográficas propias y, como último
+    recurso, el lugar escrito dentro de un texto —el nombre del punto de
+    venta, la sede, la dirección—. Ese último caso es el que antes se perdía.
     """
     cols = geo_columns(df, schema)
-
-    def usable(col):
-        if not col or col not in df.columns:
-            return False
-        s = df[col]
-        return bool(s.notna().sum() and s.astype(str).str.strip().replace({"nan": "", "None": ""}).ne("").sum())
 
     # Direct coordinates: require at least one valid pair, not merely the
     # presence of columns named Lat/Long.
     if cols["lat"] and cols["lon"]:
         lat = pd.to_numeric(df[cols["lat"]], errors="coerce")
         lon = pd.to_numeric(df[cols["lon"]], errors="coerce")
-        valid = lat.between(-90, 90) & lon.between(-180, 180)
-        if bool(valid.any()):
-            return True, {"mode": "coordinates", "columns": cols}
+        if bool((lat.between(-90, 90) & lon.between(-180, 180)).any()):
+            return "coordinates", cols
 
     # A city is a strong geographic signal. Region/country are accepted too,
     # but only when the column actually has content.
-    if usable(cols["city"]):
-        return True, {"mode": "city", "columns": cols}
-    if usable(cols["region"]):
-        return True, {"mode": "region", "columns": cols}
-    if usable(cols["country"]):
-        return True, {"mode": "country", "columns": cols}
+    if _usable(df, cols["city"]):
+        return "city", cols
+    if _usable(df, cols["region"]):
+        return "region", cols
+    if _usable(df, cols["country"]):
+        return "country", cols
 
-    return False, {"mode": "none", "columns": cols}
+    excluir = _columnas_de_persona(df, schema) | {c for c in cols.values() if c}
+    columna, info = _columna_con_lugares_cacheada(df, tuple(sorted(str(c) for c in excluir)))
+    if columna:
+        cols = dict(cols, embedded=columna, embedded_info=info)
+        return "embedded", cols
+
+    return "none", cols
+
+
+def supports_georeferencing(df: pd.DataFrame, schema: dict) -> tuple[bool, dict]:
+    """Decide whether the workbook deserves a georeferencing section.
+
+    Geography is an optional capability: ordinary catalogs, plans, shopping
+    lists and reference tables must not receive an empty/useless map. The
+    decision is based on actual geographic columns *and* usable values.
+    """
+    modo, cols = modo_geografico(df, schema)
+    return modo != "none", {"mode": modo, "columns": cols}
 
 COLOMBIA_REGION_CENTROIDS = {
     "caribe": (10.3, -74.8), "andina": (5.7, -74.0),
@@ -168,28 +211,85 @@ def geocode_place(city: str, country: str = "", region: str = "") -> dict:
         return {"status": "offline", "query": query, "reason": str(exc)[:160]}
 
 
+def _lectura_local(*valores) -> Optional[dict]:
+    """Último recurso: leer el municipio escrito dentro del propio valor.
+
+    Se usa cuando la columna geográfica no trae una ciudad limpia sino un
+    texto compuesto ("MC MULTICELL SAS CIENEGA MAGDALENA") o un nombre mal
+    escrito. Son casos donde el geocodificador no devuelve nada utilizable y
+    antes la fila se perdía, aunque el lugar estuviera ahí escrito.
+
+    Va al final a propósito: el directorio local es solo de Colombia, así que
+    no debe adelantarse al geocodificador en un archivo de otro país (Madrid
+    o Sevilla existen en Cundinamarca y en el Valle, pero casi nunca son esas
+    las que aparecen en un Excel que ya se resolvió bien por otra vía).
+    """
+    for valor in valores:
+        lugar = buscar_lugar(valor)
+        if lugar:
+            return {
+                "status": "ok", "lat": lugar["lat"], "lon": lugar["lon"],
+                "address": f"{lugar['lugar']}, {lugar['departamento']}, Colombia",
+                "score": 84, "fallback": True, "lugar": lugar["lugar"],
+            }
+    return None
+
+
 @st.cache_data(show_spinner=False, max_entries=16, ttl=1800)
 def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tuple[pd.DataFrame, dict]:
+    """Ubica cada fila y, si la vía habitual falla, lo intenta leyendo el texto.
+
+    El rescate importa: una columna llamada "Zona" o "Región" que en realidad
+    contiene nombres de puntos de venta se llevaba el camino de geocodificación
+    —que no resuelve nada con esos textos— y el archivo terminaba sin mapa
+    aunque cada fila dijera dónde está.
+    """
+    out, meta = _enriquecer(df, schema, max_places)
+    if meta.get("mode") not in {"city_geocoding", "region_geocoding", "country_geocoding"}:
+        return out, meta
+
+    ubicadas = float((out["_geo_status"] == "ok").mean()) if len(out) else 0.0
+    if ubicadas >= 0.25:
+        return out, meta
+
+    columna, info = columna_con_lugares(df, excluir=_columnas_de_persona(df, schema))
+    if not columna:
+        return out, meta
+    rescate = df.copy()
+    rescate["_geo_lat"] = pd.NA
+    rescate["_geo_lon"] = pd.NA
+    rescate["_geo_status"] = ""
+    rescate["_geo_label"] = ""
+    rescate, meta_rescate = _ubicar_desde_texto(rescate, columna, info)
+    if float((rescate["_geo_status"] == "ok").mean()) <= ubicadas:
+        return out, meta
+    meta_rescate["rescued_from"] = meta.get("mode")
+    return rescate, meta_rescate
+
+
+def _enriquecer(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tuple[pd.DataFrame, dict]:
     """Return a copy with _geo_lat/_geo_lon/_geo_status.
 
     If coordinates already exist, they are used directly. If only city exists,
     city names are geocoded. Source columns are never modified.
 
-    Cacheado con `@st.cache_data`: aunque `geocode_place()` ya memoiza la
-    llamada de red por proceso (`@lru_cache` arriba), esta función igual
-    recorre el DataFrame completo fila por fila (`out.iterrows()`, dos
-    veces) para asignar el resultado — en un archivo grande eso es trabajo
-    real que se repetía en cada rerun de Streamlit (cambiar de pestaña,
-    aplicar un filtro) aunque el resultado fuera idéntico al de la vez
-    anterior. Con el mismo (df, schema, max_places) esto ahora es una
-    lectura de caché en vez de recorrer todo el DataFrame de nuevo.
+    El resultado se cachea en `enrich_geography`, que es quien la llama:
+    aunque `geocode_place()` ya memoiza la llamada de red por proceso
+    (`@lru_cache` arriba), esta función igual recorre el DataFrame completo
+    fila por fila (`out.iterrows()`, dos veces) para asignar el resultado —
+    en un archivo grande eso es trabajo real que se repetía en cada rerun de
+    Streamlit (cambiar de pestaña, aplicar un filtro) aunque el resultado
+    fuera idéntico al de la vez anterior.
     """
-    cols = geo_columns(df, schema)
+    modo, cols = modo_geografico(df, schema)
     out = df.copy()
     out["_geo_lat"] = pd.NA
     out["_geo_lon"] = pd.NA
     out["_geo_status"] = ""
     out["_geo_label"] = ""
+
+    if modo == "embedded":
+        return _ubicar_desde_texto(out, cols["embedded"], cols.get("embedded_info", {}))
 
     # Direct coordinates: fastest and most reliable path.
     if cols["lat"] and cols["lon"]:
@@ -231,7 +331,11 @@ def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tu
             known = _known_region_location(region, country)
             results[(_norm(region), _norm(country))] = known or geocode_place(region, _norm(country), "")
             if results[(_norm(region), _norm(country))].get("status") != "ok":
-                results[(_norm(region), _norm(country))] = _fallback_place(region=region, country=_norm(country)) or results[(_norm(region), _norm(country))]
+                results[(_norm(region), _norm(country))] = (
+                    _fallback_place(region=region, country=_norm(country))
+                    or _lectura_local(region)
+                    or results[(_norm(region), _norm(country))]
+                )
         for idx, row in out.iterrows():
             region = _norm(row.get(region_col, "")); country = _norm(row.get(country_col, "")) if country_col else ""
             if not region: continue
@@ -240,7 +344,7 @@ def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tu
                 out.at[idx, "_geo_status"] = "limit"; continue
             out.at[idx, "_geo_status"] = r.get("status", "unresolved")
             if r.get("status") == "ok":
-                out.at[idx, "_geo_lat"] = r.get("lat"); out.at[idx, "_geo_lon"] = r.get("lon"); out.at[idx, "_geo_label"] = region
+                out.at[idx, "_geo_lat"] = r.get("lat"); out.at[idx, "_geo_lon"] = r.get("lon"); out.at[idx, "_geo_label"] = r.get("lugar") or region
         status = out["_geo_status"].value_counts().to_dict()
         return out, {"mode":"region_geocoding","city_column":None,"country_column":country_col,"region_column":region_col,"dimension":region_col,"level":"Región","resolved_places":sum(r and r.get("status")=="ok" for r in results.values()),"ambiguous_places":sum(r and r.get("status")=="ambiguous" for r in results.values()),"unresolved_places":sum(r and r.get("status") in {"unresolved","offline"} for r in results.values()),"rows":status}
 
@@ -254,6 +358,8 @@ def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tu
         for _, row in unique.iterrows():
             country = row[country_col]
             results[country] = _fallback_place(country=country) or geocode_place(country, country, "")
+            if results[country].get("status") != "ok":
+                results[country] = _lectura_local(country) or results[country]
         for idx, row in out.iterrows():
             country = _norm(row.get(country_col, ""))
             if not country:
@@ -263,7 +369,7 @@ def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tu
                 out.at[idx, "_geo_status"] = "limit"; continue
             out.at[idx, "_geo_status"] = r.get("status", "unresolved")
             if r.get("status") == "ok":
-                out.at[idx, "_geo_lat"] = r.get("lat"); out.at[idx, "_geo_lon"] = r.get("lon"); out.at[idx, "_geo_label"] = country
+                out.at[idx, "_geo_lat"] = r.get("lat"); out.at[idx, "_geo_lon"] = r.get("lon"); out.at[idx, "_geo_label"] = r.get("lugar") or country
         status = out["_geo_status"].value_counts().to_dict()
         return out, {"mode":"country_geocoding", "city_column":None, "country_column":country_col, "region_column":None, "dimension":country_col, "level":"País", "resolved_places":sum(r and r.get("status")=="ok" for r in results.values()), "ambiguous_places":sum(r and r.get("status")=="ambiguous" for r in results.values()), "unresolved_places":sum(r and r.get("status") in {"unresolved","offline"} for r in results.values()), "rows":status}
 
@@ -283,7 +389,11 @@ def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tu
         region = row[region_col] if region_col else ""
         results[(city, _norm(country), _norm(region))] = geocode_place(city, _norm(country), _norm(region))
         if results[(city, _norm(country), _norm(region))].get("status") != "ok":
-            results[(city, _norm(country), _norm(region))] = _fallback_place(city=city, region=_norm(region), country=_norm(country)) or results[(city, _norm(country), _norm(region))]
+            results[(city, _norm(country), _norm(region))] = (
+                _fallback_place(city=city, region=_norm(region), country=_norm(country))
+                or _lectura_local(city, region)
+                or results[(city, _norm(country), _norm(region))]
+            )
 
     for idx, row in out.iterrows():
         city = _norm(row.get(city_col, ""))
@@ -299,7 +409,10 @@ def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tu
         if r.get("status") == "ok":
             out.at[idx, "_geo_lat"] = r.get("lat")
             out.at[idx, "_geo_lon"] = r.get("lon")
-            out.at[idx, "_geo_label"] = city
+            # Cuando el lugar se leyó dentro de un texto compuesto, la etiqueta
+            # del mapa es el municipio, no la frase entera: si no, cada punto
+            # sería su propio grupo y el mapa dejaría de agrupar nada.
+            out.at[idx, "_geo_label"] = r.get("lugar") or city
 
     status = out["_geo_status"].value_counts().to_dict()
     return out, {
@@ -313,6 +426,45 @@ def enrich_geography(df: pd.DataFrame, schema: dict, max_places: int = 40) -> tu
         "ambiguous_places": len([r for r in results.values() if r.get("status") == "ambiguous"]),
         "unresolved_places": len([r for r in results.values() if r.get("status") in {"unresolved", "offline"}]),
         "rows": status,
+    }
+
+
+def _ubicar_desde_texto(out: pd.DataFrame, columna: str, info: dict) -> tuple[pd.DataFrame, dict]:
+    """Ubica cada fila leyendo el lugar escrito dentro de una columna de texto.
+
+    Es el caso del nombre del punto de venta: "MC MULTICELL SAS CIENEGA
+    MAGDALENA". No hay geocodificación de por medio —el directorio de
+    municipios es local—, así que esto funciona igual sin conexión y sin
+    límite de lugares.
+    """
+    valores = out[columna].map(_norm)
+    lugares = {v: buscar_lugar(v) for v in valores.unique() if v}
+
+    encontrados = {v: r for v, r in lugares.items() if r}
+    out["_geo_lat"] = valores.map(lambda v: encontrados[v]["lat"] if v in encontrados else pd.NA)
+    out["_geo_lon"] = valores.map(lambda v: encontrados[v]["lon"] if v in encontrados else pd.NA)
+    out["_geo_label"] = valores.map(lambda v: encontrados[v]["lugar"] if v in encontrados else "")
+    out["_geo_departamento"] = valores.map(lambda v: encontrados[v]["departamento"] if v in encontrados else "")
+    out["_geo_status"] = valores.map(lambda v: "ok" if v in encontrados else ("unresolved" if v else ""))
+
+    sin_lugar = [v for v in lugares if v not in encontrados]
+    solo_departamento = sum(1 for r in encontrados.values() if r["nivel"] == "departamento")
+    return out, {
+        "mode": "embedded_text",
+        "city_column": None,
+        "country_column": None,
+        "region_column": None,
+        "dimension": columna,
+        "level": "Ciudad",
+        "source_column": columna,
+        "resolved_places": len({r["lugar"] for r in encontrados.values()}),
+        "ambiguous_places": 0,
+        "unresolved_places": len(sin_lugar),
+        "approximate_places": sum(1 for r in encontrados.values() if not r["exacto"]),
+        "department_only_places": solo_departamento,
+        "coverage": float(info.get("cobertura", 0)),
+        "unresolved_examples": sin_lugar[:8],
+        "rows": out["_geo_status"].value_counts().to_dict(),
     }
 
 

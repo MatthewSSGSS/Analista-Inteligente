@@ -898,6 +898,15 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 .alert-row b{color:var(--text)}
 .alert-row div div{font-size:12.5px;color:var(--muted);margin-top:3px}
 .alert-row small{display:block;color:var(--soft);margin-top:6px;line-height:1.4}
+/* Evidencia de la alerta: los nombres concretos con su cifra. Es lo que
+   convierte "164 atípicos" en algo sobre lo que se puede decidir, así que
+   se lee como una lista corta y no como más texto corrido. */
+.evidence-list{display:flex;flex-direction:column;gap:3px;margin-top:8px;padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm)}
+.evidence-row{display:flex;align-items:baseline;gap:8px;font-size:12px;line-height:1.35}
+.evidence-row .evidence-name{font-weight:700;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.evidence-row .evidence-value{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.evidence-row .evidence-detail{color:var(--soft);white-space:nowrap}
+.insight-card .evidence-list{margin-top:9px}
 .why-card{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-md);padding:15px 18px;margin-bottom:10px}
 .why-title{font-size:16px;color:var(--text);font-weight:750}
 .why-subtitle{font-size:11px;color:var(--muted);margin-top:4px}

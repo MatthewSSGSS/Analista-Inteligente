@@ -16,7 +16,7 @@ from core.universal_analysis import dynamic_kpis, drilldown_options, drilldown_t
 import plotly.graph_objects as go
 import plotly.express as px
 from ui.person_profile import render_person_profile, has_entity
-from ui.components.cards import kpi_card, insight_card, executive_headline as _shared_executive_headline, executive_signals as _shared_executive_signals
+from ui.components.cards import kpi_card, insight_card, evidence_list, executive_headline as _shared_executive_headline, executive_signals as _shared_executive_signals
 from ui.components.charts import chart_card as _shared_chart_card
 from ui.components.section import banner_header
 from ui.layouts.columns import kpi_grid as _kpi_grid_layout, two_column
@@ -658,7 +658,8 @@ def _alerts_panel(df, dashboard):
         with c1:
             implication=a.get("implication") or ""
             extra=f'<small><b>Qué significa:</b> {implication}</small>' if implication else ""
-            st.markdown(f'<div class="alert-row compact {cls}"><div class="alert-severity">{clean_display_text(a.get("severity"))}</div><div><b>{clean_display_text(a.get("title"))}</b><div>{clean_display_text(a.get("text"))}</div>{extra}<small><b>Qué hacer:</b> {clean_display_text(a.get("action"))}</small></div></div>',unsafe_allow_html=True)
+            pruebas=evidence_list(a.get("evidence"))
+            st.markdown(f'<div class="alert-row compact {cls}"><div class="alert-severity">{clean_display_text(a.get("severity"))}</div><div><b>{clean_display_text(a.get("title"))}</b><div>{clean_display_text(a.get("text"))}</div>{pruebas}{extra}<small><b>Qué hacer:</b> {clean_display_text(a.get("action"))}</small></div></div>',unsafe_allow_html=True)
         with c2:
             target=a.get("target") or {}
             if target and st.button("Ver análisis",key=f"alert_focus_{i}",use_container_width=True):
@@ -795,7 +796,8 @@ def _insights_panel(insights):
         title = clean_display_text(item.get("title", "Hallazgo"))
         finding = clean_display_text(item.get("finding", ""))
         action = clean_display_text(item.get("action", ""))
-        html = insight_card(finding, title=title, kind=cls, icon=icon, action=action, compact=True)
+        html = insight_card(finding, title=title, kind=cls, icon=icon, action=action, compact=True,
+                            evidence=item.get("evidence"))
         cols[i % 2].markdown(html, unsafe_allow_html=True)
 
 
@@ -1050,13 +1052,13 @@ def _geo_section(df, schema, m):
     geo_summary = geographic_summary(df, schema, m)
     geo_meta = geo_summary.get("meta", {})
     geo_kpis = geo_summary.get("kpis", {})
-    if geo_meta.get("mode") in {"coordinates", "city_geocoding", "region_geocoding", "country_geocoding"} and geo_summary.get("table") is not None and not geo_summary.get("table").empty:
+    if geo_meta.get("mode") in {"coordinates", "city_geocoding", "region_geocoding", "country_geocoding", "embedded_text"} and geo_summary.get("table") is not None and not geo_summary.get("table").empty:
         g1, g2, g3, g4 = st.columns(4)
         g1.metric(f"{geo_meta.get('level','Ubicaciones')} ubicados", f"{geo_kpis.get('cities', 0):,}")
         g2.metric("Ciudad líder", geo_kpis.get("leader", "—"))
         g3.metric("Valor líder", _fmt(geo_kpis.get("leader_value", 0)))
         g4.metric("Participación líder", f"{geo_kpis.get('leader_share', 0):.1f}%")
-        if geo_meta.get("mode") in {"city_geocoding", "region_geocoding", "country_geocoding"}:
+        if geo_meta.get("mode") in {"city_geocoding", "region_geocoding", "country_geocoding", "embedded_text"}:
             unresolved = geo_meta.get("unresolved_places", 0) + geo_meta.get("ambiguous_places", 0)
             if unresolved:
                 st.warning(f"{unresolved} ubicación(es) no pudieron confirmarse con suficiente confianza. No se colocaron en el mapa para evitar errores geográficos.")

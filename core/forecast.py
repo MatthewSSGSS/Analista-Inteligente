@@ -324,6 +324,281 @@ def pronosticar(df: pd.DataFrame, schema: dict, metric: str, horizonte: int = 3,
     }
 
 
+def _tablas_por_segmento(df: pd.DataFrame, schema: dict, metric: str, dim: str,
+                         grain: str, periodos) -> tuple:
+    """Dos matrices periodo × segmento: cuánto sumó y cuántos registros hubo.
+
+    La segunda es la que permite responder POR QUÉ cae un punto: no es lo
+    mismo que atienda menos operaciones a que cada operación valga menos. Sin
+    separarlas, la única respuesta posible es "cae", que es la pregunta.
+    """
+    fechas = [d for d in schema.get("dates", []) if d in df.columns]
+    if not fechas or metric not in df.columns or dim not in df.columns:
+        return None, None
+    columna = fechas[0]
+    x = pd.DataFrame({
+        "_fecha": pd.to_datetime(df[columna], errors="coerce"),
+        "_segmento": df[dim].astype(str).str.strip(),
+        "_valor": pd.to_numeric(df[metric], errors="coerce"),
+    }).dropna(subset=["_fecha", "_valor"])
+    x = x[x["_segmento"].ne("") & x["_segmento"].str.lower().ne("nan")]
+    if x.empty:
+        return None, None
+    if grain == "Día":
+        x["_periodo"] = x["_fecha"].dt.floor("D")
+    elif grain == "Semana":
+        x["_periodo"] = x["_fecha"].dt.to_period("W").dt.start_time
+    elif grain == "Trimestre":
+        x["_periodo"] = x["_fecha"].dt.to_period("Q").dt.start_time
+    elif grain == "Año":
+        x["_periodo"] = x["_fecha"].dt.to_period("Y").dt.start_time
+    else:
+        x["_periodo"] = x["_fecha"].dt.to_period("M").dt.start_time
+
+    valores = x.pivot_table(index="_periodo", columns="_segmento", values="_valor", aggfunc="sum")
+    conteos = x.pivot_table(index="_periodo", columns="_segmento", values="_valor", aggfunc="count")
+    # Se alinean con los mismos periodos del pronóstico: un segmento que no
+    # aparece en un periodo aportó cero, y ese cero es información.
+    valores = valores.reindex(periodos).fillna(0.0)
+    conteos = conteos.reindex(periodos).fillna(0)
+    return valores, conteos
+
+
+def _pendiente(valores: np.ndarray) -> float:
+    if len(valores) < 2:
+        return 0.0
+    x = np.arange(len(valores), dtype="float64")
+    return float(np.polyfit(x, valores, 1)[0])
+
+
+def _por_que_cae(serie_valor: np.ndarray, serie_conteo: np.ndarray) -> dict:
+    """Separa el cambio en dos causas: menos operaciones, o de menor valor.
+
+    Se comparan las dos mitades del histórico en vez de dos periodos
+    sueltos: un mes flojo no es una causa, y con dos puntos cualquier ruido
+    parece un motivo.
+    """
+    mitad = max(len(serie_valor) // 2, 1)
+    antes_valor, despues_valor = serie_valor[:mitad], serie_valor[mitad:]
+    antes_conteo, despues_conteo = serie_conteo[:mitad], serie_conteo[mitad:]
+    n_antes, n_despues = float(antes_conteo.sum()), float(despues_conteo.sum())
+    v_antes, v_despues = float(antes_valor.sum()), float(despues_valor.sum())
+    ticket_antes = v_antes / n_antes if n_antes else 0.0
+    ticket_despues = v_despues / n_despues if n_despues else 0.0
+
+    volumen_pct = ((n_despues - n_antes) / n_antes * 100) if n_antes else None
+    ticket_pct = ((ticket_despues - ticket_antes) / ticket_antes * 100) if ticket_antes else None
+
+    motivo = None
+    if volumen_pct is not None and ticket_pct is not None:
+        cae_volumen, cae_ticket = volumen_pct <= -8, ticket_pct <= -8
+        if cae_volumen and cae_ticket:
+            motivo = (f"hace {abs(volumen_pct):.0f}% menos operaciones y cada una vale "
+                      f"{abs(ticket_pct):.0f}% menos")
+        elif cae_volumen:
+            motivo = (f"hace {abs(volumen_pct):.0f}% menos operaciones; el valor por operación "
+                      f"se mantiene ({ticket_pct:+.0f}%)")
+        elif cae_ticket:
+            motivo = (f"cada operación vale {abs(ticket_pct):.0f}% menos; el número de operaciones "
+                      f"se mantiene ({volumen_pct:+.0f}%)")
+    return {"volumen_pct": volumen_pct, "ticket_pct": ticket_pct, "motivo": motivo,
+            "operaciones": int(serie_conteo.sum())}
+
+
+def _conc_periodos(n: int) -> str:
+    return "periodo" if n == 1 else "periodos"
+
+
+def _periodos_bajando(valores: np.ndarray) -> int:
+    """Cuántos periodos seguidos lleva cayendo, contando desde el final."""
+    seguidos = 0
+    for i in range(len(valores) - 1, 0, -1):
+        if valores[i] < valores[i - 1]:
+            seguidos += 1
+        else:
+            break
+    return seguidos
+
+
+def atribuir(df: pd.DataFrame, schema: dict, resultado: dict, dim: str | None = None,
+             top: int = 3) -> dict | None:
+    """De dónde sale la tendencia que se está proyectando, con nombre propio.
+
+    Un pronóstico que solo dice "va a bajar" deja al que lo lee sin nada que
+    hacer. Este desglose responde la pregunta siguiente —¿bajar por culpa de
+    quién, y por qué?— abriendo la misma tendencia por punto de venta, agente
+    o producto, según lo que tenga el archivo.
+
+    Se apoya en una propiedad que hace el reparto exacto y no una estimación:
+    la recta de mínimos cuadrados de una suma es la suma de las rectas de sus
+    partes. Como el histórico del pronóstico es una SUMA por periodo, la
+    tendencia del total es exactamente la suma de las tendencias de cada
+    segmento, y repartir el descenso entre ellos no aproxima nada.
+    """
+    from .diagnostics import dimensiones_candidatas
+
+    if not resultado.get("viable"):
+        return None
+    historico = resultado.get("historico")
+    prediccion = resultado.get("prediccion")
+    if historico is None or prediccion is None or len(historico) < MINIMO_PERIODOS:
+        return None
+    metric = resultado["metric"]
+    if dim:
+        candidatas = [dim]
+    else:
+        # Se prueban varias agrupaciones y gana la que de verdad explica la
+        # tendencia. La más detallada no siempre es la más útil: si el
+        # descenso está repartido entre 400 puntos, señalar a tres que
+        # aportan el 1% cada uno no dice nada, mientras que abrirlo por
+        # ciudad o por zona puede señalar una causa común.
+        candidatas = dimensiones_candidatas(df, schema, metric)[:4]
+    mejor = None
+    for candidata in candidatas:
+        intento = _atribuir_por(df, schema, resultado, candidata, top)
+        if intento is None:
+            continue
+        if mejor is None or intento["concentracion"] > mejor["concentracion"] + 10:
+            mejor = intento
+    return mejor
+
+
+def _atribuir_por(df: pd.DataFrame, schema: dict, resultado: dict, dim: str, top: int) -> dict | None:
+    """El reparto de la tendencia usando una agrupación concreta."""
+    historico = resultado["historico"]
+    prediccion = resultado["prediccion"]
+    metric = resultado["metric"]
+    horizonte = int(len(prediccion))
+    valores, conteos = _tablas_por_segmento(df, schema, metric, dim,
+                                            resultado.get("grain", "Mes"), historico.index)
+    if valores is None or valores.shape[1] < 2:
+        return None
+
+    segmentos = []
+    for nombre in valores.columns:
+        serie = valores[nombre].to_numpy(dtype="float64")
+        if not np.any(serie):
+            continue
+        pendiente = _pendiente(serie)
+        # Adónde llega este segmento al final del horizonte si sigue igual.
+        delta = float(pendiente * horizonte)
+        segmentos.append({
+            "nombre": str(nombre), "delta": delta, "pendiente": pendiente,
+            "ultimo": float(serie[-1]), "serie": serie,
+            "conteo": conteos[nombre].to_numpy(dtype="float64"),
+        })
+    if len(segmentos) < 2:
+        return None
+
+    delta_total = float(sum(s["delta"] for s in segmentos))
+    nivel = float(np.abs(historico.to_numpy()).mean())
+    if nivel <= 0 or abs(delta_total) < nivel * 0.01:
+        return None  # la tendencia es plana: no hay nada que atribuir
+
+    direccion = "baja" if delta_total < 0 else "sube"
+    signo = -1 if delta_total < 0 else 1
+    mismos = sorted([s for s in segmentos if s["delta"] * signo > 0],
+                    key=lambda s: abs(s["delta"]), reverse=True)
+    contrarios = sorted([s for s in segmentos if s["delta"] * signo < 0],
+                        key=lambda s: abs(s["delta"]), reverse=True)
+    if not mismos:
+        return None
+    empuje_total = float(sum(abs(s["delta"]) for s in mismos))
+
+    # Solo se muestran los que aportan algo. Con un responsable claro al 86%,
+    # acompañarlo de dos que aportan 11% y 3% diluye el mensaje y manda a
+    # revisar casos que no mueven la aguja.
+    relevantes = [s for s in mismos[:top] if empuje_total and abs(s["delta"]) / empuje_total >= 0.10]
+    impulsores = []
+    for s in (relevantes or mismos[:1]):
+        causa = _por_que_cae(s["serie"], s["conteo"])
+        base = float(s["serie"].sum())
+        # El nivel proyectado dice más que un porcentaje. Cuando un segmento
+        # ya casi no registra, "cae 104%" es matemáticamente correcto y no
+        # significa nada; "de 1.2K a 0.4K" se entiende de una.
+        proyectado = float(s["ultimo"] + s["delta"])
+        if float(s["serie"].min()) >= 0:
+            proyectado = max(proyectado, 0.0)
+        sin_actividad = 0
+        for valor in s["serie"][::-1]:
+            if valor == 0:
+                sin_actividad += 1
+            else:
+                break
+        if sin_actividad:
+            # Quien ya no registra no "hace menos operaciones": no hace
+            # ninguna. Descomponer volumen y ticket ahí describe el pasado, no
+            # la causa, y la causa es que dejó de aparecer.
+            causa["motivo"] = (f"no registra nada desde hace {sin_actividad} "
+                               f"{_conc_periodos(sin_actividad)}")
+        impulsores.append({
+            "nombre": s["nombre"],
+            "delta": s["delta"],
+            "peso": abs(s["delta"]) / empuje_total * 100 if empuje_total else 0.0,
+            "ultimo": float(s["ultimo"]),
+            "proyectado": proyectado,
+            "caida_pct": ((proyectado - s["ultimo"]) / abs(s["ultimo"]) * 100) if s["ultimo"] else None,
+            "periodos_bajando": _periodos_bajando(s["serie"]),
+            "periodos_sin_actividad": sin_actividad,
+            "inactivo": bool(sin_actividad > 0 and base > 0),
+            "aporte_historico": base,
+            **causa,
+        })
+
+    compensan = [{"nombre": s["nombre"], "delta": s["delta"]} for s in contrarios[:2]]
+    concentracion = float(sum(abs(s["delta"]) for s in mismos[:top]) / empuje_total * 100) if empuje_total else 0.0
+    return {
+        "dimension": dim,
+        "direccion": direccion,
+        "delta_total": delta_total,
+        "horizonte": horizonte,
+        "segmentos": len(segmentos),
+        "impulsores": impulsores,
+        "concentracion": concentracion,
+        # Cuántos segmentos cubre esa concentración. No es len(impulsores):
+        # arriba se filtran los que aportan menos del 10%, y la frase debe
+        # decir sobre cuántos se calculó el porcentaje, no cuántos se pintan.
+        "explicados": len(mismos[:top]),
+        # Por debajo de este umbral, los nombres de arriba son los mayores de
+        # un montón, no los responsables. La interfaz tiene que decirlo así:
+        # presentarlos como culpables mandaría a revisar tres casos cuando el
+        # problema es de todos.
+        "disperso": bool(concentracion < 25),
+        "cuantos_empujan": len(mismos),
+        "compensan": compensan,
+        # El reparto es exacto sobre la RECTA de tendencia. Si el pronóstico
+        # se calculó con otro método, el total proyectado no tiene por qué
+        # coincidir al peso, y la interfaz debe decirlo en vez de dar a
+        # entender que estos números suman exactamente la línea del gráfico.
+        "metodo_lineal": resultado.get("metodo") == "tendencia",
+    }
+
+
+def explicar_atribucion(atribucion: dict | None) -> str:
+    """Una frase que responde "¿por qué va a bajar?" antes del detalle.
+
+    No nombra la dimensión: la sección que la muestra ya dice sobre qué
+    columna se abrió, y repetirlo dentro de la frase producía cosas como
+    "3 de 5 de PUNTO aportan", que no se lee.
+    """
+    if not atribucion or not atribucion.get("impulsores"):
+        return ""
+    nombres = [i["nombre"] for i in atribucion["impulsores"]]
+    verbo = "El descenso" if atribucion["direccion"] == "baja" else "El crecimiento"
+    if atribucion.get("disperso"):
+        return (f"{verbo} proyectado está repartido entre {atribucion['cuantos_empujan']}, "
+                f"y los {atribucion.get('explicados', len(nombres))} mayores apenas aportan el "
+                f"{atribucion['concentracion']:.0f}%. No hay unos pocos responsables: "
+                f"la causa es común y hay que buscarla en el proceso, no en los nombres.")
+    if atribucion["concentracion"] >= 50:
+        return (f"{verbo} proyectado no es general: {atribucion.get('explicados', len(nombres))} de "
+                f"{atribucion['cuantos_empujan']} aportan el "
+                f"{atribucion['concentracion']:.0f}% de la tendencia.")
+    return (f"{verbo} proyectado está repartido entre {atribucion['cuantos_empujan']}; "
+            f"los {atribucion.get('explicados', len(nombres))} primeros aportan el "
+            f"{atribucion['concentracion']:.0f}%.")
+
+
 NOMBRES_METODO = {
     "tendencia": "recta de tendencia",
     "suavizado": "suavizado exponencial (da más peso a lo reciente)",

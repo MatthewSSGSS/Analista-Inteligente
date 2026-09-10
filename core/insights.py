@@ -1,5 +1,6 @@
 import pandas as pd
 from .numeric import numeric_series, safe_mean, safe_median, safe_sum
+from .diagnostics import diagnosticar
 
 
 def _fmt(v):
@@ -27,7 +28,15 @@ def _pretty(schema, column):
 
 
 def generate(df, schema, anomalies):
-    """Genera hallazgos ejecutivos con evidencia, implicación y acción sugerida."""
+    """Genera hallazgos ejecutivos con evidencia, implicación y acción sugerida.
+
+    Primero van los hallazgos con nombre propio (`core/diagnostics`): cuál
+    punto cayó, cuánto y desde cuándo. Los de aquí abajo son lecturas
+    generales del archivo —línea base, dispersión, evolución— y solo deben
+    aparecer cuando no hay algo más concreto que decir en su lugar.
+    """
+    concretos = diagnosticar(df, schema, anomalies)
+    cubiertos = {h.get("title") for h in concretos}
     out = []
     metrics = schema.get("semantic", {}).get("metrics") or schema.get("metrics", [])
     cats = schema.get("semantic", {}).get("dimensions") or schema.get("categorical", [])
@@ -50,7 +59,7 @@ def generate(df, schema, anomalies):
                 "finding":headline,
                 "implication":"Este indicador establece la línea base del periodo analizado y permite comparar segmentos y periodos con una referencia común.",
                 "action":"Usar esta línea base y contrastarla con las principales dimensiones antes de definir prioridades." ,
-                "confidence":"Alta", "kind":"info", "priority":1,
+                "confidence":"Alta", "kind":"info", "priority":11,
             })
             if len(s) >= 8:
                 median = safe_median(s)
@@ -62,10 +71,12 @@ def generate(df, schema, anomalies):
                         "finding":f"{label} presenta una dispersión elevada: el rango intercuartílico equivale aproximadamente al {spread:.0f}% de la mediana.",
                         "implication":"El promedio puede ocultar diferencias importantes entre registros; el comportamiento no es homogéneo.",
                         "action":"Segmentar por región, producto o periodo para localizar dónde se concentra la variabilidad y priorizar los segmentos más alejados del comportamiento normal.",
-                        "confidence":"Media", "kind":"warning", "priority":4,
+                        "confidence":"Media", "kind":"warning", "priority":14,
                     })
 
-    if cats and metrics:
+    # La concentración genérica solo tiene sentido si el diagnóstico con
+    # nombre no la dijo ya, y con más detalle.
+    if cats and metrics and "Concentración de riesgo" not in cubiertos:
         m = metrics[0]
         for c in cats:
             try:
@@ -81,10 +92,10 @@ def generate(df, schema, anomalies):
                         dim_label = _pretty(schema, c); metric_label = _pretty(schema, m)
                         out.append({
                             "title":"Concentración por dimensión",
-                            "finding":f"{leader} concentra el {share:.1f}% del total de {metric_label.lower()} dentro de {dim_label.lower()}.",
+                            "finding":f"{leader} concentra el {share:.1f}% del total de {metric_label.lower()} dentro de {dim_label}.",
                             "implication":"Una parte relevante del resultado depende de un único segmento. Esto puede representar una fortaleza, pero también una exposición a concentración.",
                             "action":f"Revisar qué explica el liderazgo de {leader} y evaluar si sus prácticas pueden replicarse en los segmentos con menor desempeño.",
-                            "confidence":"Alta", "kind":"positive" if share >= 30 else "info", "priority":2, "target":{"dimension":c,"metric":m,"filter_column":c,"filter_value":leader,"view":f"{dim_label}: {leader}"},
+                            "confidence":"Alta", "kind":"positive" if share >= 30 else "info", "priority":12, "target":{"dimension":c,"metric":m,"filter_column":c,"filter_value":leader,"view":f"{dim_label}: {leader}"},
                         })
                         break
             except Exception:
@@ -119,19 +130,25 @@ def generate(df, schema, anomalies):
                         "finding":f"El último periodo disponible registra un cambio de {pct:+.1f}% en {metric_label.lower()} frente al periodo anterior.",
                         "implication":implication,
                         "action":action,
-                        "confidence":"Alta", "kind":kind, "priority":3, "target":{"metric":m,"view":"evolución reciente"},
+                        "confidence":"Alta", "kind":kind, "priority":13, "target":{"metric":m,"view":"evolución reciente"},
                     })
         except Exception:
             pass
 
-    if len(anomalies):
+    # El aviso genérico de atípicos queda como último recurso: si el
+    # diagnóstico pudo decir en qué segmento están, ese reemplaza a este.
+    # Tres es el mínimo para que valga la pena ocupar un lugar en el panel:
+    # con uno solo el aviso decía "se detectaron 1 observaciones atípicas",
+    # que además de sonar mal no da nada que priorizar.
+    if len(anomalies) >= 3 and not ({"Valores atípicos: dónde están", "Errores de captura"} & cubiertos):
         out.append({
             "title":"Calidad para la toma de decisiones",
             "finding":f"Se detectaron {len(anomalies):,} observaciones atípicas que conviene revisar.",
             "implication":"Los valores atípicos pueden distorsionar promedios, rankings y tendencias si corresponden a errores de captura o casos excepcionales.",
             "action":"Validar primero las observaciones de mayor impacto y confirmar si representan eventos reales o problemas de calidad antes de tomar decisiones.",
-            "confidence":"Alta", "kind":"warning", "priority":5, "target":{"view":"anomalías"},
+            "confidence":"Alta", "kind":"warning", "priority":15, "target":{"view":"anomalías"},
         })
 
+    out = concretos + out
     out.sort(key=lambda x: x.get("priority", 99))
     return out[:6]

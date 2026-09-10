@@ -6,7 +6,7 @@ from core.profile import profile_sheet
 from core.dashboard_engine import build_dashboard
 from core.comparison_engine import prepare_comparison, build_comparison
 from visualization.charts import trend, ranking, donut, histogram, scatter, correlation, wide_month_chart
-from core.geo_engine import supports_georeferencing
+from core.geo_engine import supports_georeferencing, geographic_summary
 from ui.dashboard import render_dashboard
 
 
@@ -270,6 +270,56 @@ def main():
     gi = profile_sheet(geo_df, {"sheet_name": "Ventas", "workbook_name": "ventas.xlsx"})
     geo_ok, _ = supports_georeferencing(gi["processed"], gi["profile"]["schema"])
     check("datos con ciudad habilitan georeferenciación", geo_ok)
+
+    # La ciudad metida dentro del nombre del punto de venta: el archivo no
+    # tiene columna Ciudad, pero el lugar está escrito ahí y debe ubicarse.
+    puntos = [
+        "MC MULTICELL SAS CIENEGA MAGDALENA", "DANCELL RIOHACHA LA GUAJIRA",
+        "COMMUTE SAS SOLEDAD ATLANTICO", "INVERSIONES GERA SAS CARTAGENA",
+        "CELUNORTE COMUNICACIONES SAS SINCELEJO SUCRE",
+    ]
+    pdv = pd.DataFrame({"NOMBREPUNTO": puntos * 2, "Ventas": range(10)})
+    pdv_i = profile_sheet(pdv, {"sheet_name": "Puntos", "workbook_name": "puntos.xlsx"})
+    geo_ok, geo_meta = supports_georeferencing(pdv_i["processed"], pdv_i["profile"]["schema"])
+    check("la ciudad dentro del nombre del punto habilita el mapa", geo_ok)
+    check("se identifica la columna que contiene el lugar",
+          geo_meta["columns"].get("embedded") == "NOMBREPUNTO")
+
+    resumen = geographic_summary(pdv_i["processed"], pdv_i["profile"]["schema"], "Ventas")
+    ubicados = set(resumen["table"]["_geo_label"]) if not resumen["table"].empty else set()
+    check("se ubican los cinco puntos", len(ubicados) == 5)
+    check("un nombre mal escrito igual se reconoce (CIENEGA → Ciénaga)", "Ciénaga" in ubicados)
+    check("el municipio gana sobre el departamento (Sincelejo, no Sucre)", "Sincelejo" in ubicados)
+
+    # El nombre de la columna no importa: lo que decide es el contenido. El
+    # mismo archivo con el encabezado que sea tiene que ubicarse igual.
+    for encabezado in ("Sucursal", "Razón Social", "Detalle", "Columna1", "Unnamed: 3"):
+        otro = pd.DataFrame({encabezado: puntos * 2, "Ventas": range(10)})
+        otro_i = profile_sheet(otro, {"sheet_name": "H", "workbook_name": "h.xlsx"})
+        geo_ok, geo_meta = supports_georeferencing(otro_i["processed"], otro_i["profile"]["schema"])
+        check(f"se ubica igual con la columna llamada '{encabezado}'",
+              geo_ok and geo_meta["columns"].get("embedded") == encabezado)
+
+    # Una columna llamada "Zona" o "Región" que en realidad trae nombres de
+    # punto de venta se lleva el camino de geocodificación, que no resuelve
+    # nada con esos textos. El archivo no puede quedarse sin mapa por eso.
+    zona = pd.DataFrame({"Zona": puntos * 2, "Ventas": range(10)})
+    zona_i = profile_sheet(zona, {"sheet_name": "Z", "workbook_name": "z.xlsx"})
+    resumen_zona = geographic_summary(zona_i["processed"], zona_i["profile"]["schema"], "Ventas")
+    ubicados_zona = set(resumen_zona["table"]["_geo_label"]) if not resumen_zona["table"].empty else set()
+    check("una columna 'Zona' con nombres de punto igual se ubica", len(ubicados_zona) == 5)
+    check("y se etiqueta por municipio, no por la frase completa", "Ciénaga" in ubicados_zona)
+
+    # El apellido no es una ubicación: ubicar personas por su apellido sería
+    # peor que no ubicarlas.
+    personas = pd.DataFrame({
+        "Nombre completo": ["Juan Córdoba Gómez", "María Pereira López", "Ana Santander Ruiz",
+                            "Luis Bolívar Díaz", "Eva Sucre Mora"],
+        "Ventas": [1, 2, 3, 4, 5],
+    })
+    per_i = profile_sheet(personas, {"sheet_name": "Equipo", "workbook_name": "equipo.xlsx"})
+    geo_ok, _ = supports_georeferencing(per_i["processed"], per_i["profile"]["schema"])
+    check("los apellidos que son municipios no se toman como ubicación", not geo_ok)
 
     print("\nSmoke test completado sin errores.")
 

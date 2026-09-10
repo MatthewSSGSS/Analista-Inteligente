@@ -102,13 +102,21 @@ def build_executive(df, schema, insights=None, anomalies=None):
 
 
 def build_alerts(df, schema, insights=None, anomalies=None):
+    """Las alertas son los hallazgos accionables, con su evidencia.
+
+    Antes esta función añadía por su cuenta un aviso de atípicos aunque los
+    hallazgos ya trajeran uno: el panel mostraba dos alertas seguidas
+    diciendo lo mismo con distinto título ("164 observaciones atípicas" dos
+    veces). Ahora solo se agrega si nadie lo dijo antes.
+    """
     alerts=[]
     for i in (insights or []):
         kind=i.get('kind','info')
         if kind not in {'warning','positive'}: continue
-        alerts.append({'severity':'Alta' if kind=='warning' else 'Oportunidad','title':i.get('title','Hallazgo'),'text':i.get('finding',''),'action':i.get('action',''),'implication':i.get('implication',''),'target':i.get('target',{})})
-    if anomalies is not None and len(anomalies):
-        alerts.append({'severity':'Alta','title':'Valores que requieren revisión','text':f"Se detectaron {len(anomalies):,} observaciones atípicas.",'action':'Validar primero las observaciones de mayor impacto antes de tomar decisiones.','target':{'view':'anomalies'}})
+        alerts.append({'severity':'Alta' if kind=='warning' else 'Oportunidad','title':i.get('title','Hallazgo'),'text':i.get('finding',''),'action':i.get('action',''),'implication':i.get('implication',''),'evidence':i.get('evidence') or [],'target':i.get('target',{})})
+    ya_dicho={a.get('title') for a in alerts}
+    if anomalies is not None and len(anomalies) and not ({'Valores atípicos: dónde están','Errores de captura','Calidad para la toma de decisiones'} & ya_dicho):
+        alerts.append({'severity':'Alta','title':'Valores que requieren revisión','text':f"Se detectaron {len(anomalies):,} observaciones atípicas.",'action':'Validar primero las observaciones de mayor impacto antes de tomar decisiones.','evidence':[],'target':{'view':'anomalies'}})
     return alerts[:6]
 
 

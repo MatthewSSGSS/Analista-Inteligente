@@ -9,7 +9,8 @@ PYTHONPATH=. python tests/forecast_test.py
 import numpy as np
 import pandas as pd
 
-from core.forecast import pronosticar, explicar, diagnosticar, serie_periodica
+from core.forecast import (pronosticar, explicar, diagnosticar, serie_periodica,
+                           atribuir, explicar_atribucion)
 from core.profile import profile_sheet
 
 
@@ -144,6 +145,107 @@ def test_la_confianza_no_miente():
     check("y avisa de la posible estacionalidad", "temporada" in explicar(r).lower())
 
 
+def _archivo_con_culpables():
+    """Doce meses y tres puntos que caen por motivos DISTINTOS.
+
+    La distinción es el punto de la prueba: RIOHACHA atiende menos
+    operaciones, CIENAGA cobra menos por cada una y MAICAO dejó de registrar.
+    Son tres problemas que se corrigen de tres formas, y un pronóstico que
+    solo dice "va a bajar" los mete a todos en la misma bolsa.
+    """
+    filas = []
+    for mes in range(1, 13):
+        for punto in ("RIOHACHA", "CIENAGA", "SOLEDAD", "CARTAGENA", "MONTERIA", "MAICAO"):
+            if punto == "RIOHACHA":
+                operaciones, ticket = max(2, 30 - mes * 2), 1000
+            elif punto == "CIENAGA":
+                operaciones, ticket = 25, max(200, 1000 - mes * 60)
+            elif punto == "MAICAO":
+                operaciones, ticket = (20 if mes <= 9 else 0), 900
+            else:
+                operaciones, ticket = 25, 1000
+            for i in range(operaciones):
+                filas.append({"Fecha": f"2026-{mes:02d}-{(i % 28) + 1:02d}",
+                              "PUNTO": punto, "Ventas": ticket + (i % 5) * 10})
+    item = profile_sheet(pd.DataFrame(filas), {"sheet_name": "V", "workbook_name": "v.xlsx"})
+    return item["processed"], item["profile"]["schema"]
+
+
+def _impulsor(atribucion, nombre):
+    return next((i for i in atribucion["impulsores"] if i["nombre"] == nombre), None)
+
+
+def test_la_prediccion_dice_de_quien_es():
+    df, sc = _archivo_con_culpables()
+    resultado = pronosticar(df, sc, "Ventas", horizonte=3)
+    check("el archivo de puntos sí se puede pronosticar", resultado["viable"])
+
+    a = atribuir(df, sc, resultado)
+    check("la predicción viene con su atribución", a is not None)
+    check("abierta por la columna que nombra al punto", a["dimension"] == "PUNTO")
+    check("y sabe que la tendencia va a la baja", a["direccion"] == "baja")
+
+    nombres = [i["nombre"] for i in a["impulsores"]]
+    check("nombra a los puntos que construimos cayendo",
+          {"RIOHACHA", "CIENAGA", "MAICAO"} <= set(nombres))
+    check("y dice cuánto aporta cada uno", all(i["peso"] > 0 for i in a["impulsores"]))
+    check("el descenso queda explicado por esos pocos", a["concentracion"] >= 50)
+    check("y no se declara disperso", not a["disperso"])
+
+    # El POR QUÉ, que es lo que se pidió: no basta con el nombre.
+    riohacha = _impulsor(a, "RIOHACHA")
+    check("de quien atiende menos, dice que hace menos operaciones",
+          "menos operaciones" in (riohacha["motivo"] or ""))
+    cienaga = _impulsor(a, "CIENAGA")
+    check("de quien cobra menos, dice que cada operación vale menos",
+          "vale" in (cienaga["motivo"] or ""))
+    maicao = _impulsor(a, "MAICAO")
+    check("y de quien desapareció, que dejó de registrar",
+          "no registra" in (maicao["motivo"] or ""))
+    check("el que desapareció se marca como inactivo", maicao["inactivo"])
+
+    check("hay una frase que resume el porqué", bool(explicar_atribucion(a)))
+    check("y se sabe si el reparto usa el mismo método del gráfico",
+          "metodo_lineal" in a)
+
+
+def test_no_señala_culpables_cuando_la_caida_es_general():
+    """Si baja todo el mundo, nombrar a tres es mandar a revisar lo que no es."""
+    filas = []
+    for mes in range(1, 13):
+        for i in range(40):
+            filas.append({"Fecha": f"2026-{mes:02d}-10", "Punto": f"P{i:02d}",
+                          "Ventas": max(0, 1000 - mes * 40 + (i % 7) * 15)})
+    item = profile_sheet(pd.DataFrame(filas), {"sheet_name": "V", "workbook_name": "v.xlsx"})
+    df, sc = item["processed"], item["profile"]["schema"]
+    a = atribuir(df, sc, pronosticar(df, sc, "Ventas", horizonte=3))
+    check("una caída pareja se marca como dispersa", a is not None and a["disperso"])
+    check("y el texto dice que la causa es común",
+          "proceso" in explicar_atribucion(a))
+
+
+def test_prefiere_la_agrupacion_que_explica():
+    """Si el descenso es de toda una ciudad, se abre por ciudad y no por punto."""
+    filas = []
+    for mes in range(1, 13):
+        for i in range(90):
+            ciudad = "Barranquilla" if i < 30 else ("Cali" if i < 60 else "Medellín")
+            base = 900 - (mes * 60 if ciudad == "Barranquilla" else 0)
+            filas.append({"Fecha": f"2026-{mes:02d}-10", "Punto": f"P{i:02d}",
+                          "Ciudad": ciudad, "Ventas": max(0, base + (i % 5) * 10)})
+    item = profile_sheet(pd.DataFrame(filas), {"sheet_name": "V", "workbook_name": "v.xlsx"})
+    df, sc = item["processed"], item["profile"]["schema"]
+    a = atribuir(df, sc, pronosticar(df, sc, "Ventas", horizonte=3))
+    check("se elige la agrupación que concentra el descenso", a["dimension"] == "Ciudad")
+    check("y señala la ciudad que cae", a["impulsores"][0]["nombre"] == "Barranquilla")
+
+
+def test_sin_dimension_no_inventa_atribucion():
+    df, sc = _datos([100, 95, 90, 85, 80, 75, 70, 65])
+    a = atribuir(df, sc, pronosticar(df, sc, "Ingresos", horizonte=3))
+    check("sin una columna con la que nombrar a nadie, no se atribuye nada", a is None)
+
+
 if __name__ == "__main__":
     test_se_niega_con_poca_historia()
     test_se_niega_si_no_varia()
@@ -153,4 +255,8 @@ if __name__ == "__main__":
     test_no_proyecta_negativos()
     test_usa_estacionalidad_con_dos_anios()
     test_la_confianza_no_miente()
+    test_la_prediccion_dice_de_quien_es()
+    test_no_señala_culpables_cuando_la_caida_es_general()
+    test_prefiere_la_agrupacion_que_explica()
+    test_sin_dimension_no_inventa_atribucion()
     print("\nForecast test completado sin errores.")

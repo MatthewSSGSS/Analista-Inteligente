@@ -11,10 +11,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from core.forecast import pronosticar, explicar, NOMBRES_METODO
+from core.forecast import pronosticar, explicar, atribuir, explicar_atribucion, NOMBRES_METODO
 from visualization.charts import metric_candidates, _base, _label
 from ui.components.cards import kpi_card
 from ui.components.section import section_header
+from ui.labels import clean_display_text
 from ui.layouts.columns import kpi_grid
 
 # Colores de confianza: el mismo lenguaje que el resto del panel, para que
@@ -90,6 +91,74 @@ def _grafico(resultado: dict, schema: dict) -> go.Figure:
     fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
                       margin=dict(t=54))
     return _base(fig, 420)
+
+
+def _por_que(atribucion: dict | None, schema: dict, resultado: dict) -> None:
+    """Quién está empujando la proyección, y por qué motivo concreto.
+
+    Es la pregunta que sigue a "va a bajar" y la que la pestaña no respondía:
+    una línea descendente sin responsable no le dice a nadie qué hacer el
+    lunes. Aquí cada nombre viene con cuánto aporta a la tendencia y con la
+    causa separada —menos operaciones o de menor valor—, que son dos
+    problemas distintos y se corrigen distinto.
+    """
+    if not atribucion or not atribucion.get("impulsores"):
+        return
+    baja = atribucion["direccion"] == "baja"
+    st.markdown(section_header(
+        "Por qué va en esa dirección",
+        eyebrow="QUIÉN LA EMPUJA",
+        subtitle=(f"La misma tendencia, abierta por {_label(schema, atribucion['dimension'])}. "
+                  f"El reparto es exacto: el total de cada periodo es la suma de sus partes, "
+                  f"así que la tendencia del total es la suma de las tendencias."),
+    ), unsafe_allow_html=True)
+
+    st.markdown(
+        f"<div style='border-left:4px solid {'#be123c' if baja else '#0f8a5f'};background:#f8fafc;"
+        f"border-radius:10px;padding:12px 15px;margin:4px 0 12px;font-size:13.5px'>"
+        f"{explicar_atribucion(atribucion)}</div>",
+        unsafe_allow_html=True,
+    )
+
+    if atribucion.get("disperso"):
+        st.caption("Los de abajo son los mayores del grupo, no los responsables: "
+                   "cada uno aporta una parte pequeña del movimiento.")
+    columnas = st.columns(len(atribucion["impulsores"]))
+    for columna, impulsor in zip(columnas, atribucion["impulsores"]):
+        with columna:
+            señales = []
+            if impulsor["periodos_sin_actividad"]:
+                señales.append(f"sin actividad hace {impulsor['periodos_sin_actividad']}")
+            elif impulsor["periodos_bajando"] >= 2:
+                señales.append(f"{impulsor['periodos_bajando']} periodos seguidos a la baja")
+            if impulsor["operaciones"]:
+                señales.append(f"{impulsor['operaciones']:,} registros en el histórico")
+            nivel = (f"{impulsor['ultimo']:,.0f} → {impulsor['proyectado']:,.0f}"
+                     if impulsor["ultimo"] else f"→ {impulsor['proyectado']:,.0f}")
+            st.markdown(
+                f"""<div class="insight-card {'warning' if baja else 'positive'} compact">
+                <div class="insight-body">
+                <div class="insight-title">{clean_display_text(impulsor['nombre'])}</div>
+                <div class="insight-text"><b>{impulsor['peso']:.0f}%</b> de la tendencia ·
+                nivel {nivel}</div>
+                {f'<div class="insight-action"><b>Por qué:</b> {clean_display_text(impulsor["motivo"])}</div>' if impulsor.get("motivo") else ""}
+                <small style="color:var(--soft);display:block;margin-top:7px">{clean_display_text(" · ".join(señales))}</small>
+                </div></div>""",
+                unsafe_allow_html=True,
+            )
+
+    if atribucion.get("compensan"):
+        nombres = ", ".join(f"{c['nombre']} ({c['delta']:+,.0f})" for c in atribucion["compensan"])
+        sentido = "amortiguan la caída" if baja else "frenan el crecimiento"
+        st.caption(f"En sentido contrario, {nombres} {sentido}.")
+
+    if not atribucion.get("metodo_lineal"):
+        st.caption(
+            f"El reparto de arriba se calcula sobre la recta de tendencia de cada "
+            f"{_label(schema, atribucion['dimension'])}. La línea del gráfico usa "
+            f"{NOMBRES_METODO.get(resultado['metodo'], resultado['metodo'])}, así que los aportes "
+            f"explican de dónde viene la dirección, no suman exactamente la cifra proyectada."
+        )
 
 
 def _base_calculo(resultado: dict, schema: dict, df: pd.DataFrame) -> None:
@@ -194,6 +263,10 @@ def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = Non
 
     st.plotly_chart(_grafico(resultado, schema), use_container_width=True,
                     key="forecast_chart")
+
+    # Quién empuja la proyección. Va justo después del gráfico: primero se ve
+    # hacia dónde va la línea, e inmediatamente después de quién es la línea.
+    _por_que(atribuir(df, schema, resultado), schema, resultado)
 
     tabla = pred.copy()
     tabla["periodo"] = pd.to_datetime(tabla["periodo"]).dt.strftime("%b %Y")

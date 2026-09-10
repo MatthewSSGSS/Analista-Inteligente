@@ -566,6 +566,21 @@ def render_georeferencing(df: pd.DataFrame, schema: dict):
     k3.metric("Valor líder", _fmt(table.iloc[0]["_geo_metric"]))
     k4.metric("Puntos sin resolver", f"{sum(meta.get(k, 0) for k in ('unresolved_places','ambiguous_places')):,}")
 
+    # Cuando la ciudad no venía en su propia columna sino dentro de un texto,
+    # hay que decirlo: el usuario tiene que poder juzgar si le creemos bien.
+    if meta.get("mode") == "embedded_text":
+        detalle = [f'se leyó la ubicación dentro de la columna "{meta.get("source_column")}"']
+        if meta.get("approximate_places"):
+            detalle.append(f"{meta['approximate_places']} nombre(s) se reconocieron pese a estar mal escritos")
+        if meta.get("department_only_places"):
+            detalle.append(f"{meta['department_only_places']} solo llegaron al departamento")
+        st.caption("📍 " + " · ".join(detalle) + ".")
+        sin_resolver = meta.get("unresolved_examples") or []
+        if sin_resolver:
+            with st.expander(f"Ver {meta.get('unresolved_places', 0)} valor(es) donde no se reconoció ningún lugar"):
+                st.write(", ".join(str(v) for v in sin_resolver))
+                st.caption("No se ubicaron en el mapa. Si alguno es un municipio real, escribirlo completo en el archivo basta para que aparezca.")
+
     # ── Mapa: el elemento principal, a todo el ancho disponible ─────────────
     if map_mode == "🌐 3D":
         try:

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.labels import clean_display_text
+
 
 def kpi_card(label, value, delta=None, tone: str = "neutral", icon=None, small_value: bool = False) -> str:
     """Tarjeta `.kpi-card`. Antes duplicada como `_card()` en
@@ -31,6 +33,29 @@ def kpi_card(label, value, delta=None, tone: str = "neutral", icon=None, small_v
     )
 
 
+def evidence_list(evidence) -> str:
+    """Los nombres concretos con su cifra, como lista corta.
+
+    Existe porque un hallazgo sin nombres no se puede accionar: "hay 164
+    valores atípicos" no dice por dónde empezar y "el 62% está en Ciénaga,
+    Riohacha y Soledad" sí. `core/diagnostics.py` produce estas filas; aquí
+    solo se pintan.
+    """
+    if not evidence:
+        return ""
+    filas = []
+    for item in list(evidence)[:4]:
+        nombre = clean_display_text(item.get("nombre", ""))
+        valor = clean_display_text(item.get("valor", ""))
+        detalle = clean_display_text(item.get("detalle", ""))
+        detalle_html = f'<span class="evidence-detail">{detalle}</span>' if detalle else ""
+        filas.append(
+            f'<div class="evidence-row"><span class="evidence-name">{nombre}</span>'
+            f'<span class="evidence-value">{valor}</span>{detalle_html}</div>'
+        )
+    return f'<div class="evidence-list">{"".join(filas)}</div>'
+
+
 def insight_card(
     text,
     title=None,
@@ -40,6 +65,7 @@ def insight_card(
     action=None,
     action_label: str = "Qué hacer",
     compact: bool = False,
+    evidence=None,
 ) -> str:
     """Tarjeta `.insight-card`. Antes escrita a mano de tres formas
     distintas en `ui/executive.py` (sin icono, con acción "Qué revisar"),
@@ -63,7 +89,8 @@ def insight_card(
     action_html = f'<div class="insight-action"><b>{action_label}:</b> {action}</div>' if action else ""
     return (
         f'<div class="{classes}">{icon_html}<div class="insight-body">'
-        f'{header_html}<div class="insight-text">{text}</div>{action_html}</div></div>'
+        f'{header_html}<div class="insight-text">{text}</div>'
+        f'{evidence_list(evidence)}{action_html}</div></div>'
     )
 
 
