@@ -79,13 +79,27 @@ def resolve_entity(df, schema):
     if person:
         return {"column": person, "noun": "persona", "icon": "👤", "candidates": [], "detected": None}
     candidates = [c for c in _entity_candidates(df, schema) if c["column"] in df.columns]
-    if not candidates:
-        return None
-    chosen = candidates[0]
-    if chosen["score"] < 0.50:
-        return None
-    return {"column": chosen["column"], "noun": "código", "icon": "🔖",
-            "candidates": candidates, "detected": chosen}
+    chosen = candidates[0] if candidates else None
+    if chosen and chosen["score"] >= 0.50:
+        return {"column": chosen["column"], "noun": "código", "icon": "🔖",
+                "candidates": candidates, "detected": chosen}
+
+    # Sin una entidad estricta todavía hay algo a lo que hacer seguimiento: la
+    # unidad de negocio del archivo. Un punto de venta que se repite en 200
+    # filas no es un "identificador" —no identifica a la fila— pero sí es
+    # exactamente lo que alguien quiere seguir. Con el criterio anterior, el
+    # archivo del que más se pregunta "¿cómo va este punto?" era justo el que
+    # se quedaba sin la herramienta.
+    from core.diagnostics import dimension_operativa
+
+    try:
+        unidad = dimension_operativa(df, schema)
+    except Exception:
+        unidad = None
+    if unidad and unidad in df.columns:
+        return {"column": unidad, "noun": "grupo", "icon": "🔎",
+                "candidates": candidates, "detected": None}
+    return None
 
 
 def has_entity(df, schema) -> bool:
@@ -188,6 +202,32 @@ def _apply_current_filters(df):
     return out
 
 
+def _observaciones(data, schema, person_col, selected, primary):
+    """Alertas y lecturas de este registro, comparadas contra sus pares."""
+    from core.seguimiento import observaciones
+    from ui.components.cards import insight_card
+
+    try:
+        hallazgos = observaciones(data, schema, person_col, selected, primary)
+    except Exception:
+        hallazgos = []
+    if not hallazgos:
+        return
+    st.markdown(section_header(
+        "Alertas y observaciones",
+        subtitle="Cada lectura está comparada contra el resto del grupo, contra la meta o contra su propio pasado.",
+        compact=True), unsafe_allow_html=True)
+    columnas = st.columns(2)
+    for i, hallazgo in enumerate(hallazgos[:6]):
+        tipo = hallazgo.get("kind", "info")
+        icono = "▲" if tipo == "positive" else "!" if tipo == "warning" else "i"
+        columnas[i % 2].markdown(
+            insight_card(hallazgo.get("finding", ""), title=hallazgo.get("title", ""),
+                         kind=tipo, icon=icono, action=hallazgo.get("action"),
+                         compact=True, evidence=hallazgo.get("evidence")),
+            unsafe_allow_html=True)
+
+
 def render_person_profile(df, schema, dashboard=None):
     """Perfil universal de UNA entidad: todo lo que el archivo puede decir
     legítimamente sobre ella. La entidad es una persona cuando el archivo
@@ -223,10 +263,11 @@ def render_person_profile(df, schema, dashboard=None):
         st.info(f"No hay valores de {noun} disponibles con los filtros actuales.")
         return
 
-    subtitle = (f"Selecciona un {noun} y revisa todo lo que el Excel permite conocer sobre él."
-                if noun == "código" else
-                "Selecciona una persona y revisa todo lo que el Excel permite conocer sobre ella.")
-    st.markdown(section_header("Analizar perfil individual", eyebrow="PERFIL INDIVIDUAL", subtitle=subtitle), unsafe_allow_html=True)
+    subtitle = ("Selecciona una persona y revisa todo lo que el Excel permite conocer sobre ella."
+                if noun == "persona" else
+                f"Selecciona un {noun} y revisa todo lo que el Excel permite conocer sobre él, "
+                f"con sus alertas y su comparación contra el resto.")
+    st.markdown(section_header("Análisis de seguimiento", eyebrow="SEGUIMIENTO", subtitle=subtitle), unsafe_allow_html=True)
 
     # Cuando la entidad se dedujo de los datos (no es un nombre evidente),
     # se explica en qué se basó: nadie debería preguntarse de dónde salió
@@ -255,6 +296,12 @@ def render_person_profile(df, schema, dashboard=None):
         primary = preferred[0]
 
     st.markdown(f'<div class="decision-strip positive"><b>{selected}</b> · {len(rows):,} registros relacionados encontrados. Todo el análisis de esta pestaña está restringido a este registro.</div>', unsafe_allow_html=True)
+
+    # 0. La lectura antes que los números. El perfil mostraba gráficos y
+    # dejaba la interpretación al ojo de quien miraba; esto dice si el caso
+    # va bien o mal y contra qué se le está midiendo, que es lo primero que
+    # alguien quiere saber al abrir un seguimiento.
+    _observaciones(data, schema, person_col, selected, primary)
 
     # 1. KPI layer
     st.markdown(section_header("KPIs", compact=True), unsafe_allow_html=True)

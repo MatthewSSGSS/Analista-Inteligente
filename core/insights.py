@@ -83,9 +83,15 @@ def generate(df, schema, anomalies):
                 x = df[[c, m]].copy()
                 x[m] = pd.to_numeric(x[m], errors="coerce")
                 x = x.dropna(subset=[m])
-                if x[c].nunique(dropna=True) < 2 or x[c].nunique(dropna=True) > 100:
+                # Las filas sin valor en la dimensión se descartan: con
+                # dropna=False el grupo vacío entraba al ranking y el panel
+                # llegó a decir "<NA> concentra el 50% del total", que no es
+                # el nombre de nada y no se puede accionar.
+                x[c] = x[c].astype(str).str.strip()
+                x = x[x[c].ne("") & ~x[c].str.lower().isin({"nan", "none", "<na>", "nat"})]
+                if x[c].nunique() < 2 or x[c].nunique() > 100:
                     continue
-                g = x.groupby(c, dropna=False)[m].sum().sort_values(ascending=False)
+                g = x.groupby(c)[m].sum().sort_values(ascending=False)
                 if len(g):
                     leader = str(g.index[0]); total = float(g.sum()); share = float(g.iloc[0]/total*100) if total else 0
                     if share >= 20:

@@ -16,7 +16,7 @@ from core.dates import format_month_year
 from core.universal_analysis import dynamic_kpis, drilldown_options, drilldown_table, person_stats, smart_chart_questions
 import plotly.graph_objects as go
 import plotly.express as px
-from ui.person_profile import render_person_profile, has_entity
+from ui.person_profile import has_entity
 from ui.components.cards import kpi_card, insight_card, evidence_list, executive_headline as _shared_executive_headline, executive_signals as _shared_executive_signals
 from ui.components.charts import chart_card as _shared_chart_card
 from ui.components.section import banner_header
@@ -1188,26 +1188,13 @@ def render_dashboard(df, dashboard):
     st.markdown(banner_header("Qué está pasando", "Descripción completa · todo recalculado con los filtros actuales.", "ciudad_red.jpg"), unsafe_allow_html=True)
     st.caption(dashboard["summary"])
 
-    # Perfil individual integrado: se abre dentro del mismo dashboard.
-    # Esto evita depender de /pages y mantiene el flujo en una sola pantalla.
-    # Antes preguntaba solo por una columna de nombre completo, así que en un
-    # archivo de códigos (un local, un punto de venta) el botón no aparecía
-    # nunca aunque el perfil funcionara igual de bien. has_entity() acepta las
-    # dos cosas: persona o código detectado por core/entity_engine.py.
+    # El análisis de seguimiento ya no vive aquí dentro: tiene pestaña propia
+    # ("🔎 Análisis de seguimiento"). Enterrado a media página, con un botón
+    # que había que descubrir, era de las herramientas menos usadas del panel
+    # pese a responder una de las preguntas más frecuentes.
     if has_entity(df, schema):
-        cta1, cta2 = st.columns([1.35, 4])
-        with cta1:
-            if st.button("🔎 Analizar perfil individual", type="primary", use_container_width=True, key="open_person_profile_v53"):
-                st.session_state["show_profile_inline"] = True
-        with cta2:
-            st.caption("Abre el análisis completo de una persona o de un código sin salir del dashboard.")
-
-        if st.session_state.get("show_profile_inline", False):
-            st.markdown('<div class="decision-panel"><div class="decision-panel-title">Perfil individual</div><div class="decision-panel-subtitle">Todo el análisis disponible para el registro seleccionado, respetando los filtros actuales.</div></div>', unsafe_allow_html=True)
-            if st.button("✕ Cerrar perfil", key="close_person_profile_v53"):
-                st.session_state["show_profile_inline"] = False
-                st.rerun()
-            render_person_profile(df, schema, dashboard)
+        st.caption("¿Quieres ver un punto, asesor o código en concreto? Está en la pestaña "
+                   "**🔎 Análisis de seguimiento**, con sus alertas y su comparación contra el grupo.")
 
     _universal_kpi_grid(df, schema, dashboard)
 

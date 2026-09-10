@@ -33,7 +33,8 @@ from ui.catalog import render_catalog
 from ui.assistant import render_assistant
 from core.comparison_engine import prepare_comparison, build_comparison
 from ui.comparison import render_comparison
-from ui.person_profile import render_person_profile
+from ui.person_profile import render_person_profile, has_entity
+from ui.planes import render_planes
 from ui.person_compare import render_person_compare
 from ui.executive import render_executive
 from ui.forecast import render_forecast
@@ -390,7 +391,7 @@ with st.sidebar:
             st.error(f"No pudimos crear la comparativa: {st.session_state.comparison_error}")
 
         st.divider()
-        st.markdown('<p class="sidebar-section-label">📍 Análisis de seguimiento</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sidebar-section-label">📍 Seguimiento consolidado</p>', unsafe_allow_html=True)
         if db_engine.is_configured():
             st.caption("🟢 Conectado a la base de datos compartida — todo el equipo ve la misma información con este link.")
         else:
@@ -447,7 +448,7 @@ if not st.session_state.workbook:
     if st.session_state.tracking_data is not None and not st.session_state.tracking_data.empty:
         render_tracking(st.session_state.tracking_data)
         st.stop()
-    st.info("Carga un archivo para comenzar, o selecciona varios archivos en la sección Comparar periodos o archivos, o usa Análisis de seguimiento en la barra lateral.")
+    st.info("Carga un archivo para comenzar, o selecciona varios archivos en la sección Comparar periodos o archivos, o usa Seguimiento consolidado en la barra lateral.")
     st.stop()
 
 st.session_state.active_sheet = sheet
@@ -543,7 +544,9 @@ usable_sheet_count = sum(
 multi_sheet_enabled = usable_sheet_count >= 2
 
 # La comparativa vive en el mismo producto, pero separada del análisis individual.
-# El perfil individual NO es una pestaña adicional: se abre con su botón dentro del dashboard.
+# El análisis de seguimiento SÍ es una pestaña propia: antes se abría con un botón
+# dentro del dashboard y quedaba enterrado a media página, cuando es una de las
+# preguntas que más se repiten ("¿cómo va este punto?").
 general_views = [
     ("🏠 Inicio", lambda: render_home(wb, sheet, mode_info, dashboard)),
     ("Asistente IA", lambda: render_assistant(df, schema, item["profile"], mode_info, dashboard)),
@@ -557,7 +560,7 @@ people_views = []
 if profile_enabled:
     people_views.append(("⚔️ Comparar personas", lambda: render_person_compare(df, schema)))
 if st.session_state.tracking_data is not None and not st.session_state.tracking_data.empty:
-    people_views.append(("📍 Análisis Seguimiento", lambda: render_tracking(st.session_state.tracking_data)))
+    people_views.append(("📍 Seguimiento consolidado", lambda: render_tracking(st.session_state.tracking_data)))
 
 if mode_info["mode"] in {"catalog", "reference"}:
     st.markdown(f'<div class="mode-banner"><b>{mode_info["label"]}</b> · {mode_info["reason"]}</div>', unsafe_allow_html=True)
@@ -579,6 +582,9 @@ else:
     # Executive mode is deliberately compact; Analyst mode exposes every tool.
     if st.session_state.get("view_mode", "Ejecutivo") == "Ejecutivo":
         analysis_views = [("Resumen ejecutivo", lambda: render_executive(df, schema, dashboard))]
+        analysis_views.append(("🎯 Planes de mejora", lambda: render_planes(df, schema, dashboard)))
+        if has_entity(df, schema):
+            analysis_views.append(("🔎 Análisis de seguimiento", lambda: render_person_profile(df, schema, dashboard)))
         analysis_views.append(("🔮 Predicciones", lambda: render_forecast(df, schema, dashboard)))
         if geo_enabled:
             analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
@@ -595,24 +601,16 @@ else:
             st.dataframe(dashboard["statistics"],use_container_width=True,hide_index=True)
             st.caption("Esta vista utiliza las métricas detectadas automáticamente; no presupone que el archivo sea de ventas.")
 
-        def _render_trabajo():
-            st.markdown(section_header("Trabajo y decisiones", eyebrow="ANÁLISIS", compact=True), unsafe_allow_html=True)
-            for x in dashboard.get("insights", []):
-                title = x.get("title") or x.get("label") or "Hallazgo"
-                text = x.get("finding") or x.get("message") or x.get("text") or x.get("description") or "Sin detalle disponible."
-                action = x.get("action")
-                line = f"**{title}:** {text}"
-                if action: line += f"  \n**Qué hacer:** {action}"
-                st.markdown(line)
-
         analysis_views = [("Descripción", lambda: render_dashboard(df,dashboard))]
+        if has_entity(df, schema):
+            analysis_views.append(("🔎 Análisis de seguimiento", lambda: render_person_profile(df, schema, dashboard)))
         if geo_enabled:
             analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
         analysis_views += [
             ("Analítica", lambda: render_explorer(df,schema)),
             ("🔮 Predicciones", lambda: render_forecast(df, schema, dashboard)),
             ("Finanzas", _render_finanzas),
-            ("Trabajo", _render_trabajo),
+            ("🎯 Planes de mejora", lambda: render_planes(df, schema, dashboard)),
             ("Anomalías", lambda: render_anomalies(df, schema)),
         ]
         if st.session_state.comparison_result:

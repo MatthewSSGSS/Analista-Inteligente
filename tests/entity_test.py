@@ -141,10 +141,22 @@ def test_integracion_con_la_vista_de_perfil():
     ent2 = resolve_entity(codigos, _schema(codigos))
     check("un archivo con códigos habilita el perfil", ent2 and ent2["column"] == "Ref" and ent2["noun"] == "código")
 
-    # Y uno sin entidad no ofrece el perfil (no se inventa uno).
+    # Sin una entidad estricta, el seguimiento se ofrece igual sobre la unidad
+    # de negocio. Antes esto devolvía None: una región que se repite en 12
+    # filas no "identifica" a la fila, pero es exactamente lo que alguien
+    # quiere seguir, y el archivo del que más se pregunta "¿cómo va esta
+    # región?" era justo el que se quedaba sin la herramienta.
     plano = pd.DataFrame({"Region": ["Norte", "Sur", "Centro"] * 4,
                           "Ventas": list(range(12)), "Costos": list(range(12))})
-    check("un archivo sin entidad no ofrece perfil", has_entity(plano, _schema(plano)) is False)
+    ent3 = resolve_entity(plano, _schema(plano))
+    check("sin entidad estricta, se sigue la unidad de negocio",
+          ent3 and ent3["column"] == "Region" and ent3["noun"] == "grupo")
+
+    # Pero sin NADA que agrupar tampoco se inventa un sujeto: si cada valor
+    # aparece una sola vez, no hay a quién hacerle seguimiento.
+    suelto = pd.DataFrame({"Ventas": list(range(12)), "Costos": list(range(12))})
+    check("sin ninguna columna que agrupe, no se ofrece seguimiento",
+          has_entity(suelto, _schema(suelto)) is False)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from ui.components.cards import kpi_card, insight_card, executive_headline, exec
 from ui.components.charts import chart_card
 from ui.components.section import section_header, banner_header
 from ui.layouts.columns import two_column, kpi_grid
-from ui.person_profile import render_person_profile, has_entity
+from ui.person_profile import has_entity
 
 
 def render_executive(df, schema, dashboard):
@@ -25,25 +25,13 @@ def render_executive(df, schema, dashboard):
     if isinstance(dashboard, dict) and dashboard.get("executive"):
         executive_headline(dashboard)
 
-    # Acción rápida: el perfil individual se abre DENTRO del dashboard.
-    # No usamos st.switch_page: así evitamos depender de una página física
-    # dentro de /pages y mantenemos el perfil como una herramienta del mismo panel.
-    # Mismo criterio que en ui/dashboard.py: la entidad perfilable puede ser
-    # una persona o un código detectado por core/entity_engine.py.
+    # El análisis de seguimiento ya no vive aquí dentro: tiene pestaña propia
+    # ("🔎 Análisis de seguimiento"). Enterrado a media página, con un botón
+    # que había que descubrir, era de las herramientas menos usadas del panel
+    # pese a responder una de las preguntas más frecuentes.
     if has_entity(df, schema):
-        cta1, cta2 = st.columns([1.35, 4])
-        with cta1:
-            if st.button("🔎 Analizar perfil individual", type="primary", use_container_width=True, key="executive_open_profile_v53"):
-                st.session_state["show_profile_inline"] = True
-        with cta2:
-            st.caption("Abre el análisis completo de una persona o de un código sin salir del dashboard.")
-
-        if st.session_state.get("show_profile_inline", False):
-            st.markdown('<div class="decision-panel"><div class="decision-panel-title">Perfil individual</div><div class="decision-panel-subtitle">Todo el análisis disponible para el registro seleccionado, respetando los filtros actuales.</div></div>', unsafe_allow_html=True)
-            if st.button("✕ Cerrar perfil", key="executive_close_profile_v53"):
-                st.session_state["show_profile_inline"] = False
-                st.rerun()
-            render_person_profile(df, schema, dashboard)
+        st.caption("¿Quieres ver un punto, asesor o código en concreto? Está en la pestaña "
+                   "**🔎 Análisis de seguimiento**, con sus alertas y su comparación contra el grupo.")
 
     # ── Layout de dos columnas: a la izquierda los KPIs y los gráficos
     # principales (lo que ocupa más espacio de lectura), a la derecha la
