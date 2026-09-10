@@ -4,8 +4,19 @@ import streamlit as st
 
 @st.cache_data(show_spinner=False, max_entries=24, ttl=1800)
 def detect(df,schema):
+    """Valores que no encajan con el resto de su columna.
+
+    La columna de meta se salta a propósito: un objetivo mucho más alto que
+    el de los demás no es un dato sospechoso, es una decisión de negocio.
+    Reportarlo como anomalía mandaba a "corregir" una meta bien puesta, y
+    encima desplazaba del panel a un hallazgo que sí importaba.
+    """
+    from .performance import columna_meta
+
+    meta=columna_meta(df,schema)
     rows=[]
     for c in schema["metrics"]:
+        if c==meta: continue
         s=pd.to_numeric(df[c],errors="coerce")
         v=s.dropna()
         if len(v)<8: continue

@@ -1,6 +1,12 @@
 import pandas as pd
 import numpy as np
 from .numeric import numeric_series, safe_sum, safe_mean, safe_median
+from .diagnostics import PEOR_SI_SUBE
+
+# A partir de cuánta variación se declara mejora o declive. Por debajo hay
+# dirección pero no cambio: el veredicto lo dice como "estable con tendencia
+# a la baja" en vez de dar por buena una caída que todavía no lo es.
+UMBRAL_CAMBIO = 1.0
 
 
 def _fmt(v):
@@ -83,15 +89,40 @@ def build_executive(df, schema, insights=None, anomalies=None):
                 pct=float((current_period-previous)/abs(previous)*100)
                 result['change']=pct
                 result['previous']=previous; result['current_period']=current_period
-                if pct>2:
-                    result['status']='positive'; result['headline']=f"{label} creció {pct:.1f}% frente al periodo anterior."
-                    result['detail']=f"El último periodo alcanzó {_fmt(current_period)}, frente a {_fmt(previous)} en el periodo anterior."
-                elif pct<-2:
-                    result['status']='negative'; result['headline']=f"{label} cayó {abs(pct):.1f}% frente al periodo anterior."
-                    result['detail']=f"El último periodo alcanzó {_fmt(current_period)}, frente a {_fmt(previous)} en el periodo anterior."
+                comparacion=f"El último periodo alcanzó {_fmt(current_period)}, frente a {_fmt(previous)} en el periodo anterior."
+                # En días de mora, quejas o devoluciones, subir no es mejorar.
+                # Sin esta distinción el veredicto felicitaba por un 8% más de
+                # mora, que es exactamente al revés de lo que pasó.
+                peor_si_sube=bool(PEOR_SI_SUBE.search(str(metric)))
+                if pct>=UMBRAL_CAMBIO or pct<=-UMBRAL_CAMBIO:
+                    subio=pct>0
+                    mejora=(not subio) if peor_si_sube else subio
+                    result['status']='positive' if mejora else 'negative'
+                    result['status_label']='Mejora' if mejora else 'Declive'
+                    if peor_si_sube:
+                        result['headline']=(f"{label} {'mejoró' if mejora else 'empeoró'}: "
+                                            f"{'subió' if subio else 'bajó'} {abs(pct):.1f}% frente al periodo anterior.")
+                    else:
+                        result['headline']=(f"{label} {'mejoró' if mejora else 'retrocedió'} "
+                                            f"{abs(pct):.1f}% frente al periodo anterior.")
+                    result['detail']=comparacion
                 else:
-                    result['status']='neutral'; result['headline']=f"{label} se mantuvo relativamente estable."
-                    result['detail']=f"La variación frente al periodo anterior fue de {pct:+.1f}%."
+                    # Por debajo del umbral no hay mejora ni declive, pero sí
+                    # hay dirección, y decirla cambia lo que se hace: "estable"
+                    # a secas invita a no mirar, "estable con tendencia a la
+                    # baja" invita a vigilar antes de que el mes que viene ya
+                    # sea una caída.
+                    result['status']='neutral'
+                    if pct==0:
+                        result['status_label']='Estable'
+                        result['headline']=f"{label} se mantuvo sin variación frente al periodo anterior."
+                    else:
+                        rumbo='al alza' if pct>0 else 'a la baja'
+                        result['status_label']=f"Estable con tendencia {rumbo}"
+                        result['headline']=f"{label} se mantuvo estable, con tendencia {rumbo}."
+                    result['detail']=(f"La variación frente al periodo anterior fue de {pct:+.1f}%, "
+                                      f"por debajo del {UMBRAL_CAMBIO:.0f}% que se considera un cambio real. "
+                                      + comparacion)
     if insights:
         for i in insights[:4]:
             if i.get('kind')=='positive': result['positive'].append(i.get('title','Mejora'))

@@ -321,6 +321,33 @@ def main():
     geo_ok, _ = supports_georeferencing(per_i["processed"], per_i["profile"]["schema"])
     check("los apellidos que son municipios no se toman como ubicación", not geo_ok)
 
+    # El veredicto ejecutivo: dónde está la frontera entre "cambió" y "sigue
+    # igual". Un -0,6% no es un declive, pero tampoco es un empate: decirlo
+    # como "estable con tendencia a la baja" es lo que distingue vigilar de
+    # no mirar.
+    def _veredicto(variacion, columna="ALTAS"):
+        base = 100000.0
+        vd = pd.DataFrame({"Fecha": ["2026-05-10", "2026-06-10"],
+                           columna: [base, base * (1 + variacion / 100)]})
+        vi = profile_sheet(vd, {"sheet_name": "H", "workbook_name": "h.xlsx"})
+        return build_dashboard(vi["processed"], vi["profile"])["executive"]
+
+    check("una caída del 1% ya es un declive", _veredicto(-1.0)["status"] == "negative")
+    check("una subida del 1% ya es una mejora", _veredicto(1.0)["status"] == "positive")
+    check("por debajo del 1% no se declara cambio", _veredicto(-0.6)["status"] == "neutral")
+    check("pero sí se dice hacia dónde va",
+          "tendencia a la baja" in _veredicto(-0.6)["headline"])
+    check("y al alza cuando sube poco", "tendencia al alza" in _veredicto(0.4)["headline"])
+    check("sin variación se dice sin variación", "sin variación" in _veredicto(0.0)["headline"])
+    check("la etiqueta del estado acompaña al titular",
+          _veredicto(-0.6)["status_label"] == "Estable con tendencia a la baja")
+
+    # En días de mora o quejas, subir no es mejorar.
+    check("más mora es un declive, no una mejora",
+          _veredicto(8.0, "DiasMora")["status"] == "negative")
+    check("y se dice que empeoró", "empeoró" in _veredicto(8.0, "DiasMora")["headline"])
+    check("menos mora sí es una mejora", _veredicto(-8.0, "DiasMora")["status"] == "positive")
+
     print("\nSmoke test completado sin errores.")
 
 

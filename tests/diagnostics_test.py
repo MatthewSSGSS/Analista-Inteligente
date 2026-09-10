@@ -151,7 +151,108 @@ def main():
     check("la caída repartida sí se reporta, con su lectura propia", generalizada is not None)
 
     _otros_tipos_de_archivo()
+    _comparar_contra_algo()
     print("\nDiagnostics test completado sin errores.")
+
+
+def _comparar_contra_algo():
+    """"El mejor es el que más vendió" compara tamaño, no desempeño.
+
+    El caso que da nombre a la prueba: R1 vende 10 con meta de 4 y R5 vende
+    100 con meta de 200. Por total gana R5; contra la meta, R1 lo hace seis
+    veces mejor. Premiar a R5 por ser grande es la conclusión falsa que estos
+    chequeos tienen que impedir que vuelva.
+    """
+    from core.performance import analyze, columna_meta, unidad_interna
+
+    ventas = pd.DataFrame({
+        "Region": ["R1", "R5", "R3", "R4"] * 5,
+        "Ventas": [10, 100, 60, 30] * 5,
+        "Meta": [4, 200, 50, 40] * 5,
+    })
+    vi = profile_sheet(ventas, {"sheet_name": "H", "workbook_name": "h.xlsx"})
+    procesado, esquema = vi["processed"], vi["profile"]["schema"]
+
+    check("se reconoce la columna de meta", columna_meta(procesado, esquema, "Ventas") == "Meta")
+    resultado = analyze(procesado, esquema, dimension="Region")
+    base = resultado["base"]
+    check("la comparación se hace contra la meta", base["clave"] == "meta")
+    check("y se declara una base justa", base["justo"])
+    check("gana quien más cumplió, no quien más vendió", base["mejor"]["nombre"] == "R1")
+    check("y el peor es quien menos cumplió", base["peor"]["nombre"] == "R5")
+    check("el porcentaje de cumplimiento se muestra", base["mejor"]["texto"] == "250%")
+    check("con la cifra que lo sostiene", "de" in base["mejor"]["detalle"])
+    check("el orden por total sigue disponible aparte", resultado["top"][0][0] == "R5")
+
+    # El diagnóstico también deja de comparar contra la mediana cuando hay meta.
+    hallazgos = diagnosticar(procesado, esquema, None)
+    meta_h = _por_titulo(hallazgos, "Cumplimiento de meta")
+    check("el hallazgo habla de cumplimiento de meta", meta_h is not None)
+    check("y nombra a quien no llegó", _menciona(meta_h, "R5"))
+    check("el rezago contra la mediana ya no compite con él",
+          _por_titulo(hallazgos, "Rezago frente a la mediana") is None)
+
+    # Sin meta, se normaliza por lo que haya: puntos dentro de cada región.
+    filas = []
+    for region, puntos in (("Caribe", 40), ("Andina", 3), ("Pacifica", 10)):
+        for p in range(puntos):
+            for _ in range(4):
+                filas.append({"Region": region, "Punto": f"{region}-{p:02d}",
+                              "Ventas": 100 if region != "Andina" else 400})
+    ui_ = profile_sheet(pd.DataFrame(filas), {"sheet_name": "H", "workbook_name": "h.xlsx"})
+    procesado, esquema = ui_["processed"], ui_["profile"]["schema"]
+    check("se reconoce la unidad que se cuenta dentro del grupo",
+          unidad_interna(procesado, esquema, "Region") == "Punto")
+    base = analyze(procesado, esquema, dimension="Region")["base"]
+    check("sin meta se compara por unidad", base["clave"] == "unidad")
+    check("y la región pequeña con más venta por punto queda primera",
+          base["mejor"]["nombre"] == "Andina")
+
+    # Una meta ambiciosa no es un dato sospechoso.
+    check("la columna de meta no se revisa en busca de atípicos",
+          "Meta" not in set(detect(vi["processed"], vi["profile"]["schema"]).get("columna", [])))
+
+    # La meta viene escrita de mil formas. Si solo se reconoce "Meta", la
+    # comparación justa se pierde en la mayoría de los archivos reales.
+    for encabezado in ("META", "Meta Mensual", "Objetivo", "Presupuesto", "Ppto",
+                       "Presup2026", "Cuota", "Target", "Budget", "Goal"):
+        mi = profile_sheet(
+            pd.DataFrame({"Region": ["A", "B", "C"] * 6, "Ventas": [10, 100, 60] * 6,
+                          encabezado: [4, 200, 50] * 6}),
+            {"sheet_name": "H", "workbook_name": "h.xlsx"})
+        base_m = analyze(mi["processed"], mi["profile"]["schema"], dimension="Region")["base"]
+        check(f"se reconoce la meta escrita como '{encabezado}'",
+              base_m["clave"] == "meta" and base_m["mejor"]["nombre"] == "A")
+
+    # Sin ninguna columna numérica todavía hay algo que comparar: la tasa.
+    tickets = pd.DataFrame({
+        "Ticket": [f"T{i}" for i in range(300)],
+        "Responsable": ["Ana", "Luis", "Marta"] * 100,
+        "Estado": (["Cerrado"] * 2 + ["Vencido"]) * 100,
+    })
+    ti = profile_sheet(tickets, {"sheet_name": "H", "workbook_name": "h.xlsx"})
+    base_t = analyze(ti["processed"], ti["profile"]["schema"])["base"]
+    check("un archivo sin columnas numéricas igual se puede comparar", base_t["clave"] == "estado")
+    check("y se compara por tasa, no por cantidad de casos", base_t["mejor"]["texto"].endswith("%"))
+    check("el estado no se usa como unidad de comparación",
+          analyze(ti["processed"], ti["profile"]["schema"])["dimension"] != "Estado")
+
+    # En una métrica donde subir es peor, el mejor es el que menos tiene.
+    mora = pd.DataFrame({"Cliente": [f"C{i}" for i in range(6)] * 5,
+                         "DiasMora": [0, 10, 20, 40, 80, 160] * 5})
+    moi = profile_sheet(mora, {"sheet_name": "H", "workbook_name": "h.xlsx"})
+    base_mo = analyze(moi["processed"], moi["profile"]["schema"], dimension="Cliente")["base"]
+    check("con días de mora, el mejor es el que menos acumula",
+          base_mo["mejor"]["nombre"] == "C0" and base_mo["peor"]["nombre"] == "C5")
+
+    # Un catálogo no es una comparación de desempeño: cada fila es su grupo.
+    catalogo = profile_sheet(
+        pd.DataFrame({"Producto": [f"SKU{i}" for i in range(30)],
+                      "Precio": list(range(1000, 31000, 1000))}),
+        {"sheet_name": "H", "workbook_name": "h.xlsx"})
+    resultado_cat = analyze(catalogo["processed"], catalogo["profile"]["schema"])
+    check("sin agrupación real no se declara un mejor desempeño",
+          resultado_cat is None or resultado_cat.get("base") is None)
 
 
 def _otros_tipos_de_archivo():

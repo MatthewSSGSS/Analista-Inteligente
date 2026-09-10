@@ -7,6 +7,7 @@ from visualization.charts import (
     trend, grouped_trend, multi_trend, ranking, donut, histogram, scatter, correlation, geo, geo_summary_map, comparison, period_compare_bar,
     metric_candidates, dimension_candidates, _label, adaptive_chart_specs, wide_month_chart, _base, CATEGORY_PALETTE, chart_muted_color
 )
+from core.executive import UMBRAL_CAMBIO
 from core.geo_engine import geographic_summary
 from core.chart_explainer import explain_chart
 from core.performance import choose_dimension
@@ -718,9 +719,73 @@ def _recommendations_panel(df, dashboard):
 def _trend_signal(dashboard):
     growth=dashboard.get("growth")
     if growth is None: return
-    tone="positive" if growth>2 else "negative" if growth<-2 else "neutral"
-    label="Tendencia favorable" if tone=="positive" else "Tendencia a la baja" if tone=="negative" else "Tendencia estable"
+    # Mismo umbral que el veredicto ejecutivo (core/executive.UMBRAL_CAMBIO):
+    # tenía 2% aquí y 2% allá, y al bajar el del veredicto a 1% esta franja
+    # habría dicho "estable" justo debajo de un titular que declaraba mejora.
+    tone="positive" if growth>=UMBRAL_CAMBIO else "negative" if growth<=-UMBRAL_CAMBIO else "neutral"
+    if tone=="neutral" and growth:
+        label=f"Estable con tendencia {'al alza' if growth>0 else 'a la baja'}"
+    else:
+        label="Tendencia favorable" if tone=="positive" else "Tendencia a la baja" if tone=="negative" else "Tendencia estable"
     st.markdown(f'<div class="decision-strip {tone}"><b>{label}</b> · Variación del último periodo frente al anterior: {growth:+.1f}%.</div>',unsafe_allow_html=True)
+
+
+def _performance_por_base(base, schema, dim, result):
+    """El ranking contra la base que sí compara, no contra el tamaño.
+
+    Ordenar por total responde "quién es más grande" y se lee como "quién lo
+    hace mejor", que son cosas distintas y a veces opuestas: una región que
+    vende 10 con meta de 4 lo está haciendo mejor que una que vende 100 con
+    meta de 200. Aquí manda `base['clave']`, que dice contra qué se comparó,
+    y el total sigue visible al lado para no perder la magnitud.
+    """
+    ranking=base["ranking"]
+    mostrar=ranking[:5] if len(ranking)<=10 else ranking[:5]+ranking[-5:]
+    nombres=[f["nombre"] for f in mostrar]
+    valores=[f["valor"] for f in mostrar]
+    mejor_valor=ranking[0]["valor"]
+    peor_valor=ranking[-1]["valor"]
+    colores=["#189A63" if f["valor"]>=(mejor_valor+peor_valor)/2 else "#E05252" for f in mostrar]
+    fig=go.Figure(go.Bar(
+        x=valores, y=nombres, orientation="h", marker_color=colores,
+        text=[f["texto"] for f in mostrar], textposition="outside", cliponaxis=False,
+        customdata=[[f["detalle"]] for f in mostrar],
+        hovertemplate="<b>%{y}</b><br>"+base["etiqueta"]+": <b>%{text}</b><br>%{customdata[0]}<extra></extra>",
+    ))
+    alto=max(300,38*len(nombres)+80)
+    fig.update_layout(showlegend=False,margin=dict(l=10,r=90,t=10,b=10),height=alto)
+    fig.update_xaxes(title=None,tickformat="~s")
+    fig.update_yaxes(title=None,categoryorder="array",categoryarray=list(reversed(nombres)))
+    if base["clave"]=="meta":
+        fig.add_vline(x=100,line_width=1.4,line_dash="dot",line_color="#64748b")
+    fig=__import__('visualization.charts',fromlist=['_base'])._base(fig,alto,show_xgrid=True)
+
+    a,b=two_column(1.65,1)
+    with a:
+        _chart_card(f"Mejor vs. menor desempeño · {base['etiqueta']}",
+                    base["explicacion"], fig, "No hay datos suficientes.",
+                    key="performance_extremes_chart")
+    with b:
+        mejor,peor=base["mejor"],base["peor"]
+        # "Mejor desempeño" solo se afirma cuando hay una base que de verdad
+        # mide desempeño. Con un salario promedio o un stock promedio lo
+        # honesto es decir "valor más alto": nadie rinde más por cobrar más.
+        titulos=(("Mejor desempeño","Menor desempeño")
+                 if base["clave"] in {"meta","unidad","estado","registro"}
+                 else ("Valor más alto","Valor más bajo"))
+        st.markdown(f'<div class="insight-card positive"><div class="insight-body"><div class="insight-title">{titulos[0]}</div><div class="insight-text"><b>{clean_display_text(mejor["nombre"])}</b><br>{mejor["texto"]}<br><small style="color:var(--soft)">{clean_display_text(mejor["detalle"])}</small></div></div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="insight-card warning"><div class="insight-body"><div class="insight-title">{titulos[1]}</div><div class="insight-text"><b>{clean_display_text(peor["nombre"])}</b><br>{peor["texto"]}<br><small style="color:var(--soft)">{clean_display_text(peor["detalle"])}</small></div></div></div>',unsafe_allow_html=True)
+        if not base["justo"]:
+            st.warning("Esta comparación mide tamaño. Agrega una columna de meta al archivo "
+                       "para que el ranking mida desempeño.")
+
+    # El orden por total sigue disponible: responde otra pregunta legítima
+    # —de dónde sale el volumen— y perderlo sería cambiar un sesgo por otro.
+    orden_total=sorted(ranking,key=lambda f:f["total"],reverse=True)
+    if base["clave"] not in {"total","total_parejo"} and orden_total[0]["nombre"]!=base["mejor"]["nombre"]:
+        st.caption(f"Por volumen el primero es **{orden_total[0]['nombre']}** "
+                   f"({_fmt(orden_total[0]['total'])}), pero en {base['etiqueta'].lower()} "
+                   f"queda {[f['nombre'] for f in ranking].index(orden_total[0]['nombre'])+1}.º de {len(ranking)}.")
 
 
 def _performance_panel(df, dashboard):
@@ -739,7 +804,7 @@ def _performance_panel(df, dashboard):
     for c in dims:
         if c not in df.columns or c in schema.get("dates",[]) or c in schema.get("ids",[]): continue
         n=df[c].dropna().astype(str).nunique()
-        if 2<=n<=40:
+        if 2<=n<=2000:
             stype=sem.get(c,"")
             priority=0 if stype in geo_types else 1 if stype in business_types else 2
             valid.append((priority,c))
@@ -759,9 +824,25 @@ def _performance_panel(df, dashboard):
     if not result:
         st.info("No hay suficientes datos para comparar grupos.")
         return
+    base=result.get("base")
     with c2:
-        agg_label="Total" if result["aggregation"]=="sum" else "Promedio"
-        st.caption(f"{_label(schema,result['metric'])} por {_label(schema,dim).lower()} · {agg_label}")
+        if base:
+            st.caption(f"Comparado por **{base['etiqueta']}** · {_label(schema,dim)}")
+        else:
+            agg_label="Total" if result["aggregation"]=="sum" else "Promedio"
+            st.caption(f"{_label(schema,result['metric'])} por {_label(schema,dim).lower()} · {agg_label}")
+    if base:
+        _performance_por_base(base, schema, dim, result)
+        return
+    if result.get("aggregation")!="sum" and not result.get("additive"):
+        # Sin base no hay nada que agregar: cada grupo es una fila suelta y
+        # ordenarlas por su valor sería la columna ordenada, no un ranking de
+        # desempeño. Antes esto coronaba al producto más caro como "el más
+        # productivo" de un catálogo.
+        st.info(f"Este archivo no permite comparar desempeño entre valores de "
+                f"{_label(schema,dim)}: cada uno aparece una sola vez, así que no hay nada que agregar. "
+                f"Con una columna de meta, o con varias filas por grupo, sí se puede.")
+        return
     top=result["top"]; bottom=result["bottom"]
     # Para no duplicar grupos cuando hay pocos, construimos una sola lista
     # ordenada y destacamos extremos en el mismo gráfico.

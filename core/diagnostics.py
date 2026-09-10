@@ -396,6 +396,58 @@ def _dejaron_de_registrar(df, schema, dim, metrica, columna_fecha, tabla) -> Opt
     )
 
 
+def _incumplimiento_de_meta(df, schema, dim, metrica) -> Optional[dict]:
+    """Quién no llegó a su meta, medido contra su propia meta.
+
+    Cuando el archivo trae la meta, cualquier otra comparación sobra: es la
+    única referencia que el negocio ya definió. Y evita la conclusión falsa
+    de siempre —"el mejor es el que más vendió"— que solo mide tamaño: vender
+    10 con meta de 4 es mejor desempeño que vender 100 con meta de 200.
+    """
+    from .performance import columna_meta
+
+    if not dim or dim not in df.columns or metrica == METRICA_CONTEO:
+        return None
+    meta = columna_meta(df, schema, metrica)
+    if meta is None:
+        return None
+    x = pd.DataFrame({
+        "_segmento": df[dim].astype(str).str.strip(),
+        "_valor": pd.to_numeric(df[metrica], errors="coerce"),
+        "_meta": pd.to_numeric(df[meta], errors="coerce"),
+    }).dropna()
+    x = x[x["_segmento"].ne("")]
+    if x.empty:
+        return None
+    resumen = x.groupby("_segmento")[["_valor", "_meta"]].sum()
+    resumen = resumen[resumen["_meta"] > 0]
+    if len(resumen) < 2:
+        return None
+    resumen["_cumplimiento"] = resumen["_valor"] / resumen["_meta"] * 100
+    resumen = resumen.sort_values("_cumplimiento")
+    incumplen = resumen[resumen["_cumplimiento"] < 100]
+    if incumplen.empty:
+        return None
+    faltante = float((incumplen["_meta"] - incumplen["_valor"]).sum())
+    peores = incumplen.head(3)
+    evidencia = [{"nombre": str(n), "valor": f"{f['_cumplimiento']:,.0f}%",
+                  "detalle": f"{_fmt(f['_valor'])} de {_fmt(f['_meta'])}"}
+                 for n, f in peores.iterrows()]
+    etiqueta_m = _en_prosa(schema, metrica)
+    lider = resumen.index[-1]
+    return _hallazgo(
+        "Cumplimiento de meta",
+        (f"{len(incumplen)} de {len(resumen)} no llegaron a su meta de {etiqueta_m}. "
+         f"Faltaron {_fmt(faltante)} en total. El mejor cumplimiento es {lider}, con "
+         f"{resumen.iloc[-1]['_cumplimiento']:,.0f}%."),
+        "Medido contra la meta de cada uno y no contra el total, que solo diría quién es más grande.",
+        f"Revisar con {_lista([e['nombre'] for e in evidencia])} si la meta era alcanzable o si el desempeño se quedó corto. Las dos cosas se corrigen, pero distinto.",
+        evidencia, "warning", 1,
+        objetivo={"dimension": dim, "metric": metrica, "filter_column": dim,
+                  "filter_value": str(peores.index[0]), "view": f"{_etiqueta(schema, dim)}: {peores.index[0]}"},
+    )
+
+
 def _rezago_frente_a_la_mediana(df, schema, dim, metrica) -> Optional[dict]:
     aditiva = _aditiva(schema, metrica)
     x = pd.DataFrame({
@@ -722,12 +774,26 @@ def _identificador_repetido(df, schema) -> Optional[dict]:
     return None
 
 
-def _atipicos_con_nombre(df, schema, dim, anomalias) -> Optional[dict]:
+def _atipicos_con_nombre(df, schema, dim, anomalias, metrica=None) -> Optional[dict]:
     if anomalias is None or not len(anomalias):
         return None
     a = anomalias[anomalias["tipo"].astype(str).str.contains("Outlier", na=False)]
     if a.empty:
         return None
+    # La columna de meta queda fuera: un objetivo mucho más alto que el resto
+    # no es un dato sospechoso, es una decisión de negocio, y reportarlo como
+    # anomalía manda a "corregir" una meta que está bien puesta.
+    from .performance import columna_meta
+
+    meta = columna_meta(df, schema, metrica)
+    if meta is not None:
+        a = a[a["columna"].astype(str) != str(meta)]
+        if a.empty:
+            return None
+    # Si el indicador que se está analizando tiene atípicos, ese es el que
+    # importa: es sobre el que se está decidiendo.
+    if metrica and metrica in set(a["columna"].astype(str)):
+        a = a[a["columna"].astype(str) == str(metrica)]
     filas = pd.to_numeric(a["fila"], errors="coerce").dropna().astype(int)
     filas = [i for i in filas if i in df.index]
     # Un solo valor atípico no es un hallazgo, es una fila. Con menos de tres
@@ -857,6 +923,7 @@ def diagnosticar(df: pd.DataFrame, schema: dict, anomalias=None, metrica=None) -
             (_caida_por_segmento, (trabajo, schema, dim, metrica, fechas[0] if fechas else None, tabla)),
             (_deterioro_sostenido, (trabajo, schema, dim, metrica, tabla)),
             (_dejaron_de_registrar, (trabajo, schema, dim, metrica, fechas[0] if fechas else None, tabla)),
+            (_incumplimiento_de_meta, (trabajo, schema, dim, metrica)),
             (_estados_problematicos, (trabajo, schema, dim)),
             (_exceso_en_metrica_negativa, (trabajo, schema, dim)),
             (_en_cero, (trabajo, schema, dim, metrica)),
@@ -864,6 +931,11 @@ def diagnosticar(df: pd.DataFrame, schema: dict, anomalias=None, metrica=None) -
             (_concentracion, (trabajo, schema, dim, metrica)),
         ):
             if tabla is None and fn in temporales:
+                continue
+            # Con meta declarada, el rezago contra la mediana sobra: compara
+            # contra el promedio del grupo en vez de contra el compromiso que
+            # cada uno tenía, que es la referencia que sí existe.
+            if fn is _rezago_frente_a_la_mediana and any(h["title"] == "Cumplimiento de meta" for h in hallazgos):
                 continue
             try:
                 encontrado = fn(*args)
@@ -883,7 +955,7 @@ def diagnosticar(df: pd.DataFrame, schema: dict, anomalias=None, metrica=None) -
             if encontrado:
                 hallazgos.append(encontrado)
 
-    for fn, args in ((_atipicos_con_nombre, (df, schema, dim, anomalias)),
+    for fn, args in ((_atipicos_con_nombre, (df, schema, dim, anomalias, metrica)),
                      (_identificador_repetido, (df, schema)),
                      (_columnas_incompletas, (df, schema, dim)),
                      (_errores_de_captura, (df, schema, anomalias))):

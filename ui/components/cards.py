@@ -102,7 +102,14 @@ def executive_headline(dashboard: dict) -> None:
     `ui/executive.py`, con el mismo HTML exacto."""
     ex = dashboard.get("executive", {}) if isinstance(dashboard, dict) else {}
     cls = ex.get("status", "neutral")
-    status_label = "Situación favorable" if cls == "positive" else "Requiere atención" if cls == "negative" else "Situación estable"
+    # El motor manda cuando puede decir algo más preciso ("Estable con
+    # tendencia a la baja"); estas tres son el respaldo para cuando no hay
+    # variación que medir, no la fuente de verdad.
+    status_label = ex.get("status_label") or (
+        "Situación favorable" if cls == "positive"
+        else "Requiere atención" if cls == "negative"
+        else "Situación estable"
+    )
     st.markdown(
         f'<div class="executive-card {cls}"><div class="executive-status">{status_label}</div>'
         f'<div class="executive-headline">{ex.get("headline","")}</div>'
