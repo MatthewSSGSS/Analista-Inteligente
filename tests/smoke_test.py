@@ -348,7 +348,55 @@ def main():
     check("y se dice que empeoró", "empeoró" in _veredicto(8.0, "DiasMora")["headline"])
     check("menos mora sí es una mejora", _veredicto(-8.0, "DiasMora")["status"] == "positive")
 
+    _navegacion_de_modos()
     print("\nSmoke test completado sin errores.")
+
+
+def _navegacion_de_modos():
+    """Que cada tarjeta del home lleve a su ruta, y que la ruta exista.
+
+    Son dos piezas en archivos distintos —el botón devuelve una cadena en
+    `ui/mode_choice.py`, y `app.py` decide qué dibujar con ella— unidas por
+    un texto suelto. Renombrar uno de los dos lados deja el botón sin hacer
+    nada y no lo nota nadie hasta que alguien lo pulsa, así que se comprueba
+    el recorrido entero: clic → valor devuelto → función que lo atiende.
+    """
+    import ast
+    import io as _io
+
+    import streamlit as _st
+    from ui.mode_choice import render_mode_choice
+
+    boton_real = _st.button
+    try:
+        for clave, esperado in (("choose_practico", "practico"),
+                                ("choose_avanzado", "avanzado"),
+                                ("choose_territorial", "territorial")):
+            _st.button = lambda *a, **k: k.get("key") == clave
+            check(f"la tarjeta '{esperado}' devuelve su modo", render_mode_choice() == esperado)
+        _st.button = lambda *a, **k: False
+        check("sin clic no se elige ningún modo", render_mode_choice() is None)
+    finally:
+        _st.button = boton_real
+
+    # Y que app.py atienda cada modo con una función de render.
+    arbol = ast.parse(_io.open("app.py", encoding="utf-8").read())
+    rutas = {}
+    for nodo in ast.walk(arbol):
+        if not (isinstance(nodo, ast.If) and isinstance(nodo.test, ast.Compare)):
+            continue
+        izquierda = nodo.test.left
+        derecha = nodo.test.comparators[0]
+        if (isinstance(izquierda, ast.Attribute) and izquierda.attr == "analysis_mode"
+                and isinstance(derecha, ast.Constant)):
+            rutas[derecha.value] = [n.func.id for n in ast.walk(nodo)
+                                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                                    and n.func.id.startswith("render_")]
+    check("la ruta de Práctico existe", "render_practical_page" in rutas.get("practico", []))
+    check("la ruta de Territorial existe", "render_territorial_page" in rutas.get("territorial", []))
+    # Avanzado no tiene un `if` propio: es el camino que sigue cuando ninguna
+    # ruta anterior corta, así que se comprueba que ninguna lo intercepte.
+    check("Avanzado sigue siendo el camino por defecto", "avanzado" not in rutas)
 
 
 if __name__ == "__main__":
