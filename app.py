@@ -114,7 +114,12 @@ if "analysis_mode" not in st.session_state:
 if st.session_state.analysis_mode is None:
     choice = render_mode_choice()
     if choice:
-        st.session_state.analysis_mode = choice
+        # "Territorial" no es un tercer motor: es el Panel Analítico Universal
+        # entrando por el mapa. Duplicar la app para eso habría significado
+        # mantener dos veces lo mismo, así que se marca la preferencia y el
+        # panel reordena sus pestañas para que la geografía quede primero.
+        st.session_state.modo_territorial = (choice == "territorial")
+        st.session_state.analysis_mode = "avanzado" if choice == "territorial" else choice
         st.rerun()
     st.stop()
 
@@ -527,6 +532,17 @@ geo_enabled, geo_meta = supports_georeferencing(df, schema)
 # Exportar, etc. donde no aporta nada. El resumen corto sigue siempre
 # visible en la barra lateral ("MODO DETECTADO").
 
+# Quien entró por Análisis Territorial espera un mapa. Si este archivo no
+# trae geografía utilizable no hay pestaña de mapa y la pantalla quedaría sin
+# explicación: se dice por qué y qué haría falta, en vez de dejar al usuario
+# buscando una sección que no está.
+if st.session_state.get("modo_territorial") and not geo_enabled:
+    st.warning(
+        "**Análisis Territorial:** este archivo no tiene una ubicación que el motor pueda mapear. "
+        "Sirve una columna de ciudad, región o país, coordenadas, o el lugar escrito dentro de otro "
+        "texto (el nombre del punto de venta, la sede o la dirección). El resto del panel funciona igual."
+    )
+
 if st.session_state.get("focus_view"):
     st.info(f"Análisis enfocado: {st.session_state.focus_view}. Revisa los gráficos y filtros visibles para profundizar.")
 
@@ -581,12 +597,15 @@ if mode_info["mode"] in {"catalog", "reference"}:
 else:
     # Executive mode is deliberately compact; Analyst mode exposes every tool.
     if st.session_state.get("view_mode", "Ejecutivo") == "Ejecutivo":
-        analysis_views = [("Resumen ejecutivo", lambda: render_executive(df, schema, dashboard))]
+        analysis_views = []
+        if st.session_state.get("modo_territorial") and geo_enabled:
+            analysis_views.append(("🗺️ Territorial", lambda: render_georeferencing(df, schema)))
+        analysis_views.append(("Resumen ejecutivo", lambda: render_executive(df, schema, dashboard)))
         analysis_views.append(("🎯 Planes de mejora", lambda: render_planes(df, schema, dashboard)))
         if has_entity(df, schema):
             analysis_views.append(("🔎 Análisis de seguimiento", lambda: render_person_profile(df, schema, dashboard)))
         analysis_views.append(("🔮 Predicciones", lambda: render_forecast(df, schema, dashboard)))
-        if geo_enabled:
+        if geo_enabled and not st.session_state.get("modo_territorial"):
             analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
         if st.session_state.comparison_result:
             analysis_views.append(("⚖️ Comparativa", lambda: render_comparison(st.session_state.comparison_result)))
@@ -601,10 +620,13 @@ else:
             st.dataframe(dashboard["statistics"],use_container_width=True,hide_index=True)
             st.caption("Esta vista utiliza las métricas detectadas automáticamente; no presupone que el archivo sea de ventas.")
 
-        analysis_views = [("Descripción", lambda: render_dashboard(df,dashboard))]
+        analysis_views = []
+        if st.session_state.get("modo_territorial") and geo_enabled:
+            analysis_views.append(("🗺️ Territorial", lambda: render_georeferencing(df, schema)))
+        analysis_views.append(("Descripción", lambda: render_dashboard(df,dashboard)))
         if has_entity(df, schema):
             analysis_views.append(("🔎 Análisis de seguimiento", lambda: render_person_profile(df, schema, dashboard)))
-        if geo_enabled:
+        if geo_enabled and not st.session_state.get("modo_territorial"):
             analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
         analysis_views += [
             ("Analítica", lambda: render_explorer(df,schema)),
