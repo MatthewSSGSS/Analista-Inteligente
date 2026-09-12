@@ -747,7 +747,8 @@ def _performance_por_base(base, schema, dim, result):
     peor_valor=ranking[-1]["valor"]
     colores=["#189A63" if f["valor"]>=(mejor_valor+peor_valor)/2 else "#E05252" for f in mostrar]
     fig=go.Figure(go.Bar(
-        x=valores, y=nombres, orientation="h", marker_color=colores,
+        x=valores, y=nombres, orientation="h",
+        marker=dict(color=colores, line=dict(width=0)),
         text=[f["texto"] for f in mostrar], textposition="outside", cliponaxis=False,
         customdata=[[f["detalle"]] for f in mostrar],
         hovertemplate="<b>%{y}</b><br>"+base["etiqueta"]+": <b>%{text}</b><br>%{customdata[0]}<extra></extra>",
@@ -756,9 +757,16 @@ def _performance_por_base(base, schema, dim, result):
     fig.update_layout(showlegend=False,margin=dict(l=10,r=90,t=10,b=10),height=alto)
     fig.update_xaxes(title=None,tickformat="~s")
     fig.update_yaxes(title=None,categoryorder="array",categoryarray=list(reversed(nombres)))
+    charts=__import__('visualization.charts',fromlist=['_base','realzar_barras'])
+    fig=charts._base(fig,alto,show_xgrid=True)
+    # La referencia depende de contra qué se esté comparando: con meta, el
+    # 100% es la línea que importa; sin meta, la mediana del grupo.
     if base["clave"]=="meta":
-        fig.add_vline(x=100,line_width=1.4,line_dash="dot",line_color="#64748b")
-    fig=__import__('visualization.charts',fromlist=['_base'])._base(fig,alto,show_xgrid=True)
+        fig=charts.realzar_barras(fig,referencia=100,referencia_texto="meta 100%")
+    else:
+        import numpy as _np
+        fig=charts.realzar_barras(fig,referencia=float(_np.median([f["valor"] for f in ranking])),
+                                  referencia_texto="mediana")
 
     a,b=two_column(1.65,1)
     with a:

@@ -35,6 +35,7 @@ from core.comparison_engine import prepare_comparison, build_comparison
 from ui.comparison import render_comparison
 from ui.person_profile import render_person_profile, has_entity
 from ui.planes import render_planes
+from ui.comercial import render_comercial
 from ui.person_compare import render_person_compare
 from ui.executive import render_executive
 from ui.forecast import render_forecast
@@ -593,6 +594,7 @@ else:
     # Executive mode is deliberately compact; Analyst mode exposes every tool.
     if st.session_state.get("view_mode", "Ejecutivo") == "Ejecutivo":
         analysis_views = [("Resumen ejecutivo", lambda: render_executive(df, schema, dashboard))]
+        analysis_views.append(("📈 Estrategia por canal", lambda: render_comercial(df, schema, dashboard)))
         analysis_views.append(("🎯 Planes de mejora", lambda: render_planes(df, schema, dashboard)))
         if has_entity(df, schema):
             analysis_views.append(("🔎 Análisis de seguimiento", lambda: render_person_profile(df, schema, dashboard)))
@@ -621,6 +623,7 @@ else:
             ("Analítica", lambda: render_explorer(df,schema)),
             ("🔮 Predicciones", lambda: render_forecast(df, schema, dashboard)),
             ("Finanzas", _render_finanzas),
+            ("📈 Estrategia por canal", lambda: render_comercial(df, schema, dashboard)),
             ("🎯 Planes de mejora", lambda: render_planes(df, schema, dashboard)),
             ("Anomalías", lambda: render_anomalies(df, schema)),
         ]

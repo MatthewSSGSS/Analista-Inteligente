@@ -188,6 +188,37 @@ def _base(fig, height=350, show_xgrid=False):
     return fig
 
 
+def realzar_barras(fig, referencia=None, referencia_texto="", horizontal=True, radio=7):
+    """Acabado común de las barras del panel: redondeadas y con referencia.
+
+    Dos cosas, y las dos son de lectura, no de adorno:
+
+    - Esquinas redondeadas y etiqueta en negrita. Una barra cuadrada de
+      color plano compite con la grilla; redondeada y con su cifra encima se
+      lee primero la barra y después el eje, que es el orden correcto.
+    - Una línea de referencia (la mediana, la meta, el cero). Sin ella, un
+      ranking solo dice quién va primero; con ella dice quién está por
+      encima y quién por debajo de lo normal, que es la pregunta que se
+      hace en una reunión.
+
+    Se aplica al final, sobre la figura ya construida, para que ninguna
+    vista tenga que repetir estos ajustes ni se desincronicen entre sí.
+    """
+    fig.update_traces(selector=dict(type="bar"),
+                      marker_cornerradius=radio,
+                      textfont=dict(size=11.5, family="Inter, Segoe UI, sans-serif"))
+    if referencia is not None and np.isfinite(referencia):
+        linea = dict(line_width=1.3, line_dash="dot", line_color="#94A3B8")
+        anotacion = dict(annotation_text=referencia_texto,
+                         annotation_position="top right" if horizontal else "top left",
+                         annotation_font=dict(size=10, color=MUTED)) if referencia_texto else {}
+        if horizontal:
+            fig.add_vline(x=referencia, **linea, **anotacion)
+        else:
+            fig.add_hline(y=referencia, **linea, **anotacion)
+    return fig
+
+
 def _clean_label(value):
     return "Sin categoría" if pd.isna(value) or str(value).strip() == "" else str(value)
 
@@ -593,7 +624,13 @@ def ranking(df, schema, metric=None, dimension=None, top_n=10, agg="Suma"):
     ))
     fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title=None, bargap=.26, uniformtext_minsize=9, uniformtext_mode="hide")
     fig.update_xaxes(tickformat="~s")
-    return _base(fig, max(330, 34 * len(x) + 100), show_xgrid=True)
+    fig = _base(fig, max(330, 34 * len(x) + 100), show_xgrid=True)
+    # La mediana como referencia: convierte el ranking en una lectura de
+    # "quién está por encima y quién por debajo de lo normal", que es lo que
+    # se pregunta en una reunión, en vez de solo quién va primero.
+    mediana = float(x[m].median()) if len(x) >= 3 else None
+    return realzar_barras(fig, referencia=mediana,
+                          referencia_texto=f"mediana {_compact_number(mediana)}" if mediana is not None else "")
 
 
 def heatmap(df, schema, metric=None, dimension=None, grain="Mes", agg="Suma", top_n=15):
