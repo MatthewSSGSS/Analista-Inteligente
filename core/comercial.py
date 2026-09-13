@@ -41,7 +41,7 @@ UMBRAL_MOVIMIENTO = 1.0
 CUADRANTES = {
     "proteger": {
         "etiqueta": "Proteger y escalar",
-        "orden": 1,
+        "orden": 2,
         "lectura": "Pesa y crece. Es donde el negocio ya está funcionando.",
         "accion": "Asegurar capacidad y stock antes de que el crecimiento tope con el límite operativo.",
     },
@@ -53,15 +53,26 @@ CUADRANTES = {
     },
     "apostar": {
         "etiqueta": "Apostar",
-        "orden": 2,
+        "orden": 3,
         "lectura": "Todavía pesa poco, pero crece. Es la apuesta del próximo año.",
         "accion": "Probar un aumento de cobertura acotado y medir si el crecimiento aguanta más volumen.",
     },
     "revisar": {
         "etiqueta": "Revisar continuidad",
-        "orden": 3,
+        "orden": 1,
         "lectura": "Pesa poco y cae. Consume atención sin devolverla.",
         "accion": "Decidir explícitamente si se reactiva con un plan corto o se libera el recurso a otro canal.",
+    },
+    # Quinto estado, y el más frecuente en la práctica. Antes un canal que se
+    # movía -0,5% caía como "proteger" o "revisar" según pesara, y en la
+    # matriz aparecía una burbuja verde dentro de la zona roja: el fondo
+    # partía en 0 y la clasificación en ±1%. Por debajo del umbral no hay
+    # tendencia, y decirlo es más honesto que forzar una jugada.
+    "estable": {
+        "etiqueta": "Estable",
+        "orden": 4,
+        "lectura": "Se movió menos de 1% frente al periodo anterior: no hay tendencia que atender.",
+        "accion": "Sostener y vigilar. El esfuerzo del periodo va donde sí hay movimiento.",
     },
 }
 
@@ -207,14 +218,13 @@ def matriz_comercial(df: pd.DataFrame, schema: dict, canal: Optional[str] = None
         crece = (fila["crecimiento"] or 0) >= UMBRAL_MOVIMIENTO
         cae = (fila["crecimiento"] or 0) <= -UMBRAL_MOVIMIENTO
         pesa = fila["participacion"] >= corte_peso
-        if pesa and not cae:
-            clave = "proteger"
-        elif pesa and cae:
-            clave = "intervenir"
+        fila["pesa"] = pesa
+        if cae:
+            clave = "intervenir" if pesa else "revisar"
         elif crece:
-            clave = "apostar"
+            clave = "proteger" if pesa else "apostar"
         else:
-            clave = "revisar"
+            clave = "estable"
         fila["cuadrante"] = clave
         fila["cuadrante_label"] = CUADRANTES[clave]["etiqueta"]
         fila["accion"] = CUADRANTES[clave]["accion"]
@@ -254,7 +264,11 @@ def _titular(filas, en_riesgo, cayendo, crecimiento_total) -> str:
     if (crecimiento_total or 0) >= UMBRAL_MOVIMIENTO:
         return (f"Todos los canales sostienen o crecen y el total sube {crecimiento_total:.1f}%. "
                 f"La pregunta pasa a ser dónde poner capacidad antes de que el crecimiento tope.")
-    return "Los canales se mueven poco entre periodos: la estrategia se decide por peso, no por tendencia."
+    grandes = sorted(filas, key=lambda f: f["participacion"], reverse=True)[:2]
+    peso = sum(f["participacion"] for f in grandes)
+    return (f"Ningún canal se movió más de {UMBRAL_MOVIMIENTO:.0f}% frente al periodo anterior. "
+            f"La lectura es de peso, no de tendencia: {_lista([f['canal'] for f in grandes])} "
+            f"concentran el {peso:.0f}% del negocio.")
 
 
 def oportunidades(matriz: dict, top: int = 4) -> list[dict]:
@@ -294,6 +308,18 @@ def oportunidades(matriz: dict, top: int = 4) -> list[dict]:
                 "impacto": fila["valor"],
                 "texto": (f"{fila['canal']} crece {fila['crecimiento']:.0f}% con solo "
                           f"{fila['participacion']:.1f}% del negocio: hay espacio para ampliarlo."),
+                "palanca": fila.get("mezcla") or "",
+                "cuadrante": fila["cuadrante"],
+            })
+    if not jugadas:
+        # Sin urgencias ni apuestas la sección no queda vacía: cuando nada se
+        # mueve, la jugada del periodo es no perder lo que más pesa.
+        for fila in sorted(matriz["filas"], key=lambda f: f["participacion"], reverse=True)[:2]:
+            jugadas.append({
+                "canal": fila["canal"], "tipo": "Sostener",
+                "impacto": fila["valor"],
+                "texto": (f"{fila['canal']} aporta el {fila['participacion']:.1f}% del negocio y está "
+                          f"estable: la prioridad es que no empiece a caer."),
                 "palanca": fila.get("mezcla") or "",
                 "cuadrante": fila["cuadrante"],
             })

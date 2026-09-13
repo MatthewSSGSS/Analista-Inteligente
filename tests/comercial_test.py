@@ -136,6 +136,61 @@ def test_las_barras_traen_referencia():
           any(sh.type == "line" for sh in fig.layout.shapes))
 
 
+def _archivo_quieto():
+    """Nueve puntos de nombre largo que se movieron menos de 1%: el caso real
+    que dejó al descubierto la primera versión de la matriz."""
+    nombres = ["INVERSIONES GERA SAS CARTAGENA", "INVERSIONES ARAUJO DOMINGUEZ SAS MONTERIA CORDOBA",
+               "DANCELL RIOHACHA LA GUAJIRA", "MC MULTICELL SAS CIENEGA MAGDALENA",
+               "DANCELL VALLEDUPAR CESAR", "CELUNORTE COMUNICACIONES SAS SINCELEJO SUCRE",
+               "COMMUTE SAS SOLEDAD ATLANTICO", "COMMUTE SAS BARRANQUILLA ATLANTICO",
+               "SOUL CENTRO DE TECNOLOGIA SAS SAN ANDRES"]
+    pesos = [180, 175, 135, 120, 118, 95, 90, 82, 8]
+    filas = []
+    for nombre, peso in zip(nombres, pesos):
+        for mes, factor in (("2026-07", 1.0), ("2026-08", 0.995)):
+            for i in range(20):
+                filas.append({"Fecha": f"{mes}-{i + 1:02d}", "NOMBREPUNTO": nombre,
+                              "ALTAS": peso * factor * (0.95 + (i % 3) * 0.05)})
+    item = profile_sheet(pd.DataFrame(filas), {"sheet_name": "V", "workbook_name": "v.xlsx"})
+    return item["processed"], item["profile"]["schema"]
+
+
+def test_lo_que_no_se_mueve_es_estable():
+    """Un -0,5% no es una caída ni un crecimiento, y forzarle una jugada era
+    lo que pintaba burbujas verdes dentro de la zona roja."""
+    df, schema = _archivo_quieto()
+    matriz = matriz_comercial(df, schema)
+    check("con movimientos menores a 1%, todos los canales son estables",
+          {f["cuadrante"] for f in matriz["filas"]} == {"estable"})
+    check("el titular lo dice en vez de inventar una urgencia", "Ningún canal se movió" in matriz["titular"])
+    check("y nombra lo que más pesa, que es lo que queda por decidir",
+          "INVERSIONES GERA SAS CARTAGENA" in matriz["titular"])
+    jugadas = oportunidades(matriz)
+    check("sin urgencias, la jugada es sostener lo que pesa",
+          bool(jugadas) and all(j["tipo"] == "Sostener" for j in jugadas))
+
+
+def test_la_matriz_no_contradice_sus_zonas():
+    from ui.comercial import _aporte_figura, _matriz_figura
+
+    for nombre, (df, schema) in (("quieto", _archivo_quieto()), ("con movimiento", _archivo())):
+        matriz = matriz_comercial(df, schema)
+        figura, _, _ = _matriz_figura(matriz, schema)
+        en_franja = [(traza.name, x) for traza in figura.data for x in traza.x
+                     if abs(x) < 1 and traza.name != "Estable"]
+        check(f"[{nombre}] ninguna burbuja de otro color dentro de la franja estable", not en_franja)
+        maximo = max(abs(f["crecimiento"]) for f in matriz["filas"] if f["crecimiento"] is not None)
+        check(f"[{nombre}] el eje se ajusta a lo que se movieron los canales",
+              figura.layout.xaxis.range[1] <= max(maximo * 1.3, 3) + 1e-9)
+        check(f"[{nombre}] las burbujas llevan número, no nombres montados",
+              all(str(t).isdigit() for traza in figura.data for t in traza.text))
+        aporte = _aporte_figura(matriz, schema)
+        izquierda, derecha = aporte.layout.xaxis.range
+        valores = list(aporte.data[0].x)
+        check(f"[{nombre}] las barras de aporte no se recortan contra el borde",
+              izquierda < min(min(valores), 0) and derecha > max(max(valores), 0))
+
+
 if __name__ == "__main__":
     test_cada_canal_cae_en_su_cuadrante()
     test_separa_volumen_de_ticket()
@@ -143,4 +198,6 @@ if __name__ == "__main__":
     test_el_cumplimiento_usa_la_meta_del_archivo()
     test_se_calla_cuando_no_aplica()
     test_las_barras_traen_referencia()
+    test_lo_que_no_se_mueve_es_estable()
+    test_la_matriz_no_contradice_sus_zonas()
     print("\nComercial test completado sin errores.")

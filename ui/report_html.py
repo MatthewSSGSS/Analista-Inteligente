@@ -459,11 +459,17 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     for item in insights[:8]:
         title, finding, action, implication = _insight_text(item if isinstance(item, dict) else {})
         kind = item.get("kind", "info") if isinstance(item, dict) else "info"
+        # Estos dos bloques se arman fuera del f-string a propósito. Antes iban
+        # dentro de las llaves con comillas escapadas (\"), y una barra
+        # invertida dentro de la expresión de un f-string es un error de
+        # sintaxis en Python 3.11: el informe entero no llegaba a importarse.
+        accion_html = f"<div class='action'><b>Qué revisar:</b> {_esc(action)}</div>" if action else ""
+        implicacion_html = (f"<div class='implication'><b>Implicación:</b> {_esc(implication)}</div>"
+                            if implication else "")
         insight_html.append(
             f"<article class='insight {kind}'><div class='insight-tag'>{_esc(kind.upper())}</div><h3>{_esc(title)}</h3>"
             f"<p>{_esc(finding)}</p>{_evidence_html(item if isinstance(item, dict) else {})}"
-            f"{('<div class=\"action\"><b>Qué revisar:</b> '+_esc(action)+'</div>') if action else ''}"
-            f"{('<div class=\"implication\"><b>Implicación:</b> '+_esc(implication)+'</div>') if implication else ''}</article>"
+            f"{accion_html}{implicacion_html}</article>"
         )
 
     alerts = dashboard.get("alerts") or []
