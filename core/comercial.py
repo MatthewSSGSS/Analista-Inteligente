@@ -299,58 +299,80 @@ def _titular(filas, en_riesgo, cayendo, crecimiento_total) -> str:
             f"concentran el {peso:.0f}% del negocio.")
 
 
+def _tono_palanca(fila: dict) -> str:
+    """Si la palanca de un canal suma o resta, para pintarla con sentido."""
+    palanca = fila.get("palanca")
+    if palanca == "volumen" and fila.get("volumen_pct") is not None:
+        return "bueno" if fila["volumen_pct"] > 0 else "malo"
+    if palanca == "ticket" and fila.get("ticket_pct") is not None:
+        return "bueno" if fila["ticket_pct"] > 0 else "malo"
+    return "info"
+
+
+def _jugada(fila: dict, tipo: str, impacto: float, tono: str, partes: list) -> dict:
+    """Arma una jugada con su frase guardada por partes, cada una con su tono.
+
+    Los tonos son tres, y cada uno tiene un color fijo en la interfaz: "malo"
+    en rojo, "bueno" en verde e "info" en negro, más "enfasis" para el nombre
+    del canal. Guardar la frase por partes permite pintar cada cifra según lo
+    que significa sin que la interfaz tenga que volver a interpretar el texto.
+    `texto` sigue siendo la frase entera, para quien la necesite sin colores.
+    """
+    return {
+        "canal": fila["canal"], "tipo": tipo, "impacto": float(impacto), "tono": tono,
+        "partes": partes, "texto": "".join(texto for texto, _ in partes),
+        "palanca": fila.get("mezcla") or "", "palanca_tono": _tono_palanca(fila),
+        "cuadrante": fila["cuadrante"],
+    }
+
+
 def oportunidades(matriz: dict, top: int = 4) -> list[dict]:
     """Las jugadas concretas que salen de la matriz, ordenadas por impacto.
 
     El impacto se estima en la moneda del archivo, no en adjetivos: recuperar
     lo que un canal perdió, o cerrar su brecha contra la meta. Poner la cifra
     al lado es lo que permite comparar dos jugadas y elegir.
+
+    Cada jugada trae además su tono: una pérdida o una brecha es "malo", un
+    canal que crece es "bueno" y sostener lo que ya pesa es "info".
     """
     if not matriz:
         return []
+    anterior = matriz["periodo_anterior_label"]
     jugadas = []
     for fila in matriz["filas"]:
+        canal = fila["canal"]
         if fila["cuadrante"] == "intervenir" and fila["delta"] < 0:
-            jugadas.append({
-                "canal": fila["canal"], "tipo": "Recuperar",
-                "impacto": abs(fila["delta"]),
-                "texto": (f"Recuperar lo que {fila['canal']} perdió frente a "
-                          f"{matriz['periodo_anterior_label']}: {_fmt(abs(fila['delta']))}."),
-                "palanca": fila.get("mezcla") or "",
-                "cuadrante": fila["cuadrante"],
-            })
+            partes = [("Recuperar lo que ", "info"), (canal, "enfasis"),
+                      (" perdió frente a " + anterior + ": ", "info"),
+                      (_fmt(fila["delta"]), "malo")]
+            if fila["crecimiento"] is not None:
+                partes += [(", una caída de ", "info"), (f"{fila['crecimiento']:+.1f}%", "malo")]
+            partes.append((".", "info"))
+            jugadas.append(_jugada(fila, "Recuperar", abs(fila["delta"]), "malo", partes))
         if fila["cumplimiento"] is not None and fila["cumplimiento"] < 100 and fila["meta"]:
             brecha = float(fila["meta"]) - fila["valor"]
             if brecha > 0:
-                jugadas.append({
-                    "canal": fila["canal"], "tipo": "Cerrar brecha",
-                    "impacto": brecha,
-                    "texto": (f"{fila['canal']} va en {fila['cumplimiento']:.0f}% de su meta: "
-                              f"faltan {_fmt(brecha)} para cerrarla."),
-                    "palanca": fila.get("mezcla") or "",
-                    "cuadrante": fila["cuadrante"],
-                })
+                partes = [(canal, "enfasis"), (" va en ", "info"),
+                          (f"{fila['cumplimiento']:.0f}%", "malo"),
+                          (" de su meta: faltan ", "info"), (_fmt(brecha), "malo"),
+                          (" para cerrarla.", "info")]
+                jugadas.append(_jugada(fila, "Cerrar brecha", brecha, "malo", partes))
         if fila["cuadrante"] == "apostar" and (fila["crecimiento"] or 0) >= 10:
-            jugadas.append({
-                "canal": fila["canal"], "tipo": "Escalar",
-                "impacto": fila["valor"],
-                "texto": (f"{fila['canal']} crece {fila['crecimiento']:.0f}% con solo "
-                          f"{fila['participacion']:.1f}% del negocio: hay espacio para ampliarlo."),
-                "palanca": fila.get("mezcla") or "",
-                "cuadrante": fila["cuadrante"],
-            })
+            partes = [(canal, "enfasis"), (" crece ", "info"),
+                      (f"{fila['crecimiento']:+.0f}%", "bueno"),
+                      (" con solo ", "info"), (f"{fila['participacion']:.1f}%", "info"),
+                      (" del negocio: hay espacio para ampliarlo.", "info")]
+            jugadas.append(_jugada(fila, "Escalar", fila["valor"], "bueno", partes))
     if not jugadas:
         # Sin urgencias ni apuestas la sección no queda vacía: cuando nada se
-        # mueve, la jugada del periodo es no perder lo que más pesa.
+        # mueve, la jugada del periodo es no perder lo que más pesa. Es un dato
+        # para cuidar, no una alarma, y por eso va en tono informativo.
         for fila in sorted(matriz["filas"], key=lambda f: f["participacion"], reverse=True)[:2]:
-            jugadas.append({
-                "canal": fila["canal"], "tipo": "Sostener",
-                "impacto": fila["valor"],
-                "texto": (f"{fila['canal']} aporta el {fila['participacion']:.1f}% del negocio y está "
-                          f"estable: la prioridad es que no empiece a caer."),
-                "palanca": fila.get("mezcla") or "",
-                "cuadrante": fila["cuadrante"],
-            })
+            partes = [(fila["canal"], "enfasis"), (" aporta el ", "info"),
+                      (f"{fila['participacion']:.1f}%", "info"),
+                      (" del negocio y está estable: la prioridad es que no empiece a caer.", "info")]
+            jugadas.append(_jugada(fila, "Sostener", fila["valor"], "info", partes))
     jugadas.sort(key=lambda j: j["impacto"], reverse=True)
     # Una misma jugada por canal: dos líneas del mismo canal compiten entre
     # ellas en la lista y desplazan a un canal que no aparece nunca.

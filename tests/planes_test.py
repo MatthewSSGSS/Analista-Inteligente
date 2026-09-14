@@ -121,9 +121,63 @@ def test_no_rompe_sin_datos():
           observaciones(pd.DataFrame({"A": [1, 2]}), {}, "NoExiste", "x") == [])
 
 
+def test_el_plan_se_puede_ejecutar():
+    """Un plan sin dueño ni fecha no se ejecuta, y uno que se queda en la app
+    se pierde al cerrar la sesión."""
+    import io as _io
+    from datetime import date, timedelta
+
+    import openpyxl
+
+    from ui.planes import (_clave_plan, alerta_plan, estado_plan, excel_plan_de_accion,
+                           filas_plan_de_accion, resumen_para_compartir)
+
+    df, schema, dashboard = _archivo()
+    planes = generar(df, schema, dashboard)["planes"]
+    check("hay al menos tres planes para probar", len(planes) >= 3)
+    hoy = date(2026, 9, 13)
+    primero, segundo = planes[0], planes[1]
+    c1, c2 = _clave_plan(primero), _clave_plan(segundo)
+    asignaciones = {c1: {"responsable": "Ana Gómez", "fecha": hoy - timedelta(days=2)},
+                    c2: {"responsable": "", "fecha": hoy + timedelta(days=5)}}
+    pasos = {c1: [True] + [False] * (len(primero["pasos"]) - 1),
+             c2: [True] * len(segundo["pasos"])}
+
+    check("sin pasos marcados, el plan está pendiente", estado_plan(0, 4) == "Pendiente")
+    check("con algunos, está en curso", estado_plan(2, 4) == "En curso")
+    check("con todos, está hecho", estado_plan(4, 4) == "Hecho")
+    check("una fecha pasada con pasos pendientes es un vencido",
+          alerta_plan({"responsable": "X", "fecha": hoy - timedelta(days=1)}, 1, 3, hoy) == "Vencido")
+
+    filas = filas_plan_de_accion(planes, asignaciones, pasos, hoy)
+    check("hay una fila por plan", len(filas) == len(planes))
+    check("el plan con fecha vencida se señala", filas[0]["Alerta"] == "Vencido")
+    check("el responsable asignado llega a la fila", filas[0]["Responsable"] == "Ana Gómez")
+    check("uno terminado no tiene alerta aunque le falte responsable",
+          filas[1]["Estado"] == "Hecho" and filas[1]["Alerta"] == "")
+    check("uno sin asignar avisa que no tiene responsable", filas[2]["Alerta"] == "Sin responsable")
+
+    libro = openpyxl.load_workbook(_io.BytesIO(excel_plan_de_accion(planes, asignaciones, pasos, hoy)))
+    check("el Excel trae una hoja de frentes y otra de pasos", libro.sheetnames == ["Plan de acción", "Pasos"])
+    hoja = libro["Plan de acción"]
+    encabezados = [c.value for c in hoja[1]]
+    check("con responsable, fecha y cómo se mide",
+          {"Responsable", "Fecha compromiso", "Cómo se mide"} <= set(encabezados))
+    check("una fila por plan", hoja.max_row == len(planes) + 1)
+    check("y el nombre del responsable llega al archivo", any(c.value == "Ana Gómez" for c in hoja[2]))
+    total_pasos = sum(len(p["pasos"]) for p in planes)
+    check("la hoja de pasos trae cada paso", libro["Pasos"].max_row == total_pasos + 1)
+
+    texto = resumen_para_compartir(planes, asignaciones, pasos, hoy)
+    check("el resumen para compartir nombra al responsable", "Ana Gómez" in texto)
+    check("marca lo vencido", "Vencido" in texto)
+    check("y avisa lo que no tiene dueño", "sin asignar" in texto)
+
+
 if __name__ == "__main__":
     test_los_planes_nombran_a_los_casos()
     test_si_todo_va_bien_propone_mejoras()
     test_el_seguimiento_compara_contra_algo()
     test_no_rompe_sin_datos()
+    test_el_plan_se_puede_ejecutar()
     print("\nPlanes test completado sin errores.")

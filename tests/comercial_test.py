@@ -240,6 +240,44 @@ def test_la_escala_de_color_distingue_casi_de_lejos():
     check("y se explica qué significa el color", "Color de cada tarjeta" in html)
 
 
+def test_los_numeros_de_las_jugadas_tienen_color_con_sentido():
+    """Un número gris no le dice a nadie si preocuparse. Rojo va mal, verde va
+    bien, negro solo informa."""
+    import streamlit as st
+
+    from ui.comercial import _jugadas
+
+    df, schema = _archivo()
+    matriz = matriz_comercial(df, schema)
+    jugadas = oportunidades(matriz)
+    por_tipo = {j["tipo"]: j for j in jugadas}
+    check("recuperar lo perdido se marca como malo", por_tipo["Recuperar"]["tono"] == "malo")
+    check("cerrar una brecha de meta se marca como malo", por_tipo["Cerrar brecha"]["tono"] == "malo")
+    check("escalar un canal que crece se marca como bueno", por_tipo["Escalar"]["tono"] == "bueno")
+    check("la frase por partes es igual a la frase completa",
+          all("".join(texto for texto, _ in j["partes"]) == j["texto"] for j in jugadas))
+    check("dentro de cada frase, las cifras llevan su propio tono",
+          all(any(tono in ("malo", "bueno") for _, tono in j["partes"]) for j in jugadas))
+    check("la palanca de quien hace menos operaciones se marca como mala",
+          por_tipo["Recuperar"]["palanca_tono"] == "malo")
+    check("la de quien sube el valor por operación, como buena",
+          por_tipo["Escalar"]["palanca_tono"] == "bueno")
+    quietas = oportunidades(matriz_comercial(*_archivo_quieto()))
+    check("sostener lo que pesa es información, no una alarma",
+          all(j["tono"] == "info" and all(t in ("info", "enfasis") for _, t in j["partes"]) for j in quietas))
+
+    capturado = []
+    original = st.markdown
+    st.markdown = lambda html, **k: (capturado.append(str(html)), original(html, **k))[1]
+    try:
+        _jugadas(matriz)
+    finally:
+        st.markdown = original
+    html = "".join(capturado)
+    check("en pantalla hay cifras en rojo y en verde", "color:#E4002B" in html and "color:#22A06B" in html)
+    check("y se explica qué significa cada color", "va mal" in html and "va bien" in html)
+
+
 if __name__ == "__main__":
     test_cada_canal_cae_en_su_cuadrante()
     test_separa_volumen_de_ticket()
@@ -250,4 +288,5 @@ if __name__ == "__main__":
     test_lo_que_no_se_mueve_es_estable()
     test_el_mapa_no_se_monta()
     test_la_escala_de_color_distingue_casi_de_lejos()
+    test_los_numeros_de_las_jugadas_tienen_color_con_sentido()
     print("\nComercial test completado sin errores.")

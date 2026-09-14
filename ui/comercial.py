@@ -396,6 +396,26 @@ def _tabla(matriz: dict, schema: dict) -> None:
     st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
 
 
+# Tres colores con significado fijo para las cifras de las jugadas: rojo lo
+# que va mal, verde lo que va bien y negro lo que solo informa. Un número gris
+# no le dice a nadie si preocuparse o no.
+_TONO_COLOR = {"malo": "#E4002B", "bueno": "#22A06B", "info": "var(--text)", "enfasis": "var(--text)"}
+_TONO_BORDE = {"malo": "#E4002B", "bueno": "#22A06B", "info": "#64748B"}
+
+
+def _frase_con_color(partes) -> str:
+    """La frase de la jugada, con cada cifra pintada según lo que significa."""
+    html = []
+    for texto, tono in partes:
+        limpio = clean_display_text(texto)
+        if tono == "info":
+            html.append(limpio)
+        else:
+            color = _TONO_COLOR.get(tono, "var(--text)")
+            html.append(f'<b style="color:{color}">{limpio}</b>')
+    return "".join(html)
+
+
 def _jugadas(matriz: dict) -> None:
     lista = oportunidades(matriz)
     if not lista:
@@ -405,27 +425,41 @@ def _jugadas(matriz: dict) -> None:
         eyebrow="DÓNDE PONER EL ESFUERZO",
         subtitle="Cada una con su cifra, para poder compararlas y elegir en vez de discutirlas.",
         compact=True), unsafe_allow_html=True)
+    st.markdown(
+        '<div class="canal-escala"><span>Cómo leer los números:</span>'
+        '<b style="color:#E4002B">rojo, va mal</b><span>·</span>'
+        '<b style="color:#22A06B">verde, va bien</b><span>·</span>'
+        '<b style="color:var(--text)">negro, dato informativo</b></div>',
+        unsafe_allow_html=True)
     for jugada in lista:
-        color = COLOR_CUADRANTE.get(jugada["cuadrante"], "#10B9A6")
-        palanca = (f'<div style="font-size:12px;color:var(--soft);margin-top:6px">'
-                   f'Palanca: {clean_display_text(jugada["palanca"])}</div>') if jugada["palanca"] else ""
+        borde = _TONO_BORDE.get(jugada["tono"], "#64748B")
+        color_impacto = _TONO_COLOR.get(jugada["tono"], "var(--text)")
+        palanca = ""
+        if jugada["palanca"]:
+            color_palanca = _TONO_COLOR.get(jugada["palanca_tono"], "var(--text)")
+            texto_palanca = clean_display_text(jugada["palanca"])
+            texto_palanca = texto_palanca[:1].upper() + texto_palanca[1:]
+            palanca = (f'<div style="font-size:12px;color:var(--muted);margin-top:6px">Palanca: '
+                       f'<span style="color:{color_palanca};font-weight:600">{texto_palanca}</span></div>')
+        tipo = clean_display_text(jugada["tipo"])
+        frase = _frase_con_color(jugada["partes"])
+        impacto = _fmt(jugada["impacto"])
         st.markdown(
             f"""<div style="background:var(--panel);border:1px solid var(--line);
-            border-left:4px solid {color};border-radius:var(--radius-md);padding:13px 16px;
+            border-left:4px solid {borde};border-radius:var(--radius-md);padding:13px 16px;
             margin-bottom:9px;box-shadow:var(--shadow-sm);display:flex;gap:16px;
             align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
               <div style="flex:1;min-width:240px">
                 <span style="font-size:9px;font-weight:800;letter-spacing:.07em;
-                      text-transform:uppercase;color:{color}">{clean_display_text(jugada['tipo'])}</span>
-                <div style="font-size:13.5px;color:var(--text);margin-top:4px">
-                  {clean_display_text(jugada['texto'])}</div>
+                      text-transform:uppercase;color:{borde}">{tipo}</span>
+                <div style="font-size:13.5px;color:var(--text);margin-top:4px">{frase}</div>
                 {palanca}
               </div>
               <div style="text-align:right;min-width:96px">
                 <div style="font-size:9px;color:var(--muted);font-weight:700;
                      text-transform:uppercase;letter-spacing:.05em">Impacto</div>
-                <div style="font-size:19px;font-weight:800;color:{color};
-                     font-family:'Sora','Inter',sans-serif">{_fmt(jugada['impacto'])}</div>
+                <div style="font-size:19px;font-weight:800;color:{color_impacto};
+                     font-family:'Sora','Inter',sans-serif">{impacto}</div>
               </div>
             </div>""",
             unsafe_allow_html=True,
