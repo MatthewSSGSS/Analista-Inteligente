@@ -22,28 +22,15 @@ def _insight_confidence(item):
 
 def _active_filters_summary(schema=None):
     """Texto legible de los filtros realmente activos en este momento, para
-    que el informe deje constancia exacta de qué recorte de datos muestra."""
+    que el informe deje constancia exacta de qué recorte de datos muestra.
+    Usa la misma descripción que el menú lateral, así que entiende también
+    los rangos numéricos, los de fechas y el texto contenido."""
+    from core.filter_engine import describir_regla
+
     filters = st.session_state.get("filters") or {}
-    if not filters:
-        return "Sin filtros aplicados (vista completa)"
-    parts = []
-    op_words = {"equals": "=", "eq": "=", "gt": ">", "gte": "≥", "lt": "<", "lte": "≤", "contains": "contiene"}
-    for col, rule in filters.items():
-        if not isinstance(rule, dict):
-            continue
-        op = rule.get("op")
-        value = rule.get("value")
-        label = str(col)
-        if op == "in":
-            vals = value if isinstance(value, (list, tuple, set)) else [value]
-            vals = [str(v) for v in vals]
-            if not vals:
-                continue
-            shown = ", ".join(vals[:3]) + (f" y {len(vals)-3} más" if len(vals) > 3 else "")
-            parts.append(f"{label}: {shown}")
-        elif op in op_words:
-            parts.append(f"{label} {op_words[op]} {value}")
-    return " · ".join(parts) if parts else "Sin filtros aplicados (vista completa)"
+    partes = [describir_regla(col, regla) for col, regla in filters.items() if not str(col).startswith("__")]
+    partes = [p for p in partes if p]
+    return " · ".join(partes) if partes else "Sin filtros aplicados (vista completa)"
 
 
 def render_exports(df, dashboard, filename, sheet, full_df=None, schema=None, workbook=None):

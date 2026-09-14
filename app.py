@@ -20,7 +20,8 @@ def _cached_build_dashboard(df, profile):
     # llamada anterior y reutiliza el resultado en vez de recalcular.
     return build_dashboard(df, profile)
 from core.dataset_mode import detect_dataset_mode
-from core.filter_engine import apply_filters, natural_filter, cascading_options
+from core.filter_engine import apply_filters, natural_filter, describir_regla
+from ui.filtros import render_filtros_por_columna
 from ui.dashboard import render_dashboard
 from ui.explorer import render_explorer
 from ui.quality import render_quality
@@ -286,22 +287,10 @@ with st.sidebar:
                     end_of_day = pd.Timestamp(dr[1]) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
                     st.session_state.filters["__date__"]={"column":dc,"start":pd.Timestamp(dr[0]),"end":end_of_day}
 
-        # ── Filtros de contexto ──────────────────────────────────────────
-        filter_columns=[x for x in schema.get("categorical", []) if x in df.columns and not str(x).startswith("__")]
-        if full_name_col and full_name_col in df.columns:
-            filter_columns=[x for x in filter_columns if x not in hidden_name_parts and x != full_name_col]
-        # Evita una barra lateral interminable: muestra primero los campos más
-        # útiles y deja el resto dentro de "Más filtros".
-        preferred=[]
-        sem_map={x.get("column"):x.get("semantic_type") for x in schema.get("semantic",{}).get("columns",[])}
-        preferred_types={"region","department","state","zone","city","country","segment","category","product","brand","status","type","customer","employee"}
-        for c in filter_columns:
-            if sem_map.get(c) in preferred_types:
-                preferred.append(c)
-        preferred += [c for c in filter_columns if c not in preferred]
-        visible_filters=preferred[:4]
-        extra_filters=preferred[4:]
-
+        # ── Filtros por columna ──────────────────────────────────────────
+        # Antes solo se podían filtrar las columnas clasificadas como
+        # categoría. Ahora cualquier columna del archivo tiene su filtro,
+        # según su tipo; ver ui/filtros.py.
         # La fecha también participa en la cascada.
         filter_source=df
         date_rule=st.session_state.filters.get("__date__")
@@ -311,38 +300,7 @@ with st.sidebar:
                 filter_source=df[(df[dcol]>=date_rule["start"]) & (df[dcol]<=date_rule["end"])].copy()
             except Exception:
                 filter_source=df
-
-        all_filter_cols=([full_name_col] if full_name_col and full_name_col in df.columns else []) + preferred
-        active_categorical={c:r for c,r in st.session_state.filters.items()
-                            if not str(c).startswith("__") and isinstance(r,dict) and c in df.columns}
-        options_by_col=cascading_options(filter_source, all_filter_cols, active_categorical, limit=2000)
-
-        def render_context_filter(c):
-            opts=options_by_col.get(c, [])
-            widget_key=f"filter_{sheet}_{c}"
-            current=st.session_state.get(widget_key, [])
-            if not isinstance(current, list): current=list(current) if current else []
-            valid_current=[v for v in current if str(v) in set(opts)]
-            if valid_current != current: st.session_state[widget_key]=valid_current
-            selected=st.multiselect(str(c),opts,key=widget_key,placeholder="Selecciona opciones…")
-            if selected:
-                st.session_state.filters[c]={"op":"in","value":selected}
-            elif c in st.session_state.filters:
-                st.session_state.filters.pop(c,None)
-
-        # "🎯 Segmentación" tampoco necesita expander: siempre arrancaba
-        # abierto (mismo problema que "📅 Tiempo"). "Más filtros" sí se queda
-        # como expander porque ese sí colapsa de verdad por defecto
-        # (expanded=False) — es la única sección que realmente ahorra
-        # espacio ocultando algo que no siempre hace falta ver.
-        if visible_filters:
-            st.markdown('<p class="sidebar-section-label">🎯 Segmentación</p>', unsafe_allow_html=True)
-            for c in visible_filters:
-                render_context_filter(c)
-        if extra_filters:
-            with st.expander(f"Más filtros · {len(extra_filters)} disponibles", expanded=False):
-                for c in extra_filters:
-                    render_context_filter(c)
+        render_filtros_por_columna(df, schema, sheet, full_name_col, filter_source)
 
         active_count=sum(1 for c in st.session_state.filters if not str(c).startswith("__")) + (1 if "__date__" in st.session_state.filters else 0)
         if active_count:
@@ -354,6 +312,12 @@ with st.sidebar:
                         st.session_state.pop(k, None)
                 st.rerun()
             st.caption(f"{active_count} filtro(s) activo(s)")
+            # Qué recorte está activo, en palabras: con filtros en cualquier
+            # columna, un contador solo no alcanza para saber qué se dejó fuera.
+            for _linea in [describir_regla(c, r) for c, r in st.session_state.filters.items()
+                           if not str(c).startswith("__")][:8]:
+                if _linea:
+                    st.caption("· " + _linea)
         st.markdown(f'<div class="mode-banner"><span class="mode-banner-label">MODO DETECTADO</span><br><b>{mode_info["label"]}</b> <span class="mode-confidence">{mode_info["confidence"]*100:.0f}%</span></div>', unsafe_allow_html=True)
 
         with st.expander("🤖 Asistente IA", expanded=False):
@@ -481,7 +445,7 @@ if "__date__" in st.session_state.filters:
         st.session_state.filters.pop("__date__", None)
 
 for c,r in list(st.session_state.filters.items()):
-    if c.startswith("__"): continue
+    if str(c).startswith("__"): continue
     if c in df.columns:
         valid_filters[c]=r
     else:
@@ -493,14 +457,13 @@ if "__date__" in valid_filters:
     date_col=f["column"]
     df=df[(df[date_col]>=f["start"]) & (df[date_col]<=f["end"])]
 
-# Categorical/numeric filters are applied only when their source column exists.
-for c,r in valid_filters.items():
-    if c.startswith("__"): continue
-    op=r.get("op")
-    if op=="in":
-        df=df[df[c].astype(str).isin([str(v) for v in r.get("value",[])])]
-    elif op in {"equals","contains","gt","gte","lt","lte"}:
-        df,_meta=apply_filters(df,{c:r})
+# Todas las reglas por columna pasan por el mismo motor que usan las demás
+# vistas. Antes aquí se desempaquetaba `df,_meta=apply_filters(...)`, pero la
+# función devuelve una sola tabla: cualquier filtro que no fuera una lista de
+# valores habría tumbado la app en cuanto existiera uno.
+reglas_por_columna={c:r for c,r in valid_filters.items() if not str(c).startswith("__")}
+if reglas_por_columna:
+    df=apply_filters(df,reglas_por_columna)
 
 st.markdown(
     f'<p class="hero-band-meta"><b>{len(df):,} registros visibles</b> · '

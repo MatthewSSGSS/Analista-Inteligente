@@ -189,17 +189,13 @@ def _apply_current_filters(df):
         d = date_rule["column"]
         out[d] = pd.to_datetime(out[d], errors="coerce")
         out = out[(out[d] >= date_rule.get("start")) & (out[d] <= date_rule.get("end"))]
-    for c, rule in filters.items():
-        if str(c).startswith("__") or c not in out.columns or not isinstance(rule, dict):
-            continue
-        op, val = rule.get("op"), rule.get("value")
-        s = out[c]
-        if op == "in":
-            vals = val if isinstance(val, (list, tuple, set)) else [val]
-            out = out[s.astype(str).isin([str(v) for v in vals])]
-        elif op in {"equals", "eq"}:
-            out = out[s.astype(str).str.casefold() == str(val).casefold()]
-    return out
+    # Mismo motor que el panel. Antes aquí solo se entendían "in" y "equals":
+    # un filtro por rango o por texto se ignoraba en silencio, y el
+    # seguimiento mostraba filas que el resto del panel ya había dejado fuera.
+    from core.filter_engine import apply_filters
+
+    reglas = {c: r for c, r in filters.items() if not str(c).startswith("__") and isinstance(r, dict)}
+    return apply_filters(out, reglas) if reglas else out
 
 
 def _observaciones(data, schema, person_col, selected, primary):

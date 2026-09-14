@@ -1,21 +1,193 @@
+"""Motor único de filtros: qué filas quedan según las reglas activas.
+
+Antes cada vista aplicaba los filtros a su manera. El panel entendía unas
+operaciones, el análisis de seguimiento solo "in" y "equals", y las opciones
+en cascada otras más. Un filtro por rango se aplicaba en el panel y se
+ignoraba en silencio en el seguimiento, que terminaba mostrando filas que el
+resto de la app ya había dejado fuera. Aquí vive la única definición de qué
+significa cada regla, y todas las vistas la usan.
+
+Reglas que entiende, una por columna:
+
+- ``{"op": "in", "value": [...]}``: el valor está en la lista. ``VACIO`` en la
+  lista incluye las celdas vacías.
+- ``{"op": "between", "value": [desde, hasta], "incluir_vacios": bool}``:
+  rango numérico inclusivo; cualquiera de los dos límites puede ser None.
+- ``{"op": "date_between", "value": [inicio, fin], "incluir_vacios": bool}``:
+  rango de fechas inclusivo.
+- ``{"op": "contains", "value": "texto"}``: contiene el texto, sin importar
+  mayúsculas.
+- ``equals``, ``gt``, ``gte``, ``lt`` y ``lte``, que ya existían.
+"""
 from __future__ import annotations
+
 import re
+
 import pandas as pd
 import streamlit as st
 
-def apply_filters(df,filters):
-    out=df
-    for c,r in filters.items():
-        if c not in out.columns: continue
-        s=out[c]; op=r["op"]; v=r["value"]
-        if op=="contains": out=out[s.astype(str).str.contains(str(v),case=False,na=False,regex=False)]
-        elif op in {"equals", "eq"}: out=out[s.astype(str).str.casefold()==str(v).casefold()]
-        elif op=="in": out=out[s.astype(str).isin([str(x) for x in (v if isinstance(v,(list,tuple,set)) else [v])])]
-        elif op=="gt": out=out[pd.to_numeric(s,errors="coerce")>float(v)]
-        elif op=="gte": out=out[pd.to_numeric(s,errors="coerce")>=float(v)]
-        elif op=="lt": out=out[pd.to_numeric(s,errors="coerce")<float(v)]
-        elif op=="lte": out=out[pd.to_numeric(s,errors="coerce")<=float(v)]
+# Opción que representa las celdas vacías en las listas de valores. Sin ella,
+# las filas sin dato en una columna no se podían seleccionar ni excluir, y se
+# escapaban de cualquier filtro.
+VACIO = "(Vacío)"
+
+# Hasta cuántos valores distintos se ofrece una lista para elegir. Por encima
+# de esto, una lista no se puede recorrer y se filtra por texto contenido.
+LIMITE_OPCIONES = 2000
+
+_TEXTOS_VACIOS = {"", "nan", "nat", "none", "<na>"}
+
+
+def es_vacio(serie: pd.Series) -> pd.Series:
+    """Celdas sin dato, contando los textos vacíos o que solo dicen "nan"."""
+    return serie.isna() | serie.astype(str).str.strip().str.lower().isin(_TEXTOS_VACIOS)
+
+
+def mascara_regla(serie: pd.Series, regla: dict) -> pd.Series:
+    """Qué filas cumplen una regla. Una operación desconocida no filtra nada."""
+    op = regla.get("op")
+    valor = regla.get("value")
+    if op == "in":
+        valores = valor if isinstance(valor, (list, tuple, set)) else [valor]
+        textos = [str(v) for v in valores if str(v) != VACIO]
+        mascara = serie.astype(str).isin(textos)
+        if any(str(v) == VACIO for v in valores):
+            mascara = mascara | es_vacio(serie)
+        return mascara
+    if op in {"equals", "eq"}:
+        return serie.astype(str).str.casefold() == str(valor).casefold()
+    if op == "contains":
+        return serie.astype(str).str.contains(str(valor), case=False, na=False, regex=False)
+    if op in {"gt", "gte", "lt", "lte"}:
+        numeros = pd.to_numeric(serie, errors="coerce")
+        limite = float(valor)
+        if op == "gt":
+            return numeros > limite
+        if op == "gte":
+            return numeros >= limite
+        if op == "lt":
+            return numeros < limite
+        return numeros <= limite
+    if op == "between":
+        numeros = pd.to_numeric(serie, errors="coerce")
+        desde, hasta = (list(valor or []) + [None, None])[:2]
+        mascara = numeros.notna()
+        if desde is not None:
+            mascara = mascara & (numeros >= float(desde))
+        if hasta is not None:
+            mascara = mascara & (numeros <= float(hasta))
+        if regla.get("incluir_vacios", True):
+            mascara = mascara | numeros.isna()
+        return mascara
+    if op == "date_between":
+        fechas = pd.to_datetime(serie, errors="coerce")
+        inicio, fin = (list(valor or []) + [None, None])[:2]
+        mascara = fechas.notna()
+        if inicio is not None:
+            mascara = mascara & (fechas >= pd.Timestamp(inicio))
+        if fin is not None:
+            mascara = mascara & (fechas <= pd.Timestamp(fin))
+        if regla.get("incluir_vacios", True):
+            mascara = mascara | fechas.isna()
+        return mascara
+    return pd.Series(True, index=serie.index)
+
+
+def apply_filters(df, filters):
+    """Aplica todas las reglas por columna. Devuelve SOLO la tabla filtrada.
+
+    Una regla sobre una columna que ya no existe, o una regla mal formada, se
+    salta en vez de tumbar el panel: pasa al cambiar de hoja o de archivo con
+    filtros puestos.
+    """
+    out = df
+    for columna, regla in (filters or {}).items():
+        if str(columna).startswith("__") or columna not in out.columns or not isinstance(regla, dict):
+            continue
+        try:
+            out = out[mascara_regla(out[columna], regla)]
+        except (TypeError, ValueError):
+            continue
     return out
+
+
+def _numero(valor) -> str:
+    if valor is None:
+        return "—"
+    numero = float(valor)
+    return f"{numero:,.0f}" if numero.is_integer() else f"{numero:,.2f}"
+
+
+def describir_regla(columna, regla: dict) -> str | None:
+    """La regla en una frase corta, para mostrar qué recorte está activo."""
+    if not isinstance(regla, dict):
+        return None
+    op = regla.get("op")
+    valor = regla.get("value")
+    sin_vacios = "" if regla.get("incluir_vacios", True) else ", sin vacíos"
+    if op == "in":
+        valores = [str(v) for v in (valor if isinstance(valor, (list, tuple, set)) else [valor])]
+        if not valores:
+            return None
+        mas = f" y {len(valores) - 3} más" if len(valores) > 3 else ""
+        return f"{columna}: {', '.join(valores[:3])}{mas}"
+    if op == "between":
+        desde, hasta = (list(valor or []) + [None, None])[:2]
+        return f"{columna}: de {_numero(desde)} a {_numero(hasta)}{sin_vacios}"
+    if op == "date_between":
+        inicio, fin = (list(valor or []) + [None, None])[:2]
+        texto_inicio = pd.Timestamp(inicio).strftime("%d/%m/%Y") if inicio is not None else "el inicio"
+        texto_fin = pd.Timestamp(fin).strftime("%d/%m/%Y") if fin is not None else "el final"
+        return f"{columna}: del {texto_inicio} al {texto_fin}{sin_vacios}"
+    if op == "contains":
+        return f"{columna} contiene «{valor}»"
+    signos = {"equals": "=", "eq": "=", "gt": ">", "gte": "≥", "lt": "<", "lte": "≤"}
+    if op in signos:
+        return f"{columna} {signos[op]} {valor}"
+    return None
+
+
+@st.cache_data(show_spinner=False, max_entries=16, ttl=1800)
+def columnas_filtrables(df, schema) -> list[dict]:
+    """Todas las columnas reales del archivo, con el filtro que les corresponde.
+
+    Antes solo se podían filtrar las columnas que el esquema clasificó como
+    categoría. Las numéricas, las de texto con muchos valores, los códigos y
+    las fechas secundarias no aparecían en ningún lado. Ahora cada columna con
+    algún dato tiene su filtro:
+
+    - "fecha": rango de fechas.
+    - "numero": rango desde y hasta, para métricas y columnas con muchos
+      valores numéricos.
+    - "opciones": lista para elegir, hasta ``LIMITE_OPCIONES`` valores.
+    - "texto": contiene, cuando hay demasiados valores para una lista.
+    """
+    schema = schema or {}
+    fechas = set(schema.get("dates", []))
+    metricas = set(schema.get("metrics", []))
+    tipos = schema.get("types", {}) or {}
+    salida = []
+    for columna in df.columns:
+        if str(columna).startswith("__"):
+            continue
+        serie = df[columna]
+        vacios = es_vacio(serie)
+        if bool(vacios.all()):
+            continue  # una columna sin ningún dato no tiene nada que filtrar
+        distintos = int(serie[~vacios].astype(str).nunique())
+        if columna in fechas or pd.api.types.is_datetime64_any_dtype(serie):
+            tipo = "fecha"
+        elif tipos.get(columna) in {"Año", "Mes", "Booleano"} or pd.api.types.is_bool_dtype(serie):
+            tipo = "opciones"
+        elif (columna in metricas or pd.api.types.is_numeric_dtype(serie)) and distintos > 12:
+            tipo = "numero"
+        elif distintos <= LIMITE_OPCIONES:
+            tipo = "opciones"
+        else:
+            tipo = "texto"
+        salida.append({"columna": columna, "tipo": tipo, "distintos": distintos, "vacios": int(vacios.sum())})
+    return salida
+
 
 @st.cache_data(show_spinner=False, max_entries=24, ttl=1800)
 def natural_filter(df,q,schema):
@@ -67,7 +239,12 @@ def search_across_sheets(workbook: dict, query: str, max_rows_per_sheet: int = 2
 
 @st.cache_data(show_spinner=False, max_entries=24, ttl=1800)
 def cascading_options(df, columns, active_filters=None, limit=80):
-    """Return valid options for each categorical filter using the other active filters."""
+    """Opciones válidas de cada lista, según los demás filtros activos.
+
+    Usa la misma definición de cada regla que `apply_filters`, así que un
+    rango numérico o de fechas también acota las opciones de las listas. Si
+    la columna tiene celdas vacías en esa selección, ``VACIO`` va primero.
+    """
     active_filters = active_filters or {}
     result = {}
     for target in columns:
@@ -77,28 +254,17 @@ def cascading_options(df, columns, active_filters=None, limit=80):
         for col, rule in active_filters.items():
             if col == target or col not in df.columns or not isinstance(rule, dict):
                 continue
-            op = rule.get("op")
-            value = rule.get("value")
-            s = df[col]
-            if op == "in":
-                vals = value if isinstance(value, (list, tuple, set)) else [value]
-                mask &= s.astype(str).str.casefold().isin({str(v).casefold() for v in vals})
-            elif op in {"equals", "eq"}:
-                mask &= s.astype(str).str.casefold().eq(str(value).casefold())
-            elif op == "contains":
-                mask &= s.astype(str).str.contains(str(value), case=False, na=False, regex=False)
-            elif op in {"gt", "gte", "lt", "lte"}:
-                n = pd.to_numeric(s, errors="coerce")
-                try:
-                    v = float(value)
-                except (TypeError, ValueError):
-                    continue
-                if op == "gt": mask &= n > v
-                elif op == "gte": mask &= n >= v
-                elif op == "lt": mask &= n < v
-                elif op == "lte": mask &= n <= v
-        vals = df.loc[mask, target].dropna().astype(str).drop_duplicates().tolist()
+            try:
+                mask &= mascara_regla(df[col], rule)
+            except (TypeError, ValueError):
+                continue
+        serie = df.loc[mask, target]
+        vacios = es_vacio(serie)
+        vals = serie[~vacios].astype(str).drop_duplicates().tolist()
         vals.sort(key=lambda x: x.casefold())
-        result[target] = vals[:limit] if limit else vals
+        if limit:
+            vals = vals[:limit]
+        if bool(vacios.any()):
+            vals = [VACIO] + vals
+        result[target] = vals
     return result
-

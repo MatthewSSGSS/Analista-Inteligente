@@ -32,12 +32,14 @@ Leyenda de riesgo: 🔴 alto (lógica de datos entrelazada con presentación) ·
 |---|---|---|---|---|
 | 1.1 | Búsqueda/filtro por persona (nombre completo, searchable) | `app.py:517-546` | `schema["full_name"]` (de `core/schema._find_name_parts`) | 🔴 |
 | 1.2 | Filtro de periodo (rango de fechas) | `app.py:549-557` | `schema["dates"]`, `session_state.filters["__date__"]` | 🔴 |
-| 1.3 | Filtros de contexto (categóricos, cascada) | `app.py:560-610` → `core/filter_engine.cascading_options` | `schema["categorical"]`, `schema["semantic"]` | 🔴 — las opciones de cada filtro dependen de los demás filtros activos (cascada real). |
-| 1.4 | "Más filtros" colapsable (columnas no prioritarias) | `app.py:571-610` | igual que 1.3 | 🟢 |
+| 1.3 | Filtros por CUALQUIER columna del archivo: segmentación visible con hasta 4 listas de negocio y un selector con todas las demás columnas, cada una con su filtro según su tipo (lista, rango numérico, rango de fechas o texto contenido) | `ui/filtros.render_filtros_por_columna` · tipos en `core/filter_engine.columnas_filtrables` | `core/filter_engine.cascading_options` | 🔴 — antes solo se filtraban las columnas clasificadas como categoría: métricas, códigos, fechas secundarias y nombres de punto con cientos de valores quedaban fuera. El periodo y la persona se excluyen del selector a propósito: ya tienen su control y dos widgets escribirían la misma regla. |
+| 1.4 | Resumen en palabras de los filtros activos bajo el contador | `app.py` (bloque del contador) · `core/filter_engine.describir_regla` | — | 🟢 — con filtros en cualquier columna, el contador solo no dice qué se dejó fuera. |
 | 1.5 | Botón "Limpiar filtros" | `app.py:613-621` | limpia `session_state.filters` + claves `filter_*`, `person_filter_*`, `period_filter_*` | 🟡 |
-| 1.6 | Aplicación efectiva de filtros al `df` mostrado | `app.py:734-763` (in/equals/contains/gt/gte/lt/lte) → `core/filter_engine.apply_filters` | tolera columnas eliminadas al cambiar de hoja (limpieza defensiva) | 🔴 |
+| 1.6 | Aplicación efectiva de filtros: UN SOLO motor para el panel, el seguimiento, las opciones en cascada y el resumen de exportación | `core/filter_engine.apply_filters` + `mascara_regla` | tolera columnas eliminadas y reglas mal formadas | 🔴 — antes había tres implementaciones: el seguimiento ignoraba en silencio todo lo que no fuera "in"/"equals", y `app.py` desempaquetaba `df,_meta=apply_filters(...)` sobre una función que devuelve una sola tabla. `tests/filtros_test.py` falla si ese desempaquetado vuelve. |
 | 1.7 | Búsqueda en lenguaje natural ("Pregúntale al Excel") | `app.py:767-770` → `core/filter_engine.natural_filter` | `schema` | 🟡 |
 | 1.8 | Contador de filtros activos / registros visibles | `app.py:612,765` | — | 🟢 |
+| 1.9 | Celdas vacías filtrables: opción "(Vacío)" en las listas y "Incluir filas vacías" en los rangos | `core/filter_engine.VACIO`, `es_vacio` | — | 🟡 — sin esto, las filas sin dato en una columna no se podían seleccionar ni excluir, y se escapaban de cualquier filtro. |
+| 1.10 | "Ver análisis" en una alerta deja el filtro puesto | `ui/filtros._render_opciones` (siembra la lista con la regla activa) | `session_state.filters` | 🟡 — antes la lista del menú arrancaba vacía y en el mismo redibujo borraba el filtro recién puesto. |
 
 ## 2. Resumen ejecutivo / dashboard principal
 
