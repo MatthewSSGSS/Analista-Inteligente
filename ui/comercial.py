@@ -17,8 +17,8 @@ El orden de la pantalla sigue siendo el orden de la decisión:
 1. Titular y KPIs: qué pasa y qué es lo urgente.
 2. Semáforo: cada canal en una tarjeta, agrupado por jugada. Es lo que se lee
    sin saber leer una matriz.
-3. El mapa de decisión: una fila por canal, así nada se monta aunque se
-   muevan parecido.
+3. Peso y rumbo: una barra por canal con cuánto pesa, qué tan bien va y
+   hacia dónde se movió, sin ejes vacíos ni nombres cortados.
 4. Quién sumó y quién restó, y qué mueve a cada canal.
 5. El detalle y las jugadas con su cifra.
 """
@@ -68,10 +68,20 @@ def _color_escala(puntaje: float) -> str:
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
-def _color_crecimiento(crecimiento) -> str:
+def _color_movimiento(crecimiento) -> str:
+    """Rojo si cae, verde si crece y negro si se quedó quieto.
+
+    Para las cifras de movimiento se usan tres colores fijos y no la escala
+    continua: un -0,6% no es una alerta, y pintarlo de naranja lo hacía
+    parecer una.
+    """
     if crecimiento is None:
-        return "#64748B"
-    return _color_escala((float(crecimiento) + 5.0) / 10.0)
+        return "var(--muted)"
+    if crecimiento >= UMBRAL_MOVIMIENTO:
+        return "#22A06B"
+    if crecimiento <= -UMBRAL_MOVIMIENTO:
+        return "#E4002B"
+    return "var(--text)"
 
 
 def _corto(texto, n: int = 28) -> str:
@@ -128,6 +138,37 @@ def _css() -> None:
         .canal-pill{flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
           color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);padding:3px 7px;
           border-radius:999px;white-space:nowrap}
+
+        .rumbo{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);
+          padding:4px 18px 14px;box-shadow:var(--shadow-sm);margin:0 0 16px}
+        .rumbo-cabecera,.rumbo-fila{display:grid;align-items:center;gap:14px;
+          grid-template-columns:28px minmax(170px,1.35fr) minmax(150px,2fr) 60px 96px 60px}
+        .rumbo-cabecera{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+          color:var(--muted);padding:12px 0 9px;border-bottom:1px solid var(--line)}
+        .rumbo-cabecera span:nth-child(n+4){text-align:right}
+        .rumbo-fila{padding:10px 0;border-bottom:1px solid var(--line)}
+        .rumbo-puesto{font-size:12px;font-weight:800;color:var(--muted);text-align:center}
+        .rumbo-nombre{font-size:12.5px;font-weight:650;color:var(--text);line-height:1.3;overflow:hidden;
+          display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+        .rumbo-pista{position:relative;height:16px;background:var(--panel-2);border-radius:999px}
+        .rumbo-barra{position:absolute;left:0;top:0;bottom:0;border-radius:999px;min-width:6px}
+        .rumbo-promedio{position:absolute;top:-5px;bottom:-5px;border-left:2px dashed #94A3B8}
+        .rumbo-valor{font-size:14px;font-weight:800;color:var(--text);text-align:right;
+          font-variant-numeric:tabular-nums;font-family:'Sora','Inter',sans-serif}
+        .rumbo-mov,.rumbo-meta{font-size:13px;font-weight:700;text-align:right;
+          font-variant-numeric:tabular-nums;white-space:nowrap}
+        .rumbo-corte{display:flex;align-items:center;gap:10px;margin:2px 0;padding:6px 0;
+          color:var(--muted);font-size:11px;font-weight:600}
+        .rumbo-corte::before,.rumbo-corte::after{content:"";flex:1;border-top:1px dashed #94A3B8}
+        .rumbo-pie{display:flex;gap:18px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:12px}
+        .rumbo-pie i{display:inline-block;width:14px;border-top:2px dashed #94A3B8;margin-right:6px;
+          vertical-align:middle}
+        @media(max-width:860px){
+          .rumbo-cabecera{display:none}
+          .rumbo-fila{grid-template-columns:24px 1fr 56px;row-gap:6px}
+          .rumbo-pista{grid-column:2 / span 2}
+          .rumbo-mov,.rumbo-meta{text-align:left}
+        }
 
         .mueve-lista{display:flex;flex-direction:column;gap:7px}
         .mueve-item{display:grid;grid-template-columns:minmax(0,1.5fr) 1fr 1fr;gap:10px;align-items:center;
@@ -196,7 +237,7 @@ def _semaforo(matriz: dict, schema: dict) -> None:
                 meta = (f'<div class="canal-card-fila"><span>Meta</span>'
                         f'<b style="color:{color_meta}">{f["cumplimiento"]:.0f}%</b></div>')
             ancho = f["participacion"] / mayor * 100
-            color_crec = _color_crecimiento(f["crecimiento"])
+            color_crec = _color_movimiento(f["crecimiento"])
             tarjetas.append(
                 f'<div class="canal-card" style="--c:{color}" title="{nombre}">'
                 f'<div class="canal-card-cabeza"><div class="canal-card-nombre">{nombre}</div>'
@@ -222,86 +263,85 @@ def _semaforo(matriz: dict, schema: dict) -> None:
         )
 
 
-def _matriz_figura(matriz: dict, schema: dict):
-    """Mapa de decisión: una fila por canal, para que nada se monte.
+def filas_peso_y_rumbo(matriz: dict) -> dict:
+    """Los datos de la vista "Peso y rumbo", sin nada de interfaz.
 
-    Reemplaza a la matriz de burbujas. De un mes a otro los canales suelen
-    moverse parecido, y entonces todas las burbujas caían en la misma columna,
-    se tapaban entre sí y los números dejaban de leerse. Este mapa dice lo
-    mismo sin esas colisiones:
-
-    - Cada fila es un canal, ordenado por cuánto pesa. La línea punteada
-      separa a los que pesan más que el promedio de los que pesan menos.
-    - La posición horizontal dice hacia dónde va: franja roja cae, gris
-      estable, verde crece, con el mismo umbral que clasifica.
-    - El color del punto es el del semáforo, y su tamaño, el peso.
+    Reemplaza al mapa por posición de crecimiento. Ese mapa ponía a cada canal
+    en un eje de -3% a +3%, y cuando todos se movían menos de 1%, que es lo
+    normal de un mes a otro, casi todo el gráfico eran franjas vacías y la
+    información quedaba apretada junto al cero. Lo que sí distingue a los
+    canales en ese caso es cuánto pesa cada uno, así que la barra es el peso,
+    su color es qué tan bien va y el movimiento se escribe al lado.
     """
-    filas = [f for f in matriz["filas"] if f["crecimiento"] is not None]
-    if not filas:
-        return None
-    orden = sorted(filas, key=lambda f: f["participacion"], reverse=True)
-    n = len(orden)
-    u = UMBRAL_MOVIMIENTO
-    maximo = max(abs(f["crecimiento"]) for f in orden)
-    limite = max(maximo * 1.3, u * 3)
-    pesan = sum(1 for f in orden if f.get("pesa"))
-    colores = [_color_escala(puntaje_salud(f)[0]) for f in orden]
+    ordenadas = sorted(matriz["filas"], key=lambda f: f["participacion"], reverse=True)
+    if not ordenadas:
+        return {"filas": [], "promedio": 0.0, "posicion_promedio": 0.0, "separar_tras": 0}
+    mayor = ordenadas[0]["participacion"] or 1.0
+    promedio = float(matriz["corte_peso"])
+    filas = []
+    for puesto, f in enumerate(ordenadas, 1):
+        puntaje = puntaje_salud(f)[0]
+        color_meta = ("var(--muted)" if f["cumplimiento"] is None
+                      else _color_escala(puntaje_salud({"cumplimiento": f["cumplimiento"]})[0]))
+        filas.append({
+            "puesto": puesto, "canal": f["canal"], "participacion": f["participacion"],
+            "ancho": f["participacion"] / mayor * 100,
+            "color_barra": _color_escala(puntaje), "estado": estado_salud(puntaje),
+            "crecimiento": f["crecimiento"], "flecha": _flecha(f["crecimiento"])[0],
+            "color_crecimiento": _color_movimiento(f["crecimiento"]),
+            "cumplimiento": f["cumplimiento"], "color_meta": color_meta,
+            "pesa": bool(f.get("pesa")), "jugada": f["cuadrante_label"],
+        })
+    return {
+        "filas": filas,
+        "promedio": promedio,
+        "posicion_promedio": min(100.0, promedio / mayor * 100),
+        "separar_tras": sum(1 for f in filas if f["pesa"]),
+    }
 
-    fig = go.Figure()
-    for x0, x1, clave, texto in ((-limite, -u, "intervenir", "CAE"),
-                                 (-u, u, "estable", "ESTABLE"),
-                                 (u, limite, "proteger", "CRECE")):
-        color = COLOR_CUADRANTE[clave]
-        fig.add_shape(type="rect", xref="x", yref="paper", x0=x0, x1=x1, y0=0, y1=1,
-                      layer="below", fillcolor=color, opacity=0.07, line=dict(width=0))
-        fig.add_annotation(xref="x", yref="paper", x=(x0 + x1) / 2, y=1, yanchor="bottom",
-                           text=f"<b>{texto}</b>", showarrow=False,
-                           font=dict(size=11, color=color, family="Inter"))
-    fig.add_vline(x=0, line_width=1.2, line_color="#94A3B8")
 
-    if 0 < pesan < n:
-        fig.add_shape(type="line", xref="paper", yref="y", x0=0, x1=1, y0=pesan - 0.5, y1=pesan - 0.5,
-                      line=dict(color="#94A3B8", width=1.3, dash="dot"))
-        for desplazamiento, texto in ((11, "pesan más que el promedio"), (-11, "pesan menos que el promedio")):
-            fig.add_annotation(xref="paper", yref="y", x=1, y=pesan - 0.5, yshift=desplazamiento,
-                               xanchor="right", showarrow=False, text=texto,
-                               font=dict(size=10, color="#64748B"))
+def _peso_y_rumbo(matriz: dict, schema: dict) -> None:
+    datos = filas_peso_y_rumbo(matriz)
+    if not datos["filas"]:
+        return
+    anterior = matriz["periodo_anterior_label"]
+    st.markdown(section_header(
+        "Peso y rumbo de cada canal",
+        eyebrow="COMPARACIÓN",
+        subtitle=(f"La barra es cuánto pesa cada canal en el total, y su color, qué tan bien va. "
+                  f"A la derecha, hacia dónde se movió frente a {anterior} y cómo va contra su meta."),
+        compact=True), unsafe_allow_html=True)
 
-    for i, f in enumerate(orden):
-        fig.add_shape(type="line", xref="x", yref="y", x0=0, x1=f["crecimiento"], y0=i, y1=i,
-                      line=dict(color=colores[i], width=3), layer="below")
-
-    mayor = max(f["participacion"] for f in orden) or 1
-    fig.add_trace(go.Scatter(
-        x=[f["crecimiento"] for f in orden], y=list(range(n)), mode="markers+text",
-        marker=dict(size=[13 + f["participacion"] / mayor * 15 for f in orden], color=colores,
-                    line=dict(color="#FFFFFF", width=2)),
-        text=[f"{f['crecimiento']:+.1f}%" for f in orden],
-        textposition=["middle left" if f["crecimiento"] < 0 else "middle right" for f in orden],
-        textfont=dict(size=11, color="#1A2233"),
-        customdata=[[f["canal"], _fmt(f["valor"]), f["participacion"], f["crecimiento"],
-                     f["cuadrante_label"],
-                     ("—" if f["cumplimiento"] is None else f"{f['cumplimiento']:.0f}%"),
-                     estado_salud(puntaje_salud(f)[0])] for f in orden],
-        hovertemplate=("<b>%{customdata[0]}</b><br>"
-                       + _label(schema, matriz["metrica"]) + ": <b>%{customdata[1]}</b><br>"
-                       "Participación: <b>%{customdata[2]:.1f}%</b><br>"
-                       "Crecimiento: <b>%{customdata[3]:+.1f}%</b><br>"
-                       "Meta: <b>%{customdata[5]}</b> · %{customdata[6]}<br>"
-                       "Jugada: <b>%{customdata[4]}</b><extra></extra>"),
-        showlegend=False,
-    ))
-
-    etiquetas = [f"{_corto(f['canal'], 30)}   {f['participacion']:.1f}%" for f in orden]
-    fig = _base(fig, max(300, 40 * n + 100), show_xgrid=True)
-    # Después de _base, porque _base impone hover unificado, y aquí hace
-    # falta ver un canal a la vez.
-    fig.update_yaxes(tickmode="array", tickvals=list(range(n)), ticktext=etiquetas,
-                     autorange="reversed", title=None)
-    fig.update_xaxes(range=[-limite, limite], ticksuffix="%",
-                     title="Crecimiento frente al periodo anterior")
-    fig.update_layout(margin=dict(l=10, r=20, t=34, b=40), hovermode="closest", showlegend=False)
-    return fig
+    n = len(datos["filas"])
+    corte = datos["separar_tras"]
+    partes = [
+        '<div class="rumbo"><div class="rumbo-cabecera"><span>#</span><span>Canal</span>'
+        f'<span>Peso en el total</span><span>Part.</span><span>vs. {anterior}</span><span>Meta</span></div>'
+    ]
+    for fila in datos["filas"]:
+        if 0 < corte < n and fila["puesto"] == corte + 1:
+            partes.append(f'<div class="rumbo-corte">Promedio {datos["promedio"]:.1f}%: '
+                          f'arriba pesan más que el promedio, abajo pesan menos</div>')
+        nombre = clean_display_text(fila["canal"])
+        crecimiento = "—" if fila["crecimiento"] is None else f"{fila['crecimiento']:+.1f}%"
+        meta = "—" if fila["cumplimiento"] is None else f"{fila['cumplimiento']:.0f}%"
+        partes.append(
+            f'<div class="rumbo-fila" title="{nombre} · {fila["estado"]} · {fila["jugada"]}">'
+            f'<span class="rumbo-puesto">{fila["puesto"]}</span>'
+            f'<span class="rumbo-nombre">{nombre}</span>'
+            f'<span class="rumbo-pista">'
+            f'<span class="rumbo-barra" style="width:{fila["ancho"]:.1f}%;background:{fila["color_barra"]}"></span>'
+            f'<span class="rumbo-promedio" style="left:{datos["posicion_promedio"]:.1f}%"></span></span>'
+            f'<span class="rumbo-valor">{fila["participacion"]:.1f}%</span>'
+            f'<span class="rumbo-mov" style="color:{fila["color_crecimiento"]}">{fila["flecha"]} {crecimiento}</span>'
+            f'<span class="rumbo-meta" style="color:{fila["color_meta"]}">{meta}</span></div>'
+        )
+    partes.append(
+        '<div class="rumbo-pie"><span><i></i>participación promedio</span>'
+        '<span>▲ crece · ▬ estable · ▼ cae</span>'
+        '<span>Color de la barra: de rojo, lejos de la meta, a verde, la cumple</span></div></div>'
+    )
+    st.markdown("".join(partes), unsafe_allow_html=True)
 
 
 def _aporte_figura(matriz: dict, schema: dict):
@@ -504,14 +544,7 @@ def render_comercial(df: pd.DataFrame, schema: dict, dashboard: dict | None = No
     _kpis(matriz, schema)
     _semaforo(matriz, schema)
 
-    figura = _matriz_figura(matriz, schema)
-    if figura is not None:
-        chart_card(
-            f"Mapa de decisión · {_label(schema, matriz['canal'])}",
-            "Una fila por canal, ordenados por cuánto pesan. La franja dice hacia dónde va: roja cae, "
-            "gris estable, verde crece. La línea punteada separa a los que pesan más que el promedio. "
-            "El color del punto es el mismo del semáforo.",
-            figura, key="comercial_matriz")
+    _peso_y_rumbo(matriz, schema)
 
     principal, lateral = two_column(1.25, 1)
     with principal:

@@ -170,34 +170,47 @@ def test_lo_que_no_se_mueve_es_estable():
           bool(jugadas) and all(j["tipo"] == "Sostener" for j in jugadas))
 
 
-def test_el_mapa_no_se_monta():
-    """Con canales que se mueven parecido, la matriz de burbujas los apilaba en
-    una columna y los números dejaban de leerse. En el mapa, cada canal tiene
-    su fila: no hay forma de que dos se tapen."""
-    from core.comercial import UMBRAL_MOVIMIENTO
-    from ui.comercial import _aporte_figura, _matriz_figura
+def test_peso_y_rumbo_se_lee_de_un_vistazo():
+    """El mapa por posición de crecimiento dejaba casi todo el gráfico vacío
+    cuando los canales se movían menos de 1%, y cortaba nombres y rótulos.
+    Esta vista compara lo que sí distingue a los canales: cuánto pesan."""
+    import streamlit as st
 
-    for nombre, (df, schema) in (("quieto", _archivo_quieto()), ("con movimiento", _archivo())):
-        matriz = matriz_comercial(df, schema)
-        figura = _matriz_figura(matriz, schema)
-        puntos = [t for t in figura.data if t.type == "scatter"][0]
-        check(f"[{nombre}] cada canal ocupa su propia fila",
-              len(set(puntos.y)) == len(puntos.y) == len(matriz["filas"]))
-        maximo = max(abs(f["crecimiento"]) for f in matriz["filas"] if f["crecimiento"] is not None)
-        check(f"[{nombre}] el eje se ajusta a lo que se movieron los canales",
-              figura.layout.xaxis.range[1] <= max(maximo * 1.3, 3) + 1e-9)
-        bordes = {round(v, 9) for forma in figura.layout.shapes if forma.type == "rect"
-                  for v in (forma.x0, forma.x1)}
-        check(f"[{nombre}] las franjas cortan en el mismo umbral que clasifica",
-              -UMBRAL_MOVIMIENTO in bordes and UMBRAL_MOVIMIENTO in bordes)
-        pesan = sum(1 for f in matriz["filas"] if f.get("pesa"))
-        if 0 < pesan < len(matriz["filas"]):
-            separadores = [forma for forma in figura.layout.shapes
-                           if forma.type == "line" and forma.xref == "paper"]
-            check(f"[{nombre}] la línea punteada separa a los que pesan más que el promedio",
-                  any(abs(forma.y0 - (pesan - 0.5)) < 1e-9 for forma in separadores))
-        check(f"[{nombre}] el hover muestra un canal a la vez", figura.layout.hovermode == "closest")
-        aporte = _aporte_figura(matriz, schema)
+    from ui.comercial import _aporte_figura, _peso_y_rumbo, filas_peso_y_rumbo
+
+    df_quieto, schema_quieto = _archivo_quieto()
+    quieto = matriz_comercial(df_quieto, schema_quieto)
+    datos = filas_peso_y_rumbo(quieto)
+    filas = datos["filas"]
+    check("una fila por canal", len(filas) == len(quieto["filas"]))
+    check("ordenadas de más a menos peso",
+          [f["participacion"] for f in filas] == sorted((f["participacion"] for f in filas), reverse=True))
+    check("la barra del más grande ocupa todo el ancho", abs(filas[0]["ancho"] - 100) < 1e-9)
+    check("y las demás son proporcionales a su peso",
+          all(abs(f["ancho"] - f["participacion"] / filas[0]["participacion"] * 100) < 1e-9 for f in filas))
+    pesan = sum(1 for f in filas if f["pesa"])
+    check("el corte del promedio queda justo después de los que pesan más", datos["separar_tras"] == pesan)
+    check("un movimiento menor a 1% se escribe en negro, no como alarma",
+          all(f["color_crecimiento"] == "var(--text)" for f in filas))
+
+    con_movimiento = filas_peso_y_rumbo(matriz_comercial(*_archivo()))
+    colores = {f["canal"]: f["color_crecimiento"] for f in con_movimiento["filas"]}
+    check("el canal que cae se escribe en rojo", colores["Retail"] == "#E4002B")
+    check("el que crece, en verde", colores["Aliados"] == "#22A06B")
+
+    capturado = []
+    original = st.markdown
+    st.markdown = lambda html, **k: (capturado.append(str(html)), original(html, **k))[1]
+    try:
+        _peso_y_rumbo(quieto, schema_quieto)
+    finally:
+        st.markdown = original
+    html = "".join(capturado)
+    check("los nombres completos llegan a la vista, sin recortes", all(f["canal"] in html for f in filas))
+    check("se marca el promedio de participación", "promedio" in html.lower())
+
+    for nombre, (df, schema) in (("quieto", (df_quieto, schema_quieto)), ("con movimiento", _archivo())):
+        aporte = _aporte_figura(matriz_comercial(df, schema), schema)
         izquierda, derecha = aporte.layout.xaxis.range
         valores = list(aporte.data[0].x)
         check(f"[{nombre}] las barras de aporte no se recortan contra el borde",
@@ -286,7 +299,7 @@ if __name__ == "__main__":
     test_se_calla_cuando_no_aplica()
     test_las_barras_traen_referencia()
     test_lo_que_no_se_mueve_es_estable()
-    test_el_mapa_no_se_monta()
+    test_peso_y_rumbo_se_lee_de_un_vistazo()
     test_la_escala_de_color_distingue_casi_de_lejos()
     test_los_numeros_de_las_jugadas_tienen_color_con_sentido()
     print("\nComercial test completado sin errores.")

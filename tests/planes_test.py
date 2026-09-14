@@ -174,10 +174,47 @@ def test_el_plan_se_puede_ejecutar():
     check("y avisa lo que no tiene dueño", "sin asignar" in texto)
 
 
+def test_el_tablero_muestra_cada_plan_donde_va():
+    """El tablero reemplaza a la tabla como vista principal: cada plan en la
+    columna de su urgencia, con su avance y a quién afecta."""
+    from datetime import date
+
+    import streamlit as st
+
+    from ui.planes import _clave_plan, _hero, _tablero, filas_plan_de_accion
+
+    df, schema, dashboard = _archivo()
+    resultado = generar(df, schema, dashboard)
+    planes = resultado["planes"]
+    hoy = date(2026, 9, 14)
+    pasos = {_clave_plan(planes[0]): [True, True] + [False] * (len(planes[0]["pasos"]) - 2)}
+    filas = filas_plan_de_accion(planes, {}, pasos, hoy)
+
+    capturado = []
+    original = st.markdown
+    st.markdown = lambda html, **k: (capturado.append(str(html)), original(html, **k))[1]
+    try:
+        _hero(resultado, planes, filas)
+        _tablero(planes, filas)
+    finally:
+        st.markdown = original
+    html = "".join(capturado)
+    total_pasos = sum(len(p["pasos"]) for p in planes)
+    avance = round(2 / total_pasos * 100)
+    check("el anillo muestra el avance real del plan", f"--p:{avance};" in html)
+    check("y cuántos pasos lleva", f"2 de {total_pasos} pasos" in html)
+    check("cada plan tiene su tarjeta en el tablero", html.count('class="tarjeta-titulo"') == len(planes))
+    for estado, etiqueta in (("critico", "Crítico"), ("atencion", "En observación"), ("mejora", "Oportunidad")):
+        n = sum(1 for p in planes if p["estado"] == estado)
+        check(f"la columna {etiqueta} cuenta sus planes", f"{etiqueta}</span><b>{n}</b>" in html)
+    check("sin responsable asignado, la tarjeta lo avisa", "Sin responsable" in html)
+
+
 if __name__ == "__main__":
     test_los_planes_nombran_a_los_casos()
     test_si_todo_va_bien_propone_mejoras()
     test_el_seguimiento_compara_contra_algo()
     test_no_rompe_sin_datos()
     test_el_plan_se_puede_ejecutar()
+    test_el_tablero_muestra_cada_plan_donde_va()
     print("\nPlanes test completado sin errores.")
