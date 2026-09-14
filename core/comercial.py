@@ -77,6 +77,34 @@ CUADRANTES = {
 }
 
 
+def puntaje_salud(fila: dict) -> tuple[float, str]:
+    """Qué tan bien va un canal, de 0 (mal) a 1 (bien), y contra qué se midió.
+
+    Es lo que colorea el semáforo de rojo a verde. El color binario de antes
+    (rojo si no llega a la meta, verde si llega) pintaba igual un 88% que un
+    40%: todos los canales de un archivo real salían en rojo y el color dejó
+    de distinguir nada. Una escala continua sí separa "casi" de "lejos".
+
+    Referencia, en orden de preferencia:
+    - Cumplimiento de meta: 80% o menos es rojo, 90% ámbar, 100% o más verde.
+    - Si no hay meta, el crecimiento: -5% o menos rojo, 0% ámbar, +5% verde.
+    """
+    if fila.get("cumplimiento") is not None:
+        return max(0.0, min(1.0, (float(fila["cumplimiento"]) - 80.0) / 20.0)), "meta"
+    if fila.get("crecimiento") is not None:
+        return max(0.0, min(1.0, (float(fila["crecimiento"]) + 5.0) / 10.0)), "crecimiento"
+    return 0.5, "sin_referencia"
+
+
+def estado_salud(puntaje: float) -> str:
+    """El puntaje en palabras, para no depender solo del color."""
+    if puntaje >= 0.75:
+        return "Va bien"
+    if puntaje >= 0.35:
+        return "Atención"
+    return "Crítico"
+
+
 def columna_canal(df: pd.DataFrame, schema: dict, metrica=None) -> Optional[str]:
     """La columna que representa el canal de venta, o la unidad de negocio."""
     from .diagnostics import dimensiones_candidatas

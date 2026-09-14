@@ -170,25 +170,74 @@ def test_lo_que_no_se_mueve_es_estable():
           bool(jugadas) and all(j["tipo"] == "Sostener" for j in jugadas))
 
 
-def test_la_matriz_no_contradice_sus_zonas():
+def test_el_mapa_no_se_monta():
+    """Con canales que se mueven parecido, la matriz de burbujas los apilaba en
+    una columna y los números dejaban de leerse. En el mapa, cada canal tiene
+    su fila: no hay forma de que dos se tapen."""
+    from core.comercial import UMBRAL_MOVIMIENTO
     from ui.comercial import _aporte_figura, _matriz_figura
 
     for nombre, (df, schema) in (("quieto", _archivo_quieto()), ("con movimiento", _archivo())):
         matriz = matriz_comercial(df, schema)
-        figura, _, _ = _matriz_figura(matriz, schema)
-        en_franja = [(traza.name, x) for traza in figura.data for x in traza.x
-                     if abs(x) < 1 and traza.name != "Estable"]
-        check(f"[{nombre}] ninguna burbuja de otro color dentro de la franja estable", not en_franja)
+        figura = _matriz_figura(matriz, schema)
+        puntos = [t for t in figura.data if t.type == "scatter"][0]
+        check(f"[{nombre}] cada canal ocupa su propia fila",
+              len(set(puntos.y)) == len(puntos.y) == len(matriz["filas"]))
         maximo = max(abs(f["crecimiento"]) for f in matriz["filas"] if f["crecimiento"] is not None)
         check(f"[{nombre}] el eje se ajusta a lo que se movieron los canales",
               figura.layout.xaxis.range[1] <= max(maximo * 1.3, 3) + 1e-9)
-        check(f"[{nombre}] las burbujas llevan número, no nombres montados",
-              all(str(t).isdigit() for traza in figura.data for t in traza.text))
+        bordes = {round(v, 9) for forma in figura.layout.shapes if forma.type == "rect"
+                  for v in (forma.x0, forma.x1)}
+        check(f"[{nombre}] las franjas cortan en el mismo umbral que clasifica",
+              -UMBRAL_MOVIMIENTO in bordes and UMBRAL_MOVIMIENTO in bordes)
+        pesan = sum(1 for f in matriz["filas"] if f.get("pesa"))
+        if 0 < pesan < len(matriz["filas"]):
+            separadores = [forma for forma in figura.layout.shapes
+                           if forma.type == "line" and forma.xref == "paper"]
+            check(f"[{nombre}] la línea punteada separa a los que pesan más que el promedio",
+                  any(abs(forma.y0 - (pesan - 0.5)) < 1e-9 for forma in separadores))
+        check(f"[{nombre}] el hover muestra un canal a la vez", figura.layout.hovermode == "closest")
         aporte = _aporte_figura(matriz, schema)
         izquierda, derecha = aporte.layout.xaxis.range
         valores = list(aporte.data[0].x)
         check(f"[{nombre}] las barras de aporte no se recortan contra el borde",
               izquierda < min(min(valores), 0) and derecha > max(max(valores), 0))
+
+
+def test_la_escala_de_color_distingue_casi_de_lejos():
+    """Rojo o verde a secas pintaba igual un 88% que un 40% de la meta."""
+    import streamlit as st
+
+    from core.comercial import estado_salud, puntaje_salud
+    from ui.comercial import _color_escala, _semaforo
+
+    check("80% de la meta o menos es el extremo rojo", puntaje_salud({"cumplimiento": 70})[0] == 0.0)
+    check("90% de la meta queda en el medio", abs(puntaje_salud({"cumplimiento": 90})[0] - 0.5) < 1e-9)
+    check("100% o más es el extremo verde", puntaje_salud({"cumplimiento": 130})[0] == 1.0)
+    check("si hay meta, manda sobre el crecimiento",
+          puntaje_salud({"cumplimiento": 100, "crecimiento": -20})[1] == "meta")
+    check("sin meta, se usa el crecimiento",
+          puntaje_salud({"cumplimiento": None, "crecimiento": 5})[0] == 1.0)
+    check("los extremos son el rojo y el verde de la paleta",
+          _color_escala(0) == "#E4002B" and _color_escala(1) == "#22A06B")
+    check("un 88% y un 91% no se pintan igual",
+          _color_escala(puntaje_salud({"cumplimiento": 88})[0])
+          != _color_escala(puntaje_salud({"cumplimiento": 91})[0]))
+    check("el estado también se dice en palabras",
+          (estado_salud(0.1), estado_salud(0.5), estado_salud(0.9)) == ("Crítico", "Atención", "Va bien"))
+
+    df, schema = _archivo()
+    capturado = []
+    original = st.markdown
+    st.markdown = lambda html, **k: (capturado.append(str(html)), original(html, **k))[1]
+    try:
+        _semaforo(matriz_comercial(df, schema), schema)
+    finally:
+        st.markdown = original
+    html = "".join(capturado)
+    colores = {parte.split(")")[0].split('"')[0] for parte in html.split("--c:")[1:]}
+    check("en el semáforo las tarjetas ya no salen todas del mismo color", len(colores) >= 3)
+    check("y se explica qué significa el color", "Color de cada tarjeta" in html)
 
 
 if __name__ == "__main__":
@@ -199,5 +248,6 @@ if __name__ == "__main__":
     test_se_calla_cuando_no_aplica()
     test_las_barras_traen_referencia()
     test_lo_que_no_se_mueve_es_estable()
-    test_la_matriz_no_contradice_sus_zonas()
+    test_el_mapa_no_se_monta()
+    test_la_escala_de_color_distingue_casi_de_lejos()
     print("\nComercial test completado sin errores.")

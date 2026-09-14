@@ -17,7 +17,8 @@ El orden de la pantalla sigue siendo el orden de la decisión:
 1. Titular y KPIs: qué pasa y qué es lo urgente.
 2. Semáforo: cada canal en una tarjeta, agrupado por jugada. Es lo que se lee
    sin saber leer una matriz.
-3. La matriz, con burbujas numeradas y su leyenda al lado.
+3. El mapa de decisión: una fila por canal, así nada se monta aunque se
+   muevan parecido.
 4. Quién sumó y quién restó, y qué mueve a cada canal.
 5. El detalle y las jugadas con su cifra.
 """
@@ -27,7 +28,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from core.comercial import CUADRANTES, UMBRAL_MOVIMIENTO, matriz_comercial, oportunidades
+from core.comercial import (CUADRANTES, UMBRAL_MOVIMIENTO, estado_salud, matriz_comercial,
+                            oportunidades, puntaje_salud)
 from core.diagnostics import _fmt
 from ui.components.charts import chart_card
 from ui.components.section import section_header
@@ -47,6 +49,29 @@ COLOR_CUADRANTE = {
     "estable": "#64748B",
 }
 ORDEN_JUGADAS = ("intervenir", "revisar", "proteger", "apostar", "estable")
+
+# Escala de salud: rojo, ámbar y verde de la misma paleta. Se interpola entre
+# ellos para que un 88% de la meta no se pinte igual que un 40%.
+_ROJO_RGB = (228, 0, 43)
+_AMBAR_RGB = (245, 158, 11)
+_VERDE_RGB = (34, 160, 107)
+
+
+def _color_escala(puntaje: float) -> str:
+    """Color para un puntaje de 0 (rojo) a 1 (verde), pasando por ámbar."""
+    t = max(0.0, min(1.0, float(puntaje)))
+    if t < 0.5:
+        desde, hasta, u = _ROJO_RGB, _AMBAR_RGB, t / 0.5
+    else:
+        desde, hasta, u = _AMBAR_RGB, _VERDE_RGB, (t - 0.5) / 0.5
+    r, g, b = (round(desde[i] + (hasta[i] - desde[i]) * u) for i in range(3))
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def _color_crecimiento(crecimiento) -> str:
+    if crecimiento is None:
+        return "#64748B"
+    return _color_escala((float(crecimiento) + 5.0) / 10.0)
 
 
 def _corto(texto, n: int = 28) -> str:
@@ -95,13 +120,14 @@ def _css() -> None:
         .canal-barra{height:6px;background:var(--panel-2);border-radius:999px;overflow:hidden;margin-top:8px}
         .canal-barra span{display:block;height:100%;border-radius:999px;background:var(--c)}
 
-        .canal-leyenda{display:flex;flex-direction:column;gap:6px}
-        .canal-leyenda-item{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--text);
-          padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel)}
-        .canal-leyenda-num{flex:0 0 22px;height:22px;border-radius:50%;color:#fff;font-size:11px;
-          font-weight:800;display:flex;align-items:center;justify-content:center}
-        .canal-leyenda-nombre{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .canal-leyenda-dato{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+        .canal-escala{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11.5px;
+          color:var(--muted);margin:0 0 12px}
+        .canal-escala-barra{flex:0 1 240px;min-width:120px;height:8px;border-radius:999px;
+          background:linear-gradient(90deg,#E4002B 0%,#F59E0B 50%,#22A06B 100%)}
+        .canal-card-cabeza{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+        .canal-pill{flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+          color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);padding:3px 7px;
+          border-radius:999px;white-space:nowrap}
 
         .mueve-lista{display:flex;flex-direction:column;gap:7px}
         .mueve-item{display:grid;grid-template-columns:minmax(0,1.5fr) 1fr 1fr;gap:10px;align-items:center;
@@ -133,130 +159,149 @@ def _kpis(matriz: dict, schema: dict) -> None:
 def _semaforo(matriz: dict, schema: dict) -> None:
     """Cada canal en una tarjeta, agrupado por jugada, urgencias primero.
 
-    Es la vista que se entiende sin saber leer una matriz: el color dice qué
-    hacer, la cifra dice cuánto pesa y la flecha dice hacia dónde va.
+    El color de cada tarjeta dice qué tan bien va, de rojo a verde: contra la
+    meta si el archivo la trae, o contra su crecimiento si no. Antes todas
+    salían grises cuando los canales estaban quietos, y la meta en rojo
+    aunque fuera un 90%: el color no distinguía nada. Además del color, cada
+    tarjeta lo dice en palabras, para que se lea igual impreso en gris.
     """
     st.markdown(section_header(
         "Semáforo de canales",
         eyebrow="A SIMPLE VISTA",
         subtitle="Cada canal agrupado por lo que hay que hacer con él. Arriba lo urgente; abajo lo que está estable.",
         compact=True), unsafe_allow_html=True)
+    con_meta = any(f["cumplimiento"] is not None for f in matriz["filas"])
+    desde, hasta = (("80% de la meta o menos", "100% de la meta o más") if con_meta
+                    else ("cae 5% o más", "crece 5% o más"))
+    st.markdown(
+        f'<div class="canal-escala"><span>Color de cada tarjeta:</span><span>{desde}</span>'
+        f'<span class="canal-escala-barra"></span><span>{hasta}</span></div>',
+        unsafe_allow_html=True)
+
     mayor = max((f["participacion"] for f in matriz["filas"]), default=1) or 1
     for clave in ORDEN_JUGADAS:
         grupo = [f for f in matriz["filas"] if f["cuadrante"] == clave]
         if not grupo:
             continue
-        color = COLOR_CUADRANTE[clave]
         tarjetas = []
         for f in sorted(grupo, key=lambda z: z["participacion"], reverse=True):
-            flecha, color_flecha = _flecha(f["crecimiento"])
+            puntaje = puntaje_salud(f)[0]
+            color = _color_escala(puntaje)
+            flecha = _flecha(f["crecimiento"])[0]
             crecimiento = "—" if f["crecimiento"] is None else f"{f['crecimiento']:+.1f}%"
-            meta = ("" if f["cumplimiento"] is None else
-                    f'<div class="canal-card-fila"><span>Meta</span><b style="color:'
-                    f'{"#22A06B" if f["cumplimiento"] >= 100 else "#E4002B"}">{f["cumplimiento"]:.0f}%</b></div>')
+            nombre = clean_display_text(f["canal"])
+            meta = ""
+            if f["cumplimiento"] is not None:
+                color_meta = _color_escala(puntaje_salud({"cumplimiento": f["cumplimiento"]})[0])
+                meta = (f'<div class="canal-card-fila"><span>Meta</span>'
+                        f'<b style="color:{color_meta}">{f["cumplimiento"]:.0f}%</b></div>')
+            ancho = f["participacion"] / mayor * 100
+            color_crec = _color_crecimiento(f["crecimiento"])
             tarjetas.append(
-                f'<div class="canal-card" style="--c:{color}" title="{clean_display_text(f["canal"])}">'
-                f'<div class="canal-card-nombre">{clean_display_text(f["canal"])}</div>'
+                f'<div class="canal-card" style="--c:{color}" title="{nombre}">'
+                f'<div class="canal-card-cabeza"><div class="canal-card-nombre">{nombre}</div>'
+                f'<span class="canal-pill">{estado_salud(puntaje)}</span></div>'
                 f'<div class="canal-card-valor">{_fmt(f["valor"])}</div>'
                 f'<div class="canal-card-fila"><span>Participación</span><b>{f["participacion"]:.1f}%</b></div>'
                 f'<div class="canal-card-fila"><span>vs. {matriz["periodo_anterior_label"]}</span>'
-                f'<b style="color:{color_flecha}">{flecha} {crecimiento}</b></div>'
+                f'<b style="color:{color_crec}">{flecha} {crecimiento}</b></div>'
                 f'{meta}'
-                f'<div class="canal-barra"><span style="width:{f["participacion"] / mayor * 100:.0f}%"></span></div>'
+                f'<div class="canal-barra"><span style="width:{ancho:.0f}%"></span></div>'
                 f'</div>'
             )
+        color_grupo = COLOR_CUADRANTE[clave]
+        etiqueta_grupo = CUADRANTES[clave]["etiqueta"]
+        accion_grupo = CUADRANTES[clave]["accion"]
         st.markdown(
             f'<div class="canal-grupo"><div class="canal-grupo-head">'
-            f'<span class="canal-grupo-chip" style="background:{color}">{CUADRANTES[clave]["etiqueta"]} · {len(grupo)}</span>'
-            f'<span class="canal-grupo-lectura">{CUADRANTES[clave]["accion"]}</span></div>'
+            f'<span class="canal-grupo-chip" style="background:{color_grupo}">'
+            f'{etiqueta_grupo} · {len(grupo)}</span>'
+            f'<span class="canal-grupo-lectura">{accion_grupo}</span></div>'
             f'<div class="canal-grid">{"".join(tarjetas)}</div></div>',
             unsafe_allow_html=True,
         )
 
 
 def _matriz_figura(matriz: dict, schema: dict):
-    """Peso × crecimiento, con burbujas numeradas en vez de nombres.
+    """Mapa de decisión: una fila por canal, para que nada se monte.
 
-    El eje se ajusta a lo que de verdad se movieron los canales, y la franja
-    central de ±1% se pinta en gris como "estable": así la zona y el color de
-    la burbuja siempre dicen lo mismo.
+    Reemplaza a la matriz de burbujas. De un mes a otro los canales suelen
+    moverse parecido, y entonces todas las burbujas caían en la misma columna,
+    se tapaban entre sí y los números dejaban de leerse. Este mapa dice lo
+    mismo sin esas colisiones:
+
+    - Cada fila es un canal, ordenado por cuánto pesa. La línea punteada
+      separa a los que pesan más que el promedio de los que pesan menos.
+    - La posición horizontal dice hacia dónde va: franja roja cae, gris
+      estable, verde crece, con el mismo umbral que clasifica.
+    - El color del punto es el del semáforo, y su tamaño, el peso.
     """
     filas = [f for f in matriz["filas"] if f["crecimiento"] is not None]
     if not filas:
         return None
     orden = sorted(filas, key=lambda f: f["participacion"], reverse=True)
-    numero = {f["canal"]: i + 1 for i, f in enumerate(orden)}
-
-    maximo = max(abs(f["crecimiento"]) for f in filas)
-    limite = max(maximo * 1.3, UMBRAL_MOVIMIENTO * 3)
-    techo = max(f["participacion"] for f in filas) * 1.25
-    corte = matriz["corte_peso"]
+    n = len(orden)
     u = UMBRAL_MOVIMIENTO
+    maximo = max(abs(f["crecimiento"]) for f in orden)
+    limite = max(maximo * 1.3, u * 3)
+    pesan = sum(1 for f in orden if f.get("pesa"))
+    colores = [_color_escala(puntaje_salud(f)[0]) for f in orden]
 
     fig = go.Figure()
-    zonas = (
-        (-limite, -u, corte, techo, "intervenir"),
-        (u, limite, corte, techo, "proteger"),
-        (u, limite, 0, corte, "apostar"),
-        (-limite, -u, 0, corte, "revisar"),
-        (-u, u, 0, techo, "estable"),
-    )
-    for x0, x1, y0, y1, clave in zonas:
-        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, layer="below",
-                      fillcolor=COLOR_CUADRANTE[clave], opacity=0.07 if clave != "estable" else 0.10,
-                      line=dict(width=0))
-        fig.add_annotation(x=(x0 + x1) / 2, y=y1, text=f"<b>{CUADRANTES[clave]['etiqueta'].upper()}</b>",
-                           showarrow=False, yanchor="top", yshift=-4,
-                           font=dict(size=11, color=COLOR_CUADRANTE[clave], family="Inter"))
+    for x0, x1, clave, texto in ((-limite, -u, "intervenir", "CAE"),
+                                 (-u, u, "estable", "ESTABLE"),
+                                 (u, limite, "proteger", "CRECE")):
+        color = COLOR_CUADRANTE[clave]
+        fig.add_shape(type="rect", xref="x", yref="paper", x0=x0, x1=x1, y0=0, y1=1,
+                      layer="below", fillcolor=color, opacity=0.07, line=dict(width=0))
+        fig.add_annotation(xref="x", yref="paper", x=(x0 + x1) / 2, y=1, yanchor="bottom",
+                           text=f"<b>{texto}</b>", showarrow=False,
+                           font=dict(size=11, color=color, family="Inter"))
+    fig.add_vline(x=0, line_width=1.2, line_color="#94A3B8")
 
-    mayor = max(f["valor"] for f in filas) or 1
-    for clave in ORDEN_JUGADAS:
-        grupo = [f for f in filas if f["cuadrante"] == clave]
-        if not grupo:
-            continue
-        fig.add_trace(go.Scatter(
-            x=[f["crecimiento"] for f in grupo],
-            y=[f["participacion"] for f in grupo],
-            mode="markers+text",
-            name=CUADRANTES[clave]["etiqueta"],
-            text=[str(numero[f["canal"]]) for f in grupo],
-            textposition="middle center",
-            textfont=dict(size=12, color="#FFFFFF", family="Inter"),
-            marker=dict(size=[26 + (f["valor"] / mayor) * 30 for f in grupo],
-                        color=COLOR_CUADRANTE[clave], opacity=0.92,
-                        line=dict(color="#FFFFFF", width=2.5)),
-            customdata=[[f["canal"], _fmt(f["valor"]), f["participacion"], f["crecimiento"],
-                         CUADRANTES[clave]["etiqueta"]] for f in grupo],
-            hovertemplate=("<b>%{customdata[0]}</b><br>"
-                           + _label(schema, matriz["metrica"]) + ": <b>%{customdata[1]}</b><br>"
-                           "Participación: <b>%{customdata[2]:.1f}%</b><br>"
-                           "Crecimiento: <b>%{customdata[3]:+.1f}%</b><br>"
-                           "Jugada: <b>%{customdata[4]}</b><extra></extra>"),
-        ))
+    if 0 < pesan < n:
+        fig.add_shape(type="line", xref="paper", yref="y", x0=0, x1=1, y0=pesan - 0.5, y1=pesan - 0.5,
+                      line=dict(color="#94A3B8", width=1.3, dash="dot"))
+        for desplazamiento, texto in ((11, "pesan más que el promedio"), (-11, "pesan menos que el promedio")):
+            fig.add_annotation(xref="paper", yref="y", x=1, y=pesan - 0.5, yshift=desplazamiento,
+                               xanchor="right", showarrow=False, text=texto,
+                               font=dict(size=10, color="#64748B"))
 
-    fig.add_hline(y=corte, line_width=1.3, line_dash="dot", line_color="#94A3B8",
-                  annotation_text=f"participación media {corte:.1f}%",
-                  annotation_position="bottom right", annotation_font=dict(size=10, color="#64748B"))
-    fig.update_xaxes(title="← cae      Crecimiento vs. periodo anterior      crece →",
-                     ticksuffix="%", range=[-limite, limite], zeroline=False)
-    fig.update_yaxes(title="Participación en el total", ticksuffix="%", range=[0, techo])
-    fig.update_layout(showlegend=False, margin=dict(l=10, r=16, t=16, b=44), hovermode="closest")
-    return _base(fig, 440, show_xgrid=True), orden, numero
+    for i, f in enumerate(orden):
+        fig.add_shape(type="line", xref="x", yref="y", x0=0, x1=f["crecimiento"], y0=i, y1=i,
+                      line=dict(color=colores[i], width=3), layer="below")
 
+    mayor = max(f["participacion"] for f in orden) or 1
+    fig.add_trace(go.Scatter(
+        x=[f["crecimiento"] for f in orden], y=list(range(n)), mode="markers+text",
+        marker=dict(size=[13 + f["participacion"] / mayor * 15 for f in orden], color=colores,
+                    line=dict(color="#FFFFFF", width=2)),
+        text=[f"{f['crecimiento']:+.1f}%" for f in orden],
+        textposition=["middle left" if f["crecimiento"] < 0 else "middle right" for f in orden],
+        textfont=dict(size=11, color="#1A2233"),
+        customdata=[[f["canal"], _fmt(f["valor"]), f["participacion"], f["crecimiento"],
+                     f["cuadrante_label"],
+                     ("—" if f["cumplimiento"] is None else f"{f['cumplimiento']:.0f}%"),
+                     estado_salud(puntaje_salud(f)[0])] for f in orden],
+        hovertemplate=("<b>%{customdata[0]}</b><br>"
+                       + _label(schema, matriz["metrica"]) + ": <b>%{customdata[1]}</b><br>"
+                       "Participación: <b>%{customdata[2]:.1f}%</b><br>"
+                       "Crecimiento: <b>%{customdata[3]:+.1f}%</b><br>"
+                       "Meta: <b>%{customdata[5]}</b> · %{customdata[6]}<br>"
+                       "Jugada: <b>%{customdata[4]}</b><extra></extra>"),
+        showlegend=False,
+    ))
 
-def _leyenda(orden: list, matriz: dict) -> None:
-    items = []
-    for i, f in enumerate(orden, 1):
-        flecha, color_flecha = _flecha(f["crecimiento"])
-        crecimiento = "—" if f["crecimiento"] is None else f"{f['crecimiento']:+.1f}%"
-        items.append(
-            f'<div class="canal-leyenda-item" title="{clean_display_text(f["canal"])}">'
-            f'<span class="canal-leyenda-num" style="background:{COLOR_CUADRANTE[f["cuadrante"]]}">{i}</span>'
-            f'<span class="canal-leyenda-nombre">{clean_display_text(f["canal"])}</span>'
-            f'<span class="canal-leyenda-dato">{f["participacion"]:.1f}%</span>'
-            f'<span class="canal-leyenda-dato" style="color:{color_flecha}">{flecha} {crecimiento}</span></div>'
-        )
-    st.markdown(f'<div class="canal-leyenda">{"".join(items)}</div>', unsafe_allow_html=True)
+    etiquetas = [f"{_corto(f['canal'], 30)}   {f['participacion']:.1f}%" for f in orden]
+    fig = _base(fig, max(300, 40 * n + 100), show_xgrid=True)
+    # Después de _base, porque _base impone hover unificado, y aquí hace
+    # falta ver un canal a la vez.
+    fig.update_yaxes(tickmode="array", tickvals=list(range(n)), ticktext=etiquetas,
+                     autorange="reversed", title=None)
+    fig.update_xaxes(range=[-limite, limite], ticksuffix="%",
+                     title="Crecimiento frente al periodo anterior")
+    fig.update_layout(margin=dict(l=10, r=20, t=34, b=40), hovermode="closest", showlegend=False)
+    return fig
 
 
 def _aporte_figura(matriz: dict, schema: dict):
@@ -300,7 +345,9 @@ def _aporte_figura(matriz: dict, schema: dict):
         font=dict(size=12, color="#1A2233"))
     fig.update_xaxes(range=[izquierda, derecha], showticklabels=False, title=None)
     fig.update_yaxes(title=None, autorange="reversed")
-    return realzar_barras(_base(fig, max(260, 40 * len(filas) + 90), show_xgrid=False))
+    fig = realzar_barras(_base(fig, max(260, 40 * len(filas) + 90), show_xgrid=False))
+    fig.update_layout(hovermode="closest")
+    return fig
 
 
 def _que_mueve(matriz: dict) -> None:
@@ -423,19 +470,14 @@ def render_comercial(df: pd.DataFrame, schema: dict, dashboard: dict | None = No
     _kpis(matriz, schema)
     _semaforo(matriz, schema)
 
-    resultado = _matriz_figura(matriz, schema)
-    if resultado is not None:
-        figura, orden, _ = resultado
-        grafico, leyenda = two_column(2.1, 1)
-        with grafico:
-            chart_card(
-                f"Matriz de decisión · {_label(schema, matriz['canal'])}",
-                "Cada número es un canal (ver la lista). Arriba de la línea punteada pesa más que el "
-                "promedio; a la derecha crece, a la izquierda cae. La franja gris del centro es estable.",
-                figura, key="comercial_matriz")
-        with leyenda:
-            st.markdown('<div style="height:62px"></div>', unsafe_allow_html=True)
-            _leyenda(orden, matriz)
+    figura = _matriz_figura(matriz, schema)
+    if figura is not None:
+        chart_card(
+            f"Mapa de decisión · {_label(schema, matriz['canal'])}",
+            "Una fila por canal, ordenados por cuánto pesan. La franja dice hacia dónde va: roja cae, "
+            "gris estable, verde crece. La línea punteada separa a los que pesan más que el promedio. "
+            "El color del punto es el mismo del semáforo.",
+            figura, key="comercial_matriz")
 
     principal, lateral = two_column(1.25, 1)
     with principal:
