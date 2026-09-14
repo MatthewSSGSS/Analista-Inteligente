@@ -400,8 +400,66 @@ def classify_column(s: pd.Series, column: str) -> dict:
     }
 
 
+# Palabras de conteo: lo que se registra por unidades y tiene sentido sumar.
+CONTEO_TOKENS = {
+    "altas", "alta", "bajas", "activaciones", "activacion", "pedidos", "ordenes", "transacciones",
+    "recargas", "portabilidades", "portabilidad", "llamadas", "visitas", "contratos", "lineas",
+    "polizas", "creditos", "desembolsos", "colocaciones", "suscripciones", "instalaciones",
+    "renovaciones", "migraciones", "clientes", "afiliaciones", "inscripciones", "matriculas",
+}
+_CONECTORES = {"de", "del", "la", "el", "los", "las", "en", "por", "a", "al", "y", "total", "mes", "mensual"}
+
+
+def _promover_cantidades(df: pd.DataFrame, columns: list[dict]) -> None:
+    """Marca como cantidad las columnas numéricas que se suman y el motor no reconoció.
+
+    "Altas Eje" no se parece a ningún concepto conocido y quedaba "unknown":
+    todo el panel la promediaba. El KPI decía "Promedio 93" en vez del total,
+    y la región grande salía "líder" por su promedio por fila. Dos señales,
+    que no dependen de un archivo concreto, dicen que una columna se suma:
+
+    - tiene una meta que la nombra ("Meta Altas Eje", "Presupuesto Ventas"):
+      una meta siempre es un total por alcanzar, y la meta también se suma;
+    - su nombre es un conteo ("Altas", "Activaciones", "Pedidos").
+    """
+    from .performance import META_RE
+
+    def numerica(c):
+        return pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])
+
+    candidatas = {item["column"]: item for item in columns
+                  if item["semantic_type"] == "unknown" and item["column"] in df.columns and numerica(item["column"])}
+    if not candidatas:
+        return
+    promover = set()
+    for c in candidatas:
+        if CONTEO_TOKENS & _tokenize(normalize_text(c)):
+            promover.add(c)
+    numericas = [str(c) for c in df.columns if numerica(c)]
+    for meta in numericas:
+        if not META_RE.search(meta):
+            continue
+        resto = _tokenize(normalize_text(META_RE.sub(" ", meta))) - _CONECTORES
+        if not resto:
+            continue
+        for c in numericas:
+            if c != meta and not META_RE.search(c) and resto <= _tokenize(normalize_text(c)):
+                promover.update({c, meta})
+    for c in promover:
+        item = candidatas.get(c)
+        if item is None:
+            continue
+        valores = pd.to_numeric(df[c], errors="coerce").dropna()
+        if valores.empty or float((valores >= 0).mean()) < 0.95:
+            continue  # con negativos no es un conteo: puede ser un saldo o una variación
+        item["semantic_type"] = "quantity"
+        item["confidence"] = max(float(item.get("confidence", 0)), 0.75)
+        item["ambiguous"] = False
+
+
 def interpret_dataframe(df: pd.DataFrame) -> dict:
     columns = [classify_column(df[c], str(c)) for c in df.columns]
+    _promover_cantidades(df, columns)
     by_concept: dict[str, list[str]] = {}
     for item in columns:
         by_concept.setdefault(item["semantic_type"], []).append(item["column"])

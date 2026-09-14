@@ -82,6 +82,23 @@ def dynamic_kpis(df, schema, dashboard=None):
                 kpis.append({"label":"Cambio reciente", "value":pct, "raw":pct, "kind":"growth", "metric":metric})
     dims = schema.get("semantic", {}).get("dimensions") or schema.get("categorical", [])
     dims = [d for d in dims if d in df.columns and d not in schema.get("ids", []) and d not in schema.get("dates", [])]
+    # Quién va primero, medido contra algo. Antes era siempre el de mayor
+    # total o promedio —"Líder · R5"— aunque R5 fuera la región que peor
+    # cumplía su meta: solo decía quién es más grande. Si el panel de
+    # desempeño ya tiene una base justa (meta, por unidad, por registro), la
+    # tarjeta usa esa base y la nombra.
+    perf = (dashboard or {}).get("performance")
+    base = perf.get("base") if isinstance(perf, dict) and perf.get("metric") == metric else None
+    if metric and base and base.get("ranking"):
+        mejor = base["mejor"]
+        justa = bool(base.get("justo")) and base.get("clave") not in {"total", "total_parejo"}
+        etiqueta = "cumplimiento de meta" if base.get("clave") == "meta" else base.get("etiqueta", "")
+        kpis.append({"label": (f"Mejor en {etiqueta} · {perf['dimension']}" if justa
+                               else f"Mayor volumen · {perf['dimension']}"),
+                     "value": mejor["nombre"], "raw": mejor["valor"], "texto": mejor["texto"],
+                     "detalle": mejor["detalle"], "kind": "leader", "base": base.get("clave"),
+                     "dimension": perf["dimension"], "metric": metric})
+        dims = []
     if metric:
         for dim in dims:
             vals = df[dim].dropna().astype(str).str.strip()
@@ -93,7 +110,8 @@ def dynamic_kpis(df, schema, dashboard=None):
             if grouped.empty: continue
             sorted_grouped = grouped.sort_values(ascending=False)
             top_name, top_val = str(sorted_grouped.index[0]), float(sorted_grouped.iloc[0])
-            kpis.append({"label":f"Líder · {dim}", "value":top_name, "raw":top_val, "kind":"leader", "dimension":dim, "metric":metric})
+            # Sin base justa, lo único que se puede afirmar es el volumen, y se dice así.
+            kpis.append({"label":f"Mayor volumen · {dim}", "value":top_name, "raw":top_val, "kind":"leader", "dimension":dim, "metric":metric})
             break
     # Normalize labels/values and keep a compact executive row.
     return kpis[:8]

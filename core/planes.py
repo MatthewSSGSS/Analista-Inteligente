@@ -271,13 +271,18 @@ def _mejoras_disponibles(df, schema, dashboard) -> list[dict]:
     if base and len(base.get("ranking", [])) >= 4:
         ranking = base["ranking"]
         mediana = float(pd.Series([f["valor"] for f in ranking]).median())
+        # Siempre se dice contra qué se mide y cuánto vale la referencia: "por
+        # debajo de la mediana" a secas no dice ni de qué ni de cuánto.
+        etiqueta_base = "cumplimiento de meta" if base.get("clave") == "meta" else str(base.get("etiqueta", ""))
+        mediana_txt = f"{mediana:,.0f}%" if base.get("sufijo") == "%" else f"{mediana:,.1f}"
+        justa = bool(base.get("justo")) and base.get("clave") not in {"total", "total_parejo"}
         rezagados = [f for f in ranking if f["valor"] < mediana]
         if rezagados:
             nombres = [f["nombre"] for f in rezagados[-3:]]
             planes.append({
                 "titulo": MEJORAS["brecha"]["titulo"], "estado": "mejora",
-                "situacion": (f"{len(rezagados)} de {len(ranking)} están por debajo de la mediana "
-                              f"({base['etiqueta'].lower()}). Los más lejanos son {_lista(nombres)}."),
+                "situacion": (f"{len(rezagados)} de {len(ranking)} están por debajo de la mediana del grupo en "
+                              f"{etiqueta_base} ({mediana_txt}). Los más lejanos son {_lista(nombres)}."),
                 "por_que": MEJORAS["brecha"]["por_que"],
                 "pasos": [_rellenar(p, nombres) for p in MEJORAS["brecha"]["pasos"]],
                 "medir": f"Que la mitad de esos {len(rezagados)} alcance la mediana en dos periodos.",
@@ -288,7 +293,10 @@ def _mejoras_disponibles(df, schema, dashboard) -> list[dict]:
         lider = ranking[0]
         planes.append({
             "titulo": MEJORAS["lider"]["titulo"], "estado": "mejora",
-            "situacion": f"{lider['nombre']} lidera con {lider['texto']} ({lider['detalle']}).",
+            "situacion": (f"{lider['nombre']} es el mejor en {etiqueta_base}: {lider['texto']} ({lider['detalle']})."
+                          if justa else
+                          f"{lider['nombre']} encabeza en {etiqueta_base}: {lider['texto']} ({lider['detalle']}). "
+                          f"Ojo: eso mide tamaño, no desempeño."),
             "por_que": MEJORAS["lider"]["por_que"],
             "pasos": [_rellenar(p, [lider["nombre"]]) for p in MEJORAS["lider"]["pasos"]],
             "medir": f"Que al menos dos casos del tercio inferior se acerquen a {lider['texto']}.",

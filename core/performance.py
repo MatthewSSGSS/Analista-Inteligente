@@ -252,7 +252,8 @@ def base_comparativa(df, schema, dimension, metric, additive):
         metas = metas[metas > 0]
         if len(metas) >= 2:
             cumplimiento = (totales.reindex(metas.index) / metas * 100)
-            detalles = {n: f"{_fmt(totales.get(n, 0))} de {_fmt(metas[n])}" for n in metas.index}
+            # "541 de 360" no dice qué es el 360: se nombra la meta.
+            detalles = {n: f"{_fmt(totales.get(n, 0))} de una meta de {_fmt(metas[n])}" for n in metas.index}
             armado = armar("meta", "Cumplimiento de meta", cumplimiento, "%", detalles,
                            f"Se compara cuánto cumplió cada grupo de su propia meta ({_etiqueta(schema, meta)}), "
                            f"no cuánto vendió. Así un grupo pequeño que supera su meta gana a uno grande que no llega a la suya.")

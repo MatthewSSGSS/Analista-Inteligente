@@ -136,6 +136,11 @@ def _conc(n: int, singular: str, plural: str) -> str:
     return singular if n == 1 else plural
 
 
+def _pct(p: float) -> str:
+    """Variación con signo: un decimal cuando es chica, para que -0,6% no se lea como -1%."""
+    return f"{p:+.1f}%" if abs(p) < 10 else f"{p:+.0f}%"
+
+
 def _mes(periodo) -> str:
     meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
              "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -261,12 +266,18 @@ def _hallazgo(titulo, texto, implicacion, accion, evidencia, tipo, prioridad,
 def _caida_por_segmento(df, schema, dim, metrica, columna_fecha, tabla) -> Optional[dict]:
     if tabla is None or len(tabla) < 2:
         return None
+    from .executive import UMBRAL_CAMBIO
+
     ultimo, previo = tabla.iloc[-1], tabla.iloc[-2]
     activos = previo[previo > 0].index
     if not len(activos):
         return None
     delta = (ultimo - previo).reindex(activos).dropna()
-    caidas = delta[delta < 0].sort_values()
+    variacion = delta / previo.reindex(delta.index) * 100
+    # Mismo umbral que el veredicto: una variación menor al 1% no es una caída.
+    # Antes cualquier baja contaba, y el panel decía "los mayores retrocesos
+    # son R4 y R5" por un -0,5% mientras el veredicto decía "estable".
+    caidas = delta[(delta < 0) & (variacion <= -UMBRAL_CAMBIO)].sort_values()
     if caidas.empty:
         return None
     total_caida = float(caidas.sum())
@@ -275,13 +286,17 @@ def _caida_por_segmento(df, schema, dim, metrica, columna_fecha, tabla) -> Optio
     etiqueta_m = _en_prosa(schema, metrica)
     parcial = _periodo_parcial(df, columna_fecha, tabla.index[-1])
 
+    mes_base = _mes(tabla.index[-2])
     evidencia = []
     for nombre, valor in top.items():
         base = float(previo[nombre])
         pct = valor / base * 100 if base else 0
-        evidencia.append({"nombre": str(nombre), "valor": _fmt(valor), "detalle": f"{pct:+.0f}% · antes {_fmt(base)}"})
+        evidencia.append({"nombre": str(nombre), "valor": _fmt(valor),
+                          "detalle": f"{_pct(pct)} frente a {mes_base} · antes {_fmt(base)}"})
 
     cambio_total = float(ultimo.sum() - previo.sum())
+    total_previo = float(previo.sum())
+    pct_total = cambio_total / abs(total_previo) * 100 if total_previo else 0.0
     if peso < 25 and len(caidas) > 5:
         # La caída está repartida. Nombrar tres es dar una pista falsa: aquí
         # el hallazgo es justamente que no hay culpables concretos, y eso
@@ -295,20 +310,28 @@ def _caida_por_segmento(df, schema, dim, metrica, columna_fecha, tabla) -> Optio
             evidencia, "warning", 0, "Media" if parcial else "Alta",
             {"dimension": dim, "metric": metrica, "view": "evolución reciente"},
         )
-    if cambio_total < 0:
+    if pct_total <= -UMBRAL_CAMBIO:
         texto = (f"{_lista([e['nombre'] for e in evidencia])} "
                  f"{_conc(len(evidencia), 'explica', 'explican')} el {peso:.0f}% de la caída "
-                 f"de {etiqueta_m} frente a {_mes(tabla.index[-2])}.")
+                 f"de {etiqueta_m} frente a {mes_base} (el total bajó {abs(pct_total):.1f}%).")
         implicacion = (f"La caída no está repartida: {len(caidas)} de {len(activos)} "
                        f"{_conc(len(caidas), 'bajó', 'bajaron')}, y la mayor parte del daño viene de "
                        f"unos pocos. Una medida general no ataca el problema.")
-    else:
-        texto = (f"El total subió, pero {len(caidas)} de {len(activos)} "
+    elif pct_total >= UMBRAL_CAMBIO:
+        texto = (f"El total subió {pct_total:.1f}% frente a {mes_base}, pero {len(caidas)} de {len(activos)} "
                  f"{_conc(len(caidas), 'cayó', 'cayeron')}. "
                  f"{_conc(len(evidencia), 'El mayor retroceso es', 'Los mayores retrocesos son')} "
                  f"{_lista([e['nombre'] for e in evidencia])}.")
         implicacion = ("El crecimiento global está tapando retrocesos concretos. Sin abrir por segmento, "
                        "estos casos no aparecen en ningún indicador.")
+    else:
+        texto = (f"El total se mantuvo estable ({pct_total:+.1f}% frente a {mes_base}), pero "
+                 f"{len(caidas)} de {len(activos)} {_conc(len(caidas), 'cayó', 'cayeron')} "
+                 f"{UMBRAL_CAMBIO:.0f}% o más. "
+                 f"{_conc(len(evidencia), 'El mayor retroceso es', 'Los mayores retrocesos son')} "
+                 f"{_lista([e['nombre'] for e in evidencia])}.")
+        implicacion = ("Un total estable puede esconder segmentos que retroceden compensados por otros que "
+                       "suben. Sin abrir por segmento, estos casos no aparecen en ningún indicador.")
     if parcial:
         texto += " Ojo: el último periodo parece incompleto, así que parte de la caída puede ser solo eso."
 
@@ -431,7 +454,7 @@ def _incumplimiento_de_meta(df, schema, dim, metrica) -> Optional[dict]:
     faltante = float((incumplen["_meta"] - incumplen["_valor"]).sum())
     peores = incumplen.head(3)
     evidencia = [{"nombre": str(n), "valor": f"{f['_cumplimiento']:,.0f}%",
-                  "detalle": f"{_fmt(f['_valor'])} de {_fmt(f['_meta'])}"}
+                  "detalle": f"{_fmt(f['_valor'])} de una meta de {_fmt(f['_meta'])}"}
                  for n, f in peores.iterrows()]
     etiqueta_m = _en_prosa(schema, metrica)
     lider = resumen.index[-1]

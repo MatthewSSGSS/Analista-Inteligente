@@ -20,11 +20,61 @@ LABELS = {
 }
 
 
+# En una métrica, el nombre que le puso el archivo dice más que el genérico:
+# "Altas Eje" es más claro que "cantidad", y dos métricas del mismo tipo
+# quedarían con el mismo nombre.
+_METRICAS = {"revenue", "profit", "cost", "price", "quantity", "discount", "tax", "percentage", "rating", "age"}
+
+
 def _pretty(schema, column):
     for item in schema.get("semantic", {}).get("columns", []):
         if item.get("column") == column:
+            if item.get("semantic_type") in _METRICAS:
+                return str(column)
             return LABELS.get(item.get("semantic_type"), str(column))
     return str(column)
+
+
+def _lectura_de_concentracion(df, schema, dim, metrica, lider, share, dim_label, metric_label):
+    """Qué significa que un segmento pese más, medido contra algo.
+
+    Pesar más no es ir mejor: una región grande concentra el volumen por ser
+    grande. Antes este hallazgo llamaba "liderazgo" al tamaño y sugería
+    replicar las prácticas del más grande, aunque fuera el que peor cumplía
+    su meta. Ahora el peso se contrasta con la base justa del panel de
+    desempeño (meta, por unidad o por registro) y se dice contra qué.
+    Devuelve (hallazgo, acción, tipo).
+    """
+    from .performance import base_comparativa
+
+    sem = {x.get("column"): x.get("semantic_type") for x in schema.get("semantic", {}).get("columns", [])}
+    aditiva = sem.get(metrica) in {"revenue", "profit", "cost", "quantity", "discount", "tax"}
+    texto = (f"{lider} es el de mayor volumen en {dim_label}: aporta el {share:.1f}% del total "
+             f"de {metric_label.lower()}.")
+    try:
+        base = base_comparativa(df, schema, dim, metrica, aditiva)
+    except Exception:
+        base = None
+    justa = bool(base and base.get("justo") and base.get("clave") not in {"total", "total_parejo"})
+    nombres = [f["nombre"] for f in base["ranking"]] if justa else []
+    if str(lider) not in nombres:
+        texto += " Eso mide tamaño, no desempeño: el archivo no trae una meta ni una base con qué compararlo."
+        accion = (f"Vigilar la dependencia de {lider}: si baja, arrastra el total. Para saber quién rinde "
+                  f"mejor hace falta una columna de meta.")
+        return texto, accion, "info"
+    puesto = nombres.index(str(lider)) + 1
+    fila, mejor = base["ranking"][puesto - 1], base["mejor"]
+    etiqueta = "cumplimiento de meta" if base["clave"] == "meta" else base["etiqueta"]
+    if puesto == 1:
+        texto += f" Y también es 1.º de {len(nombres)} en {etiqueta} ({fila['texto']}, {fila['detalle']})."
+        accion = (f"Documentar qué hace {lider} y replicarlo en los que quedan abajo en {etiqueta}: "
+                  f"pesa más y además rinde más.")
+        return texto, accion, "positive"
+    texto += (f" Pero medido por {etiqueta} queda {puesto}.º de {len(nombres)} ({fila['texto']}, "
+              f"{fila['detalle']}). El mejor en {etiqueta} es {mejor['nombre']}, con {mejor['texto']}.")
+    accion = (f"No tomar a {lider} como referente por su tamaño: el referente en {etiqueta} es "
+              f"{mejor['nombre']}. Revisar por qué {lider} no convierte su volumen en {etiqueta}.")
+    return texto, accion, ("warning" if puesto > len(nombres) / 2 else "info")
 
 
 def generate(df, schema, anomalies):
@@ -96,12 +146,13 @@ def generate(df, schema, anomalies):
                     leader = str(g.index[0]); total = float(g.sum()); share = float(g.iloc[0]/total*100) if total else 0
                     if share >= 20:
                         dim_label = _pretty(schema, c); metric_label = _pretty(schema, m)
+                        finding, action, kind = _lectura_de_concentracion(df, schema, c, m, leader, share, dim_label, metric_label)
                         out.append({
                             "title":"Concentración por dimensión",
-                            "finding":f"{leader} concentra el {share:.1f}% del total de {metric_label.lower()} dentro de {dim_label}.",
-                            "implication":"Una parte relevante del resultado depende de un único segmento. Esto puede representar una fortaleza, pero también una exposición a concentración.",
-                            "action":f"Revisar qué explica el liderazgo de {leader} y evaluar si sus prácticas pueden replicarse en los segmentos con menor desempeño.",
-                            "confidence":"Alta", "kind":"positive" if share >= 30 else "info", "priority":12, "target":{"dimension":c,"metric":m,"filter_column":c,"filter_value":leader,"view":f"{dim_label}: {leader}"},
+                            "finding":finding,
+                            "implication":"Una parte relevante del resultado depende de un único segmento. Pesar más no es rendir más: el volumen se contrasta con la meta o con una base que no dependa del tamaño.",
+                            "action":action,
+                            "confidence":"Alta", "kind":kind, "priority":12, "target":{"dimension":c,"metric":m,"filter_column":c,"filter_value":leader,"view":f"{dim_label}: {leader}"},
                         })
                         break
             except Exception:

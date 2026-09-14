@@ -41,7 +41,10 @@ def render_executive(df, schema, dashboard):
 
     def _render_kpi(k):
         label, tone, icon = _kpi_style(k, schema)
-        return kpi_card(label, _display_kpi_value(k), tone=tone, icon=icon)
+        # En la tarjeta de quién va primero, la cifra que lo sostiene
+        # ("541 de una meta de 360") va debajo: sin ella no se sabe contra qué.
+        delta = k.get("detalle") if k.get("kind") == "leader" else None
+        return kpi_card(label, _display_kpi_value(k), delta=delta, tone=tone, icon=icon)
 
     with main_col:
         kpis=dynamic_kpis(df,schema,dashboard)[:6]

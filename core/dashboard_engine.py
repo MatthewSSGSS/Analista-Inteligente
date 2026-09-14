@@ -66,7 +66,7 @@ def build_dashboard(df, profile):
                     growth = None
 
     return {
-        "kpis":dynamic_kpis(df, schema, {"primary_metric":primary}), "anomalies":anomalies, "insights":insights, "executive":executive, "alerts":alerts, "change_analysis":change_analysis,
+        "kpis":dynamic_kpis(df, schema, {"primary_metric":primary,"performance":performance}), "anomalies":anomalies, "insights":insights, "executive":executive, "alerts":alerts, "change_analysis":change_analysis,
         "summary":summary, "statistics":describe(df,schema),
         "performance": performance,
         "schema":schema, "primary_metric":primary, "growth":growth

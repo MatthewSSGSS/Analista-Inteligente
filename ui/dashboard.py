@@ -47,6 +47,8 @@ def _display_kpi_value(k):
         # "Líder · Asesor" debe leerse completo de un vistazo: el nombre Y
         # cuánto vendió/logró, no solo el nombre suelto.
         raw=k.get("raw")
+        if k.get("texto"):
+            return f"{value} · {k['texto']}"
         if isinstance(raw,(int,float,np.integer,np.floating)) and not isinstance(raw,bool):
             return f"{value} · {_fmt(raw)}"
         return str(value)
@@ -66,7 +68,9 @@ def _kpi_style(k, schema=None):
     propios (morado + 🏆) para que se reconozca de un vistazo."""
     label = k.get("label", "Indicador")
     if k.get("kind") == "leader":
-        if schema is not None and k.get("metric"):
+        # Con base de comparación la etiqueta ya dice contra qué se mide
+        # ("Mejor en cumplimiento de meta"); repetir la métrica la alarga.
+        if schema is not None and k.get("metric") and not k.get("base"):
             label = f"{label} · {_label(schema, k['metric'])}"
         return label, "leader", "🏆"
     if k.get("kind") == "growth":
@@ -85,13 +89,15 @@ def _universal_kpi_grid(df, schema, dashboard):
             label,tone,icon=_kpi_style(k,schema)
             if k.get("kind")=="growth":
                 delta="Mejora reciente" if k["value"]>=0 else "Caída reciente"
+            elif k.get("kind")=="leader":
+                delta=k.get("detalle")
             st.markdown(_card(label,_display_kpi_value(k),delta,tone,icon),unsafe_allow_html=True)
     if len(kpis)>4:
         cols=st.columns(min(4,len(kpis)-4))
         for i,k in enumerate(kpis[4:8]):
             with cols[i]:
                 label,tone,icon=_kpi_style(k,schema)
-                st.markdown(_card(label,_display_kpi_value(k),None,tone,icon),unsafe_allow_html=True)
+                st.markdown(_card(label,_display_kpi_value(k),k.get("detalle") if k.get("kind")=="leader" else None,tone,icon),unsafe_allow_html=True)
 
 
 def _drilldown_panel(df,schema,metric,dimension):
@@ -143,7 +149,9 @@ def _chart_insight(df, schema, metric, dimension=None):
             x = x.groupby(dimension)[metric].sum().sort_values(ascending=False)
             if len(x) >= 2 and x.iloc[0] != 0:
                 share = x.iloc[0] / x.sum() * 100
-                base += f" {_clean_text(x.index[0])} lidera con {share:.1f}% del total."
+                # Aportar más al total es tamaño, no desempeño: se dice así.
+                base += (f" {_clean_text(x.index[0])} es el que más aporta: {share:.1f}% del total. "
+                         f"Mide volumen, no qué tan bien le va contra su meta.")
     return base
 
 
