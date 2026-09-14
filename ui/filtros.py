@@ -33,6 +33,17 @@ TIPOS_PREFERIDOS = {"region", "department", "state", "zone", "city", "country", 
                     "product", "brand", "status", "type", "customer", "employee", "channel"}
 
 
+def metrica_recien_elegida(anteriores, elegidas, metricas):
+    """La última métrica que se agregó al selector en este clic, si hubo una.
+
+    Agregar "Altas Eje" como filtro es decir "quiero ver Altas Eje": antes el
+    análisis seguía en la métrica de siempre y el filtro parecía no servir.
+    """
+    anteriores = set(anteriores or [])
+    nuevas = [c for c in (elegidas or []) if c not in anteriores and c in set(metricas or [])]
+    return nuevas[-1] if nuevas else None
+
+
 def _rotulo(texto: str) -> None:
     st.markdown(
         f'<p style="font-size:13px;font-weight:600;margin:10px 0 2px;color:var(--text)">{html.escape(texto)}</p>',
@@ -181,13 +192,19 @@ def render_filtros_por_columna(df: pd.DataFrame, schema: dict, sheet: str,
             _render_opciones(columna, opciones.get(columna, []), f"filter_{sheet}_{columna}", str(columna))
 
     if disponibles:
-        st.markdown('<p class="sidebar-section-label">🧰 Cualquier columna</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sidebar-section-label">🧰 Más columnas</p>', unsafe_allow_html=True)
         elegidas = st.multiselect(
-            f"Agregar filtro · {len(disponibles)} columnas más",
+            "Agregar filtro",
             list(etiquetas), format_func=lambda c: etiquetas[c], key=clave_selector,
-            placeholder="Busca una columna…",
+            placeholder=f"Busca entre {len(disponibles)} columnas…", label_visibility="collapsed",
             help="Todas las columnas del archivo. Al elegir una aparece el filtro que le corresponde: "
-                 "lista de valores, rango de números, rango de fechas o texto contenido.")
+                 "lista de valores, rango de números, rango de fechas o texto contenido. Si eliges una "
+                 "columna numérica, el análisis pasa a esa métrica.")
+        clave_previas = clave_selector + "__previas"
+        nueva = metrica_recien_elegida(st.session_state.get(clave_previas), elegidas, schema.get("metrics"))
+        if nueva is not None:
+            st.session_state[f"metrica_{sheet}"] = nueva
+        st.session_state[clave_previas] = list(elegidas)
         for columna in elegidas:
             info = por_nombre[columna]
             clave = f"filter_{sheet}_{columna}"

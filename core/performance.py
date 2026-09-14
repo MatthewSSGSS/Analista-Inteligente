@@ -106,18 +106,49 @@ def _etiqueta(schema, col):
     return str(col)
 
 
+_CONECTORES_META = {"de", "del", "la", "el", "los", "las", "en", "por", "a", "al", "y", "total", "mes", "mensual"}
+
+
+def _palabras(texto):
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(texto))
+    t = "".join(ch for ch in t if not unicodedata.combining(ch)).lower()
+    return {p for p in re.split(r"[^a-z0-9]+", t) if p}
+
+
 def columna_meta(df, schema, metric=None):
-    """La columna que dice cuánto se esperaba lograr, si el archivo la trae."""
+    """La columna que dice cuánto se esperaba lograr de ESTA métrica, si el archivo la trae.
+
+    Antes se tomaba la primera columna con "meta" o "presupuesto" en el nombre,
+    fuera de la métrica que fuera. Con un archivo que trae ALTAS y Altas Eje, la
+    meta de una se usaba para la otra, y el panel decía "0% · 112.4K de una
+    meta de 1.3B". Ahora se exige:
+
+    - que el nombre no hable de otra métrica: "Meta Altas Eje" es meta de
+      "Altas Eje", no de "ALTAS"; una meta sin más nombre ("Presupuesto")
+      vale para cualquiera;
+    - que la escala tenga sentido: una meta mil veces el resultado no es su meta.
+    """
     fechas, ids = set(schema.get("dates", [])), set(schema.get("ids", []))
+    palabras_metrica = _palabras(metric) if metric is not None else set()
+    real = float(numeric_series(df[metric]).sum()) if metric is not None and metric in df.columns else None
+    candidatas = []
     for c in df.columns:
         if c == metric or c in fechas or c in ids or str(c).startswith("_"):
             continue
         if not META_RE.search(str(c)):
             continue
         valores = pd.to_numeric(df[c], errors="coerce")
-        if valores.notna().sum() >= len(df) * 0.5 and float(valores.sum()) > 0:
-            return c
-    return None
+        if not (valores.notna().sum() >= len(df) * 0.5 and float(valores.sum()) > 0):
+            continue
+        resto = {p for p in _palabras(c) if not META_RE.search(p)} - _CONECTORES_META
+        if metric is not None:
+            if resto and not resto <= palabras_metrica:
+                continue  # es la meta de otra métrica
+            if real is not None and real > 0 and not 0.02 <= real / float(valores.sum()) <= 50:
+                continue  # escala imposible: no es la meta de esta métrica
+        candidatas.append((2 if resto else 1, c))
+    return max(candidatas, key=lambda x: x[0])[1] if candidatas else None
 
 
 def unidad_interna(df, schema, dimension, metric=None):
@@ -325,7 +356,8 @@ def analyze(df, schema, metric=None, dimension=None, top_n=5):
     metrics=[m for m in metrics if m in df.columns]
     if not metric or metric not in df.columns:
         priority=["revenue","profit","quantity","cost","price","discount","tax","percentage","rating"]
-        metric=next((m for p in priority for m in metrics if sem.get(m)==p), metrics[0] if metrics else None)
+        metric=(schema.get("metrica_preferida") if schema.get("metrica_preferida") in metrics
+                else next((m for p in priority for m in metrics if sem.get(m)==p), metrics[0] if metrics else None))
     if not dimension or dimension not in df.columns:
         dimension=choose_dimension(df,schema)
     if not dimension:

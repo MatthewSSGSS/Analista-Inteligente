@@ -44,7 +44,10 @@ def render_executive(df, schema, dashboard):
         # En la tarjeta de quién va primero, la cifra que lo sostiene
         # ("541 de una meta de 360") va debajo: sin ella no se sabe contra qué.
         delta = k.get("detalle") if k.get("kind") == "leader" else None
-        return kpi_card(label, _display_kpi_value(k), delta=delta, tone=tone, icon=icon)
+        # Un nombre largo ("COMMUTE SAS SOLEDAD ATLANTICO") con la letra de una
+        # cifra ocupaba tres renglones enormes: se muestra en tamaño de texto.
+        return kpi_card(label, _display_kpi_value(k), delta=delta, tone=tone, icon=icon,
+                        small_value=k.get("kind") == "leader")
 
     with main_col:
         kpis=dynamic_kpis(df,schema,dashboard)[:6]

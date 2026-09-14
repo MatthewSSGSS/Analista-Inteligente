@@ -406,6 +406,8 @@ CONTEO_TOKENS = {
     "recargas", "portabilidades", "portabilidad", "llamadas", "visitas", "contratos", "lineas",
     "polizas", "creditos", "desembolsos", "colocaciones", "suscripciones", "instalaciones",
     "renovaciones", "migraciones", "clientes", "afiliaciones", "inscripciones", "matriculas",
+    # Lo ejecutado frente a un presupuesto también es un total por periodo.
+    "ejecucion", "ejecutado", "ejecutada", "ejecutados", "ejecutadas", "logrado", "logro",
 }
 _CONECTORES = {"de", "del", "la", "el", "los", "las", "en", "por", "a", "al", "y", "total", "mes", "mensual"}
 
@@ -436,15 +438,23 @@ def _promover_cantidades(df: pd.DataFrame, columns: list[dict]) -> None:
         if CONTEO_TOKENS & _tokenize(normalize_text(c)):
             promover.add(c)
     numericas = [str(c) for c in df.columns if numerica(c)]
+    metas_solas = []
     for meta in numericas:
         if not META_RE.search(meta):
             continue
-        resto = _tokenize(normalize_text(META_RE.sub(" ", meta))) - _CONECTORES
+        # Se quita la palabra de meta entera: con la subcadena, "Presupuesto"
+        # dejaba "uesto" como resto y nunca emparejaba con nada.
+        resto = {t for t in _tokenize(normalize_text(meta)) if not META_RE.search(t)} - _CONECTORES
         if not resto:
+            metas_solas.append(meta)
             continue
         for c in numericas:
             if c != meta and not META_RE.search(c) and resto <= _tokenize(normalize_text(c)):
                 promover.update({c, meta})
+    # Una meta sin más nombre ("Presupuesto", "Meta") es el total esperado de
+    # lo que ya se reconoció como cantidad: también se suma.
+    if promover:
+        promover.update(metas_solas)
     for c in promover:
         item = candidatas.get(c)
         if item is None:

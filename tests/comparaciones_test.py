@@ -107,7 +107,64 @@ def test_una_caida_dice_frente_a_que_y_respeta_el_umbral():
     check("y cada cifra también", all("frente a mayo de 2026" in e["detalle"] for e in caida["evidence"]))
 
 
+def _dos_metricas():
+    """ALTAS y Altas Eje en el mismo archivo, con la meta de una sola y un presupuesto de otra escala."""
+    base = pd.DataFrame({
+        "FECHA": [f"2026-{m:02d}-01" for m in range(1, 7) for _ in range(5)],
+        "REGION": ["R1", "R2", "R3", "R4", "R5"] * 6,
+        "ALTAS": [1000, 1100, 1200, 1300, 1400] * 6,
+        "Altas Eje": [10, 20, 30, 40, 50] * 6,
+        "Meta Altas Eje": [20] * 30,
+        "Presupuesto": [5_000_000] * 30,
+    })
+    item = profile_sheet(base, {"sheet_name": "Base", "workbook_name": "altas.xlsx"})
+    return item["processed"], item["profile"]
+
+
+def test_la_meta_es_la_de_esa_metrica():
+    from core.performance import columna_meta
+
+    df, profile = _dos_metricas()
+    schema = profile["schema"]
+    check("la meta de «Altas Eje» no se usa para «ALTAS»", columna_meta(df, schema, "ALTAS") is None)
+    check("un presupuesto mil veces el resultado no es su meta", columna_meta(df, schema, "ALTAS") != "Presupuesto")
+    check("«Meta Altas Eje» sí es la meta de «Altas Eje»", columna_meta(df, schema, "Altas Eje") == "Meta Altas Eje")
+
+
+def test_la_metrica_elegida_manda_en_todo_el_analisis():
+    from core.executive import primary_metric
+    from visualization.charts import metric_candidates
+
+    df, profile = _dos_metricas()
+    sin_eleccion = build_dashboard(df, profile)
+    check("sin elegir, el motor toma la métrica de siempre", sin_eleccion["primary_metric"] != "Altas Eje")
+
+    schema = {**profile["schema"], "metrica_preferida": "Altas Eje"}
+    tablero = build_dashboard(df, {**profile, "schema": schema})
+    check("elegida «Altas Eje», es la métrica principal", tablero["primary_metric"] == "Altas Eje")
+    check("el veredicto habla de ella", "Altas Eje" in tablero["executive"]["headline"])
+    check("los gráficos la ponen primero", metric_candidates(df, schema)[0] == "Altas Eje")
+    check("el resumen ejecutivo también", primary_metric(df, schema) == "Altas Eje")
+    check("la comparación entre regiones usa su meta", tablero["performance"]["base"]["clave"] == "meta")
+    hallazgos = diagnosticar(df, schema, None)
+    metricas = {h["target"].get("metric") for h in hallazgos if h.get("target", {}).get("metric")}
+    check("los hallazgos se calculan sobre ella", metricas == {"Altas Eje"})
+
+
+def test_agregar_una_metrica_como_filtro_la_elige():
+    from ui.filtros import metrica_recien_elegida
+
+    check("agregar una columna numérica la elige", metrica_recien_elegida(["REGION"], ["REGION", "Altas Eje"],
+                                                                       ["ALTAS", "Altas Eje"]) == "Altas Eje")
+    check("agregar una categoría no cambia la métrica", metrica_recien_elegida([], ["Canal"], ["ALTAS"]) is None)
+    check("volver a dibujar sin cambios no la cambia",
+          metrica_recien_elegida(["Altas Eje"], ["Altas Eje"], ["ALTAS", "Altas Eje"]) is None)
+
+
 if __name__ == "__main__":
+    test_la_meta_es_la_de_esa_metrica()
+    test_la_metrica_elegida_manda_en_todo_el_analisis()
+    test_agregar_una_metrica_como_filtro_la_elige()
     test_una_columna_de_conteo_se_suma()
     test_quien_va_primero_se_mide_contra_la_meta()
     test_el_mas_grande_no_es_el_referente()

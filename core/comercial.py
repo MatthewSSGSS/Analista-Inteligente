@@ -181,6 +181,8 @@ def matriz_comercial(df: pd.DataFrame, schema: dict, canal: Optional[str] = None
     if df is None or df.empty:
         return None
     metricas = [m for m in (schema.get("metrics") or []) if m in df.columns]
+    if metrica not in metricas and schema.get("metrica_preferida") in metricas:
+        metrica = schema["metrica_preferida"]  # la que eligió el usuario manda
     if metrica not in metricas:
         neutras = [m for m in metricas if not PEOR_SI_SUBE.search(str(m))]
         metrica = (neutras or metricas or [None])[0]

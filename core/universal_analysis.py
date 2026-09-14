@@ -16,6 +16,8 @@ def choose_metric(df, schema, preferred=None):
     metrics = [m for m in metrics if m in df.columns]
     if preferred in metrics:
         return preferred
+    if schema.get("metrica_preferida") in metrics:
+        return schema["metrica_preferida"]
     for kind in PRIORITY_METRICS:
         for m in metrics:
             if sem.get(m) == kind:

@@ -294,8 +294,11 @@ def _caida_por_segmento(df, schema, dim, metrica, columna_fecha, tabla) -> Optio
         evidencia.append({"nombre": str(nombre), "valor": _fmt(valor),
                           "detalle": f"{_pct(pct)} frente a {mes_base} · antes {_fmt(base)}"})
 
-    cambio_total = float(ultimo.sum() - previo.sum())
-    total_previo = float(previo.sum())
+    # En un porcentaje o un promedio el "total" del periodo es el promedio de
+    # los segmentos: sumar ocho cumplimientos no da ningún número real.
+    aditiva = _aditiva(schema, metrica)
+    total_previo = float(previo.sum() if aditiva else previo.mean())
+    cambio_total = float(ultimo.sum() if aditiva else ultimo.mean()) - total_previo
     pct_total = cambio_total / abs(total_previo) * 100 if total_previo else 0.0
     if peso < 25 and len(caidas) > 5:
         # La caída está repartida. Nombrar tres es dar una pista falsa: aquí
@@ -911,6 +914,8 @@ def diagnosticar(df: pd.DataFrame, schema: dict, anomalias=None, metrica=None) -
         return []
     metricas = schema.get("semantic", {}).get("metrics") or schema.get("metrics", [])
     metricas = [c for c in metricas if c in df.columns]
+    if metrica not in metricas and schema.get("metrica_preferida") in metricas:
+        metrica = schema["metrica_preferida"]  # la que eligió el usuario manda
     if metrica not in metricas:
         prioridad = ["revenue", "profit", "quantity", "cost", "price", "discount", "tax"]
         sem = _semantica(schema)

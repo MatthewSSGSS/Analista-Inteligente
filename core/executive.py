@@ -36,10 +36,12 @@ def primary_metric(df, schema):
     sem=_semantic(schema)
     priority=['revenue','profit','quantity','cost','discount','tax','price','percentage','rating','age']
     metrics=[c for c in metrics if c in df.columns]
+    if schema.get('metrica_preferida') in metrics:
+        return schema['metrica_preferida']  # la que eligió el usuario manda
     return sorted(metrics,key=lambda c: priority.index(sem.get(c)) if sem.get(c) in priority else 99)[0] if metrics else None
 
 
-def _monthly(df, date_col, metric):
+def _monthly(df, date_col, metric, como='sum'):
     # Se arma columna por columna en vez de con df[[date_col, metric]]: si
     # date_col y metric son LA MISMA columna (o el archivo trae dos columnas
     # con el mismo nombre), ese doble corchete devuelve un DataFrame con la
@@ -62,7 +64,8 @@ def _monthly(df, date_col, metric):
         '__valor__': pd.to_numeric(values, errors='coerce'),
     }).dropna()
     if x.empty: return None
-    return x.set_index('__fecha__')['__valor__'].resample('MS').sum().dropna()
+    por_mes = x.set_index('__fecha__')['__valor__'].resample('MS')
+    return (por_mes.sum() if como == 'sum' else por_mes.mean()).dropna()
 
 
 def build_executive(df, schema, insights=None, anomalies=None):
@@ -81,7 +84,9 @@ def build_executive(df, schema, insights=None, anomalies=None):
     result['detail']=f"Se analizaron {len(df):,} registros. El indicador principal se presenta como {'total' if additive else 'promedio'} sobre la selección actual."
     dates=schema.get('dates',[])
     if dates:
-        series=_monthly(df,dates[0],metric)
+        # Un porcentaje no se suma entre registros: ocho jefes al 90% no son
+        # un 720%. Antes el veredicto sumaba siempre y decía "alcanzó 667".
+        series=_monthly(df,dates[0],metric,'sum' if additive else 'mean')
         if series is not None and len(series)>=2:
             previous=float(series.iloc[-2]) if pd.notna(series.iloc[-2]) else 0.0
             current_period=float(series.iloc[-1]) if pd.notna(series.iloc[-1]) else 0.0

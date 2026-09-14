@@ -5,6 +5,8 @@ import pandas as pd
 from .profile import profile_sheet
 from .relationships import detect_relationships
 from .pivot_flatten import merged_ranges_by_sheet, fill_merged_cells, flatten_pivot_grid
+from .informe import leer_informe, graficos_e_imagenes, titulo_principal
+from .dates import extract_year_hint
 
 
 def _norm_header(v):
@@ -53,6 +55,24 @@ def _excel_engine(filename: str):
     return None  # .xlsx/.xlsm: pandas ya elige openpyxl automáticamente.
 
 
+def _grid(data, sheet_name, merge_ranges=None, engine=None):
+    """La hoja tal cual está en el Excel, con las celdas combinadas ya rellenadas."""
+    raw = pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=None, engine=engine)
+    # merge_ranges ya viene calculado UNA vez para todo el archivo (ver
+    # load_workbook) — recalcularlo por hoja era carísimo (ver el
+    # comentario largo en pivot_flatten.merged_ranges_by_sheet).
+    n_merged = fill_merged_cells(raw, merge_ranges) if merge_ranges and not raw.empty else 0
+    return raw, n_merged
+
+
+def _nombre_unico(nombre, usados):
+    base = str(nombre).strip()[:90] or "Tabla"
+    candidato, i = base, 2
+    while candidato in usados:
+        candidato, i = f"{base} ({i})", i + 1
+    return candidato
+
+
 def _read_excel_sheet(data, sheet_name, merge_ranges=None, engine=None):
     # Read without assuming the first row is the header. Excel files often have
     # a title/merged row above the real table header — y, si el Excel trae una
@@ -60,13 +80,9 @@ def _read_excel_sheet(data, sheet_name, merge_ranges=None, engine=None):
     # subtotal/total general), esa forma se aplana aquí mismo antes de que le
     # llegue a cleaner/schema, que sí esperan una tabla plana normal. Ver
     # core/pivot_flatten.py para el detalle de cada paso.
-    raw = pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=None, engine=engine)
+    raw, n_merged = _grid(data, sheet_name, merge_ranges, engine)
     if raw.empty:
         return raw, []
-    # merge_ranges ya viene calculado UNA vez para todo el archivo (ver
-    # load_workbook) — recalcularlo por hoja era carísimo (ver el
-    # comentario largo en pivot_flatten.merged_ranges_by_sheet).
-    n_merged = fill_merged_cells(raw, merge_ranges) if merge_ranges else 0
     data_df, pivot_log = flatten_pivot_grid(raw, _header_score, _norm_header, _make_unique_columns)
     if n_merged:
         pivot_log.insert(0, f"{n_merged} celda(s) combinada(s) del Excel rellenadas con su valor real.")
@@ -119,6 +135,8 @@ def load_workbook(uploaded):
     data = uploaded.getvalue()
     filename = uploaded.name
     name = filename.lower()
+    titulos: dict = {}
+    avisos: list = []
     if name.endswith(".csv"):
         raw = {"CSV": _read_csv(data)}
     elif name.endswith((".xlsx", ".xls", ".xlsb", ".xlsm")):
@@ -128,10 +146,50 @@ def load_workbook(uploaded):
         # Celdas combinadas de TODO el archivo, en una sola pasada (no una
         # por hoja — ver el porqué en pivot_flatten.merged_ranges_by_sheet).
         merges_by_sheet = merged_ranges_by_sheet(data, filename)
-        raw = {
-            sheet: _read_excel_sheet(data, sheet, merge_ranges=merges_by_sheet.get(sheet), engine=engine)
-            for sheet in book.sheet_names
-        }
+        raw, grids = {}, {}
+        for sheet in book.sheet_names:
+            grid, n_merged = _grid(data, sheet, merges_by_sheet.get(sheet), engine)
+            grids[sheet] = grid
+            # Una hoja tipo informe (varias tablas, meses en columnas, bloques
+            # por región) se reconoce por su forma y se convierte en una tabla
+            # por sección, con su título. Una hoja normal devuelve lista vacía
+            # y sigue exactamente el camino de antes. Ver core/informe.py.
+            try:
+                tablas = leer_informe(grid, sheet, extract_year_hint(sheet, filename)) if not grid.empty else []
+            except Exception:
+                tablas = []  # un informe raro nunca debe impedir leer la hoja como siempre
+            if tablas:
+                for t in tablas:
+                    nombre = _nombre_unico(t["nombre"], raw)
+                    raw[nombre] = (t["datos"], t["log"])
+                    titulos[nombre] = t["titulo"]
+                continue
+            if grid.empty:
+                raw[sheet] = (grid, [])
+                continue
+            data_df, pivot_log = flatten_pivot_grid(grid, _header_score, _norm_header, _make_unique_columns)
+            if n_merged:
+                pivot_log.insert(0, f"{n_merged} celda(s) combinada(s) del Excel rellenadas con su valor real.")
+            raw[sheet] = (data_df, pivot_log)
+            titulos[sheet] = titulo_principal(grid)
+        if name.endswith((".xlsx", ".xlsm")):
+            try:
+                elementos = graficos_e_imagenes(data, grids.get)
+            except Exception:
+                elementos = {}
+            for hoja, contenido in elementos.items():
+                for grafico in contenido["graficos"]:
+                    titulo = grafico["titulo"] or f"Gráfico de {hoja}"
+                    nombre = _nombre_unico(f"Gráfico · {titulo}", raw)
+                    raw[nombre] = (grafico["datos"], [f"Datos leídos del gráfico «{titulo}» de la hoja «{hoja}»: "
+                                                      "Excel guarda una copia de los números de cada gráfico."])
+                    titulos[nombre] = titulo
+                if contenido["imagenes"]:
+                    n = contenido["imagenes"]
+                    avisos.append(
+                        f"La hoja «{hoja}» tiene {n} imagen{'es' if n != 1 else ''} pegada{'s' if n != 1 else ''}. "
+                        "Una imagen no trae números, así que no se puede analizar: si es un gráfico, "
+                        "incluye también su tabla de datos o pégalo como gráfico de Excel.")
     else:
         raise ValueError("Formato no soportado")
 
@@ -148,10 +206,14 @@ def load_workbook(uploaded):
     relationships = detect_relationships(sheets)
     for sheet in sheets:
         sheets[sheet]["profile"]["relationships"] = relationships.get(sheet, [])
+        # El título dice qué información es ("RANKING DE LOS JEFES"): el nombre
+        # de la hoja casi nunca lo dice, y sin él no se sabe qué se está viendo.
+        sheets[sheet]["profile"]["titulo"] = titulos.get(sheet)
     return {
         "filename": filename,
         "size_mb": len(data) / 1024 / 1024,
         "processed_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "sheets": sheets,
         "relationships": relationships,
+        "avisos": avisos,
     }

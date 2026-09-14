@@ -68,6 +68,16 @@ def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict, seleccio
             c3.markdown(kpi_card("Registros totales", f"{total_records:,}"), unsafe_allow_html=True)
         c4.markdown(kpi_card("Hoja activa", sheet, small_value=True), unsafe_allow_html=True)
 
+    # ── Qué información es y qué no se pudo leer ────────────────────────────
+    item = sheets.get(sheet) if isinstance(sheets.get(sheet), dict) else {}
+    titulo = (item.get("profile") or {}).get("titulo")
+    if titulo:
+        st.markdown(decision_strip(f"<b>📄 Estás viendo:</b> {html.escape(str(titulo))}", dot=True),
+                    unsafe_allow_html=True)
+    for aviso in wb.get("avisos") or []:
+        st.markdown(decision_strip(f"<b>🖼️ Imagen sin datos:</b> {html.escape(str(aviso))}"),
+                    unsafe_allow_html=True)
+
     # ── La selección actual: qué filtros hay y cómo va lo que queda ────────
     if filtrado:
         st.markdown(section_header("Tu selección", eyebrow="VISTA FILTRADA", compact=True), unsafe_allow_html=True)

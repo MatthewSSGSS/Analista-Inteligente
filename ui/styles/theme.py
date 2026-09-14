@@ -406,6 +406,17 @@ section[data-testid="stSidebar"] [data-baseweb="select"]>div{background:var(--si
    two-tone "dark pill with a white patch near the arrow" look. */
 section[data-testid="stSidebar"] [data-baseweb="select"] *{color:var(--sidebar-text-strong)!important;background:transparent!important;background-color:transparent!important;fill:var(--sidebar-text-strong)!important}
 section[data-testid="stSidebar"] [data-baseweb="select"] input::placeholder{color:var(--sidebar-muted)!important;opacity:1!important}
+/* La regla general de inputs del sidebar (borde + fondo + radio) también le
+   pegaba al campo de búsqueda INTERNO de cada lista: quedaba una cajita blanca
+   con borde al lado de cada etiqueta elegida. Dentro de un select ese campo va
+   sin caja, y las etiquetas y los íconos se acomodan en píldoras compactas. */
+section[data-testid="stSidebar"] [data-baseweb="select"] input{border:none!important;background:transparent!important;box-shadow:none!important;padding:0 2px!important;min-width:4px!important;border-radius:0!important}
+section[data-testid="stSidebar"] [data-baseweb="select"]>div{min-height:36px!important;padding:2px 4px 2px 6px!important;align-items:center!important}
+section[data-testid="stSidebar"] [data-baseweb="select"]>div>div:first-child{flex-wrap:wrap!important;gap:4px!important;padding:2px 0!important}
+section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"]{border-radius:999px!important;margin:0!important;padding:0 4px 0 10px!important;height:24px!important;max-width:100%!important;font-size:12px!important;font-weight:600!important}
+section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] svg{width:12px!important;height:12px!important}
+section[data-testid="stSidebar"] [data-baseweb="select"] [role="button"] svg,section[data-testid="stSidebar"] [data-baseweb="select"]>div>div:last-child svg{width:15px!important;height:15px!important}
+section[data-testid="stSidebar"] [data-baseweb="select"]>div>div:last-child{gap:2px!important;padding-left:2px!important}
 /* var(--blue-soft), no un rgba() propio — mismo motivo que el mode-banner
    de más arriba: mismo tinte, ya opaco. El borde se queda translúcido
    (no afecta legibilidad del texto de adentro). */

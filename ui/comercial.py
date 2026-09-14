@@ -521,6 +521,17 @@ def render_comercial(df: pd.DataFrame, schema: dict, dashboard: dict | None = No
                 "entre 2 y 25 valores), una métrica numérica y al menos dos periodos con fecha. "
                 "Este archivo no reúne las tres cosas.")
         return
+    # Esta vista habla de cuánto pesa cada canal en el total. Con un
+    # porcentaje (el cumplimiento de cada jefe) no hay total que repartir:
+    # decir que alguien "concentra el 19% del negocio" sería un número inventado.
+    _tipo_metrica = (schema.get("types") or {}).get(matriz["metrica"])
+    _sem_metrica = {x.get("column"): x.get("semantic_type")
+                    for x in schema.get("semantic", {}).get("columns", [])}.get(matriz["metrica"])
+    if _tipo_metrica == "Porcentaje" or _sem_metrica in {"percentage", "rating", "price", "age"}:
+        st.info(f"«{_label(schema, matriz['metrica'])}» es un porcentaje o un promedio: no se suma entre "
+                "grupos, así que no tiene sentido hablar de cuánto pesa cada uno en el total. Su evolución y "
+                "quién va mejor están en Resumen ejecutivo y en Análisis de seguimiento.")
+        return
 
     # Permite cambiar la dimensión: el motor elige bien casi siempre, pero la
     # gerencia puede querer leer lo mismo por zona o por producto.

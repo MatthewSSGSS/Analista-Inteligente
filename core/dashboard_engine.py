@@ -24,7 +24,8 @@ def build_dashboard(df, profile):
     semantic_cols = schema.get("semantic", {}).get("columns", [])
     rank = {x["column"]: priority.index(x["semantic_type"]) if x["semantic_type"] in priority else 99 for x in semantic_cols}
     metrics = sorted(metrics, key=lambda c: rank.get(c, 99))
-    primary=metrics[0] if metrics else None
+    # La métrica elegida en el menú manda sobre la que el motor elegiría solo.
+    primary=schema.get("metrica_preferida") if schema.get("metrica_preferida") in metrics else (metrics[0] if metrics else None)
 
     anomalies=detect(df,schema)
     insights=generate(df,schema,anomalies)
@@ -45,7 +46,10 @@ def build_dashboard(df, profile):
         tmp[primary]=numeric_series(tmp[primary])
         tmp=tmp.dropna(subset=[d])
         if len(tmp)>=2:
-            tmp=tmp.set_index(d)[primary].resample("MS").sum().dropna()
+            _sem={x.get("column"):x.get("semantic_type") for x in schema.get("semantic",{}).get("columns",[])}
+            _por_mes=tmp.set_index(d)[primary].resample("MS")
+            # Un porcentaje o un promedio no se suma entre registros: se promedia.
+            tmp=(_por_mes.sum() if _sem.get(primary) in {"revenue","profit","cost","quantity","discount","tax"} else _por_mes.mean()).dropna()
             if len(tmp)>=2:
                 previous=float(tmp.iloc[-2]); current=float(tmp.iloc[-1])
                 if np.isfinite(previous) and np.isfinite(current) and previous != 0:

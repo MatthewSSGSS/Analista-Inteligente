@@ -310,7 +310,13 @@ def metric_candidates(df, schema):
         out.append(c)
     priority = {"revenue": 0, "profit": 1, "quantity": 2, "price": 3, "cost": 4,
                 "discount": 5, "tax": 6, "percentage": 7, "rating": 8, "age": 9}
-    return sorted(out, key=lambda c: priority.get(_concept_for(schema, c), 50))
+    ordenadas = sorted(out, key=lambda c: priority.get(_concept_for(schema, c), 50))
+    # La métrica que eligió el usuario va primero: todas las vistas toman la
+    # primera de esta lista, y sin esto seguían analizando la de siempre.
+    preferida = schema.get("metrica_preferida")
+    if preferida in ordenadas:
+        ordenadas = [preferida] + [c for c in ordenadas if c != preferida]
+    return ordenadas
 
 
 def dimension_candidates(df, schema):

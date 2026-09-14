@@ -95,6 +95,8 @@ def generate(df, schema, anomalies):
     priority = {"revenue":0,"profit":1,"quantity":2,"price":3,"cost":4,"discount":5,"tax":6,"percentage":7,"rating":8,"age":9}
     metrics = [c for c in metrics if c in df.columns]
     metrics = sorted(metrics, key=lambda c: priority.get(sem.get(c), 50))
+    if schema.get("metrica_preferida") in metrics:  # la que eligió el usuario va primero
+        metrics = [schema["metrica_preferida"]] + [c for c in metrics if c != schema["metrica_preferida"]]
     cats = [c for c in cats if c in df.columns and c not in metrics]
 
     if metrics:
@@ -166,7 +168,10 @@ def generate(df, schema, anomalies):
             x[m] = pd.to_numeric(x[m], errors="coerce")
             x = x.dropna()
             if len(x) >= 4:
-                tmp = x.set_index(d)[m].resample("MS").sum().dropna()
+                por_mes = x.set_index(d)[m].resample("MS")
+                # Un porcentaje no se suma entre registros: se promedia.
+                tmp = (por_mes.sum() if sem.get(m) in {"revenue", "profit", "cost", "quantity", "discount", "tax"}
+                       else por_mes.mean()).dropna()
                 if len(tmp) >= 2 and tmp.iloc[-2] != 0:
                     pct = float((tmp.iloc[-1]-tmp.iloc[-2])/abs(tmp.iloc[-2])*100)
                     metric_label = _pretty(schema, m)

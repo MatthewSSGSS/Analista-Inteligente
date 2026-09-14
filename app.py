@@ -23,6 +23,7 @@ from core.dataset_mode import detect_dataset_mode
 import html as _html
 from core.filter_engine import apply_filters, natural_filter, describir_regla, resumen_seleccion
 from ui.filtros import render_filtros_por_columna
+from visualization.charts import metric_candidates
 from ui.dashboard import render_dashboard
 from ui.explorer import render_explorer
 from ui.quality import render_quality
@@ -303,6 +304,20 @@ with st.sidebar:
                 filter_source=df
         render_filtros_por_columna(df, schema, sheet, full_name_col, filter_source)
 
+        # ── Métrica a analizar ────────────────────────────────────────────
+        # Antes el panel analizaba siempre la métrica que el motor elegía solo:
+        # filtrar por "Altas Eje" dejaba el análisis en "ALTAS". Ahora se elige
+        # aquí, y agregar una columna numérica en "Más columnas" la elige sola
+        # (ver ui/filtros.metrica_recien_elegida).
+        _metricas_hoja=metric_candidates(df, schema)
+        if len(_metricas_hoja)>1:
+            _clave_metrica=f"metrica_{sheet}"
+            if st.session_state.get(_clave_metrica) not in _metricas_hoja:
+                st.session_state.pop(_clave_metrica, None)
+            st.markdown('<p class="sidebar-section-label">📊 Métrica a analizar</p>', unsafe_allow_html=True)
+            st.selectbox("Métrica a analizar", _metricas_hoja, key=_clave_metrica, label_visibility="collapsed",
+                         help="Todas las pestañas —resumen, comparaciones, planes y predicciones— se calculan sobre esta métrica.")
+
         active_count=sum(1 for c in st.session_state.filters if not str(c).startswith("__")) + (1 if "__date__" in st.session_state.filters else 0)
         if active_count:
             if st.button("✕ Limpiar filtros", use_container_width=True, key=f"clear_filters_{sheet}"):
@@ -432,6 +447,12 @@ st.session_state.active_sheet = sheet
 item=wb["sheets"][sheet]
 df=item["processed"].copy()
 schema=item["profile"]["schema"]
+# La métrica elegida en el menú viaja dentro del esquema: así todas las vistas
+# la toman como principal sin cambiar la firma de cada una.
+_metrica_elegida=st.session_state.get(f"metrica_{sheet}")
+if _metrica_elegida and _metrica_elegida in df.columns:
+    schema={**schema,"metrica_preferida":_metrica_elegida}
+perfil_vista={**item["profile"],"schema":schema}
 
 # Apply filters globally and defensively.
 # A filter must never be able to crash the dashboard if its column
@@ -500,10 +521,16 @@ if seleccion["filtrado"]:
 else:
     _banda=(f'<b>{seleccion["total"]:,} registros · archivo completo</b> · Sin filtros activos: '
             'usa la barra lateral para acotar por región, canal, periodo o cualquier columna.')
+# El título de la tabla dice qué información es; va primero en la franja.
+_titulo_hoja=item["profile"].get("titulo")
+if schema.get("metrica_preferida"):
+    _banda=f'<b>📊 Analizando {_html.escape(str(schema["metrica_preferida"]))}</b> · '+_banda
+if _titulo_hoja:
+    _banda=f'<b>📄 {_html.escape(str(_titulo_hoja))}</b> · '+_banda
 st.markdown(f'<p class="hero-band-meta">{_banda}</p>', unsafe_allow_html=True)
 
 mode_info=detect_dataset_mode(df, schema)
-dashboard=_cached_build_dashboard(df,item["profile"])
+dashboard=_cached_build_dashboard(df,perfil_vista)
 geo_enabled, geo_meta = supports_georeferencing(df, schema)
 
 # "Tipo detectado" ya no se repite aquí encima de cada pestaña: esta misma
