@@ -221,7 +221,68 @@ def test_las_celdas_vacias_de_verdad():
     check("la lista ofrece «(Vacío)» y no un valor en blanco", opciones[0] == VACIO and "" not in opciones)
 
 
+def test_la_seleccion_se_dice_en_palabras():
+    from core.filter_engine import resumen_seleccion
+
+    rango = (pd.Timestamp("2026-01-01"), pd.Timestamp("2026-09-01"))
+    completo = {"column": "Fecha", "start": pd.Timestamp("2026-01-01"),
+                "end": pd.Timestamp("2026-09-01 23:59:59.999999")}
+    sin_filtros = resumen_seleccion({"__date__": completo}, 360, 360, rango)
+    check("el periodo completo no cuenta como filtro", not sin_filtros["filtrado"] and sin_filtros["frases"] == [])
+
+    region = resumen_seleccion({"__date__": completo, "REGION": {"op": "in", "value": ["R1"]}}, 72, 360, rango)
+    check("un filtro por región se nombra", region["filtrado"] and region["frases"] == ["REGION: R1"])
+    check("y se compara contra el total", region["visibles"] == 72 and region["total"] == 360
+          and round(region["porcentaje"]) == 20)
+
+    recortado = dict(completo, start=pd.Timestamp("2026-06-01"))
+    periodo = resumen_seleccion({"__date__": recortado}, 160, 360, rango)
+    check("un periodo recortado sí cuenta y se nombra",
+          periodo["filtrado"] and periodo["frases"] == ["Periodo: del 01/06/2026 al 01/09/2026"])
+    check("la búsqueda libre también se nombra",
+          resumen_seleccion({}, 10, 360, None, "bogota")["frases"] == ["Búsqueda «bogota»"])
+
+
+def test_inicio_refleja_los_filtros():
+    """Inicio es la pestaña que abre el panel: si ignora el filtro, el filtro
+    parece no hacer nada."""
+    import streamlit as st
+    from streamlit.delta_generator import DeltaGenerator
+
+    from ui.home import render_home
+
+    textos = []
+    original_st, original_dg = st.markdown, DeltaGenerator.markdown
+    st.markdown = lambda body, *a, **k: textos.append(str(body))
+    DeltaGenerator.markdown = lambda self, body, *a, **k: textos.append(str(body))
+    wb = {"filename": "ventas.xlsx", "sheets": {"Base": {"processed": pd.DataFrame({"x": range(360)})}}}
+    dashboard = {"executive": {"status": "negative", "headline": "Altas retrocedió 14.0% frente al periodo anterior.",
+                               "detail": ""}}
+    seleccion = {"filtrado": True, "frases": ["REGION: R1"], "visibles": 72, "total": 360, "porcentaje": 20.0}
+    try:
+        render_home(wb, "Base", {}, dashboard, seleccion=seleccion)
+        con_filtro = " ".join(textos)
+        textos.clear()
+        render_home(wb, "Base", {}, dashboard)
+        sin_filtro = " ".join(textos)
+    finally:
+        st.markdown, DeltaGenerator.markdown = original_st, original_dg
+    check("con filtro, Inicio cuenta los registros de la vista", ">72<" in con_filtro and "de 360" in con_filtro)
+    check("nombra los filtros activos", "REGION: R1" in con_filtro)
+    check("y muestra cómo va la selección", "retrocedió 14.0%" in con_filtro)
+    check("sin filtro, sigue mostrando el archivo completo",
+          "Registros totales" in sin_filtro and "REGION: R1" not in sin_filtro)
+
+    arbol = ast.parse(io.open("app.py", encoding="utf-8").read())
+    llamadas = [n for n in ast.walk(arbol) if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name) and n.func.id == "render_home"]
+    check("app.py le pasa la selección a Inicio",
+          bool(llamadas) and all(any(k.arg == "seleccion" for k in n.keywords) for n in llamadas))
+
+
 if __name__ == "__main__":
+    test_la_seleccion_se_dice_en_palabras()
+    test_inicio_refleja_los_filtros()
     test_toda_columna_tiene_su_filtro()
     test_las_reglas_no_dejan_escapar_nada()
     test_las_celdas_vacias_de_verdad()

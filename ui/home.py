@@ -5,9 +5,11 @@ herramienta, qué se cargó, cómo moverse) y usa clases de estilo ya definidas
 en app.py para no introducir CSS adicional.
 """
 from __future__ import annotations
+import html
+
 import streamlit as st
 
-from ui.components.cards import kpi_card
+from ui.components.cards import kpi_card, executive_headline
 from ui.components.section import section_header, decision_strip
 from ui.layouts.hero import hero
 
@@ -24,10 +26,14 @@ def _step(number: str, title: str, text: str) -> str:
     )
 
 
-def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict) -> None:
+def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict, seleccion: dict | None = None) -> None:
     sheets = wb.get("sheets", {}) or {}
     total_records = sum(len(it.get("processed", [])) for it in sheets.values() if isinstance(it, dict))
     classification = (mode_info or {}).get("classification", {}) or {}
+    # Es la pestaña con la que abre el panel. Antes mostraba siempre el
+    # archivo completo: al aplicar un filtro, lo primero que se veía no
+    # cambiaba y parecía que el filtro no hacía nada.
+    filtrado = bool(seleccion and seleccion.get("filtrado"))
 
     # ── Hero de bienvenida + snapshot del archivo, envueltos en un
     # st.container(key=...) para que compartan un solo fondo con foto (ver
@@ -54,8 +60,23 @@ def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict) -> None:
         c1, c2, c3, c4 = st.columns(4)
         c1.markdown(kpi_card("Archivo", wb.get("filename", "—"), small_value=True), unsafe_allow_html=True)
         c2.markdown(kpi_card("Hojas con datos", f"{len(sheets):,}"), unsafe_allow_html=True)
-        c3.markdown(kpi_card("Registros totales", f"{total_records:,}"), unsafe_allow_html=True)
+        if filtrado:
+            c3.markdown(kpi_card("Registros en la vista", f"{seleccion['visibles']:,}",
+                                 delta=f"de {seleccion['total']:,} · {seleccion['porcentaje']:.0f}% de la hoja"),
+                        unsafe_allow_html=True)
+        else:
+            c3.markdown(kpi_card("Registros totales", f"{total_records:,}"), unsafe_allow_html=True)
         c4.markdown(kpi_card("Hoja activa", sheet, small_value=True), unsafe_allow_html=True)
+
+    # ── La selección actual: qué filtros hay y cómo va lo que queda ────────
+    if filtrado:
+        st.markdown(section_header("Tu selección", eyebrow="VISTA FILTRADA", compact=True), unsafe_allow_html=True)
+        frases = [html.escape(str(f)) for f in seleccion.get("frases", [])]
+        texto = (f"<b>Filtros activos:</b> {' · '.join(frases)}" if frases
+                 else "<b>Vista acotada</b> por el periodo o la búsqueda.")
+        st.markdown(decision_strip(texto, dot=True), unsafe_allow_html=True)
+        if isinstance(dashboard, dict) and dashboard.get("executive"):
+            executive_headline(dashboard)
 
     if classification:
         cap_labels = {"evolucion": "evolución", "comparacion_periodos": "comparación de periodos", "ranking": "rankings", "distribucion": "distribuciones", "relaciones": "relaciones entre métricas", "estadisticas": "estadísticas", "grafico_distribucion": "gráficos de distribución", "geografia": "geografía", "catalogo": "consulta de catálogo", "estados": "seguimiento de estados"}

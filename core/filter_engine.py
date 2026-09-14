@@ -147,6 +147,38 @@ def describir_regla(columna, regla: dict) -> str | None:
     return None
 
 
+def resumen_seleccion(filters, visibles, total, rango_fechas=None, busqueda=None) -> dict:
+    """Qué parte del archivo se está viendo, en palabras y contra el total.
+
+    Filtrar sin que la pantalla lo dijera parecía no hacer nada: la pestaña
+    con la que abre el panel mostraba el archivo completo, y la franja de
+    arriba solo decía "N registros visibles", sin nada con qué compararlo.
+
+    ``rango_fechas`` es el (mínimo, máximo) de la columna del periodo: el
+    periodo siempre tiene regla, pero solo cuenta como filtro si recorta.
+    """
+    filters = filters or {}
+    frases = [f for f in (describir_regla(c, r) for c, r in filters.items()
+                          if not str(c).startswith("__")) if f]
+    fecha = filters.get("__date__")
+    if isinstance(fecha, dict) and rango_fechas and None not in rango_fechas:
+        minimo, maximo = (pd.Timestamp(x).normalize() for x in rango_fechas)
+        inicio, fin = pd.Timestamp(fecha.get("start")), pd.Timestamp(fecha.get("end"))
+        if inicio.normalize() > minimo or fin.normalize() < maximo:
+            frases.insert(0, describir_regla("Periodo", {"op": "date_between", "value": [inicio, fin]}))
+    if busqueda and str(busqueda).strip():
+        frases.append(f"Búsqueda «{str(busqueda).strip()}»")
+    total = int(total or 0)
+    visibles = int(visibles or 0)
+    return {
+        "filtrado": bool(frases) or visibles < total,
+        "frases": frases,
+        "visibles": visibles,
+        "total": total,
+        "porcentaje": (visibles / total * 100) if total else 0.0,
+    }
+
+
 @st.cache_data(show_spinner=False, max_entries=16, ttl=1800)
 def columnas_filtrables(df, schema) -> list[dict]:
     """Todas las columnas reales del archivo, con el filtro que les corresponde.

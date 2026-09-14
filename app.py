@@ -20,7 +20,8 @@ def _cached_build_dashboard(df, profile):
     # llamada anterior y reutiliza el resultado en vez de recalcular.
     return build_dashboard(df, profile)
 from core.dataset_mode import detect_dataset_mode
-from core.filter_engine import apply_filters, natural_filter, describir_regla
+import html as _html
+from core.filter_engine import apply_filters, natural_filter, describir_regla, resumen_seleccion
 from ui.filtros import render_filtros_por_columna
 from ui.dashboard import render_dashboard
 from ui.explorer import render_explorer
@@ -465,12 +466,6 @@ reglas_por_columna={c:r for c,r in valid_filters.items() if not str(c).startswit
 if reglas_por_columna:
     df=apply_filters(df,reglas_por_columna)
 
-st.markdown(
-    f'<p class="hero-band-meta"><b>{len(df):,} registros visibles</b> · '
-    'Todos los indicadores y gráficos se recalculan sobre la selección actual.</p>',
-    unsafe_allow_html=True,
-)
-
 query=st.text_input(
     "🔎 Pregúntale al Excel",
     placeholder="Ej.: mayores a 100000, Bogotá, producto X...",
@@ -485,11 +480,27 @@ query=st.text_input(
 )
 if query:
     df,_=natural_filter(df,query,schema)
-    st.markdown(
-        f'<p class="hero-band-meta" style="font-size:12px;opacity:.85">'
-        f'Resultado de la consulta: {len(df):,} registros</p>',
-        unsafe_allow_html=True,
-    )
+
+# Qué se está viendo, en palabras y contra el total. Antes esta franja solo
+# decía "N registros visibles": al filtrar no quedaba claro qué había cambiado
+# ni contra qué, y parecía que el filtro no hacía nada.
+_fechas_hoja=None
+if "__date__" in valid_filters:
+    _serie_fecha=pd.to_datetime(item["processed"][valid_filters["__date__"]["column"]],errors="coerce").dropna()
+    if len(_serie_fecha):
+        _fechas_hoja=(_serie_fecha.min(),_serie_fecha.max())
+seleccion=resumen_seleccion(valid_filters,len(df),len(item["processed"]),_fechas_hoja,query)
+if seleccion["filtrado"]:
+    _frases=" · ".join(_html.escape(str(f)) for f in seleccion["frases"][:4])
+    if len(seleccion["frases"])>4:
+        _frases+=f' · y {len(seleccion["frases"])-4} más'
+    _banda=(f'<b>🎯 Vista filtrada · {seleccion["visibles"]:,} de {seleccion["total"]:,} registros '
+            f'({seleccion["porcentaje"]:.0f}%)</b>' + (f' · {_frases}' if _frases else '')
+            + ' · Todas las pestañas se recalculan sobre esta selección.')
+else:
+    _banda=(f'<b>{seleccion["total"]:,} registros · archivo completo</b> · Sin filtros activos: '
+            'usa la barra lateral para acotar por región, canal, periodo o cualquier columna.')
+st.markdown(f'<p class="hero-band-meta">{_banda}</p>', unsafe_allow_html=True)
 
 mode_info=detect_dataset_mode(df, schema)
 dashboard=_cached_build_dashboard(df,item["profile"])
@@ -523,7 +534,7 @@ multi_sheet_enabled = usable_sheet_count >= 2
 # dentro del dashboard y quedaba enterrado a media página, cuando es una de las
 # preguntas que más se repiten ("¿cómo va este punto?").
 general_views = [
-    ("🏠 Inicio", lambda: render_home(wb, sheet, mode_info, dashboard)),
+    ("🏠 Inicio", lambda: render_home(wb, sheet, mode_info, dashboard, seleccion=seleccion)),
     ("Asistente IA", lambda: render_assistant(df, schema, item["profile"], mode_info, dashboard)),
     ("Datos", lambda: render_data_table(df)),
     ("Calidad", lambda: render_quality(item["profile"])),
