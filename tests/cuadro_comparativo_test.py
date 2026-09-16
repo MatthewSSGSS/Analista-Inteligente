@@ -16,7 +16,7 @@ import warnings
 
 import pandas as pd
 
-from core.cuadro_comparativo import cuadro_comparativo, opciones_de_comparacion
+from core.cuadro_comparativo import base_de_comparacion, cuadro_comparativo, opciones_de_comparacion
 from core.diagnostics import METRICA_CONTEO
 from core.profile import profile_sheet
 
@@ -127,6 +127,37 @@ def test_sin_columnas_numericas_cuenta_registros():
     check("con la cantidad correcta", [f["valor"] for f in cuadro["filas"]] == [8, 5, 3])
 
 
+def test_la_base_dice_en_que_se_basa():
+    """Cada frase de la base tiene que coincidir con lo que el cuadro calculó."""
+    df, schema = _seis_vendedores()
+    base = {b["titulo"]: b["texto"] for b in base_de_comparacion(cuadro_comparativo(df, schema, "Vendedor", "Ventas"))}
+    check("responde las seis preguntas", set(base) == {"A quiénes se compara", "Qué se mide", "Contra qué",
+                                                       "Periodo", "Cómo se lee el color", "Datos usados"})
+    check("nombra la columna comparada", "«Vendedor»" in base["A quiénes se compara"])
+    check("dice que la métrica se suma", "«Ventas» sumada" in base["Qué se mide"])
+    check("dice contra qué meta y cómo se calcula", "«Meta»" in base["Contra qué"] and "resultado ÷ meta" in base["Contra qué"])
+    check("sin fechas lo dice en vez de inventar un periodo", "no tiene fechas" in base["Periodo"])
+    check("explica los umbrales del color", "90%" in base["Cómo se lee el color"])
+    check("cuenta los registros usados", "6 registros" in base["Datos usados"])
+    check("y los filtros activos cuando hay",
+          "Región: Norte" in base_de_comparacion(cuadro_comparativo(df, schema, "Vendedor", "Ventas"),
+                                                 ["Región: Norte"])[5]["texto"])
+
+    manual = cuadro_comparativo(df, schema, "Vendedor", "Ventas", seleccion=["Ana", "Luis"])
+    check("una selección propia se reconoce como tal",
+          "elegidos por ti" in base_de_comparacion(manual)[0]["texto"])
+
+    df2, schema2 = _detalle_con_fechas()
+    cuadro2 = cuadro_comparativo(df2, schema2, "Asesor", "Ventas")
+    base2 = {b["titulo"]: b["texto"] for b in base_de_comparacion(cuadro2)}
+    check("sin meta, se compara contra el promedio de los elegidos, con su cifra",
+          "promedio de los 6" in base2["Contra qué"] and "no trae una columna de meta" in base2["Contra qué"])
+    check("el periodo trae fechas reales y la columna",
+          "1 de enero de 2026" in base2["Periodo"] and "«Fecha»" in base2["Periodo"])
+    check("y qué meses compara la variación", "abril de 2026 contra marzo de 2026" in base2["Periodo"])
+    check("los registros usados son los de los elegidos", cuadro2["registros_usados"] == len(df2))
+
+
 def test_la_pestana_se_dibuja():
     """La vista completa corre sin una app Streamlit viva, igual que en smoke_test."""
     from ui.cuadro_comparativo import figura_evolucion, figura_meta, figura_ranking, render_cuadro_comparativo, tabla_cuadro
@@ -154,5 +185,6 @@ if __name__ == "__main__":
     test_detalle_con_fechas_trae_movimiento()
     test_menos_es_mejor()
     test_sin_columnas_numericas_cuenta_registros()
+    test_la_base_dice_en_que_se_basa()
     test_la_pestana_se_dibuja()
     print("\nCuadro comparativo test completado sin errores.")

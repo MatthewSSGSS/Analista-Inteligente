@@ -199,6 +199,14 @@ def cuadro_comparativo(df: pd.DataFrame, schema: dict, dimension: str, metrica=N
     # Movimiento del último mes frente al anterior, por elemento.
     periodos, tabla, parcial = [], None, False
     fechas = [d for d in schema.get("dates", []) if d in df.columns]
+    # Qué rango de fechas cubren los registros de los elegidos: sin esto el
+    # cuadro no dice si compara un mes o un año entero.
+    filas_elegidas = grupo.isin(elegidos) & valor.notna()
+    desde = hasta = None
+    if fechas:
+        rango = pd.to_datetime(df.loc[filas_elegidas, fechas[0]], errors="coerce").dropna()
+        if not rango.empty:
+            desde, hasta = rango.min(), rango.max()
     if fechas:
         tabla = _serie_por_periodo(grupo, valor, df[fechas[0]], aditiva)
         if tabla is not None:
@@ -261,6 +269,13 @@ def cuadro_comparativo(df: pd.DataFrame, schema: dict, dimension: str, metrica=N
         "periodo_anterior_label": _mes(anterior) if anterior is not None else None,
         "parcial": bool(parcial),
         "aviso": None,
+        # Contexto para decir en qué se basa la comparación.
+        "seleccion_manual": bool(seleccion),
+        "registros_usados": int(filas_elegidas.sum()),
+        "registros_visibles": int(len(df)),
+        "fecha_col": fechas[0] if fechas else None,
+        "desde": desde,
+        "hasta": hasta,
     }
 
     # Sin meta y con carteras de tamaño muy distinto, el total premia al que
@@ -273,6 +288,90 @@ def cuadro_comparativo(df: pd.DataFrame, schema: dict, dimension: str, metrica=N
             "antes de concluir quién lo hace mejor. Con una columna de meta la comparación sería directa.")
     resultado["lectura"] = lectura(resultado)
     return resultado
+
+
+def _fecha(t) -> str:
+    """"3 de marzo de 2026"."""
+    return f"{pd.Timestamp(t).day} de {_mes(t)}"
+
+
+def base_de_comparacion(cuadro: dict, filtros: Optional[list] = None) -> list[dict]:
+    """En qué se basa el cuadro, dicho en palabras: una tarjeta por pregunta.
+
+    Existe porque un ranking sin su base no se puede defender en una reunión:
+    "Team va primero" lleva enseguida a "¿primero en qué, contra qué, en qué
+    periodo, contando qué?". Cada respuesta sale del mismo cálculo del cuadro,
+    nunca de un texto fijo, para que no diga una cosa y calcule otra.
+    """
+    n = len(cuadro["filas"])
+    dim = cuadro["dimension"]
+    metrica = "registros" if cuadro["conteo"] else f"«{cuadro['metrica']}»"
+    orden = "de menor a mayor" if cuadro["menos_es_mejor"] else "de mayor a menor"
+
+    if cuadro["seleccion_manual"]:
+        quienes = f"{n} valores de «{dim}» elegidos por ti, de {cuadro['total_opciones']} que hay en los datos."
+    elif n == cuadro["total_opciones"]:
+        quienes = f"Los {n} valores de «{dim}» que hay en los datos."
+    else:
+        mejor = "cumplimiento de meta" if cuadro["base"] == "meta" else metrica
+        quienes = (f"Los {n} con mejor {mejor} de los {cuadro['total_opciones']} valores de «{dim}». "
+                   "Cambia la lista de arriba para comparar a otros.")
+
+    if cuadro["conteo"]:
+        mide = ("Cuántos registros (filas) tiene cada uno. El archivo no tiene una columna numérica "
+                "que sumar, así que se compara la cantidad.")
+    elif cuadro["aditiva"]:
+        mide = f"{metrica} sumada: el total de todos los registros de cada uno."
+    else:
+        mide = (f"{metrica} promediada: el valor medio de los registros de cada uno. Se promedia y no "
+                "se suma porque sumar un porcentaje, un precio o una calificación no da una cifra real.")
+
+    if cuadro["base"] == "meta":
+        contra = (f"Contra la meta de cada uno (columna «{cuadro['meta_col']}»). Cumplimiento = resultado ÷ meta. "
+                  f"El orden va por cumplimiento {orden}, y la línea punteada del gráfico marca el 100%.")
+    else:
+        contra = (f"Contra el promedio de los {n} elegidos: {_fmt(cuadro['promedio'])}. El orden va por "
+                  f"resultado {orden}, y la línea punteada del gráfico es ese promedio. "
+                  "El archivo no trae una columna de meta.")
+        if cuadro["menos_es_mejor"]:
+            contra += f" En {metrica} menos es mejor, por eso el orden va al revés."
+
+    if cuadro["desde"] is not None:
+        periodo = (f"Del {_fecha(cuadro['desde'])} al {_fecha(cuadro['hasta'])} "
+                   f"(columna «{cuadro['fecha_col']}»), todo junto.")
+        if cuadro["periodo_label"]:
+            periodo += (f" La variación compara {cuadro['periodo_label']} contra "
+                        f"{cuadro['periodo_anterior_label']}.")
+    else:
+        periodo = "El archivo no tiene fechas: se compara todo lo que hay en la hoja, sin separar por periodo."
+
+    if cuadro["base"] == "meta":
+        if cuadro["menos_es_mejor"]:
+            semaforo = "🟢 hasta el 100% de la meta · 🟡 entre 100% y 110% · 🔴 más de 110%."
+        else:
+            semaforo = (f"🟢 cumple (100% o más) · 🟡 cerca ({CERCA_DE_META:.0f}% a 99%) · "
+                        f"🔴 por debajo (menos de {CERCA_DE_META:.0f}%).")
+    else:
+        u = f"{UMBRAL_PROMEDIO:.0f}%"
+        bueno, malo = ("debajo", "encima") if cuadro["menos_es_mejor"] else ("encima", "debajo")
+        semaforo = (f"🟢 más de {u} por {bueno} del promedio · 🟡 a menos de {u} del promedio · "
+                    f"🔴 más de {u} por {malo} del promedio.")
+
+    datos = (f"{cuadro['registros_usados']:,} registros de los elegidos, de {cuadro['registros_visibles']:,} "
+             "visibles en la hoja.")
+    if filtros:
+        datos += " Filtros activos: " + "; ".join(filtros[:4]) + ("…" if len(filtros) > 4 else "") + "."
+    else:
+        datos += " Sin filtros activos en el menú lateral."
+
+    return [
+        {"icono": "👥", "titulo": "A quiénes se compara", "texto": quienes},
+        {"icono": "📏", "titulo": "Qué se mide", "texto": mide},
+        {"icono": "⚖️", "titulo": "Contra qué", "texto": contra},
+        {"icono": "📅", "titulo": "Periodo", "texto": periodo},
+        {"icono": "🚦", "titulo": "Cómo se lee el color", "texto": semaforo},
+        {"icono": "🗂️", "titulo": "Datos usados", "texto": datos},
+    ]
 
 
 def _cifra(fila: dict, cuadro: dict) -> str:
