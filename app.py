@@ -40,6 +40,7 @@ from ui.person_profile import render_person_profile, has_entity
 from ui.planes import render_planes
 from ui.comercial import render_comercial
 from ui.person_compare import render_person_compare
+from ui.cuadro_comparativo import render_cuadro_comparativo
 from ui.executive import render_executive
 from ui.forecast import render_forecast
 from ui.home import render_home
@@ -595,6 +596,7 @@ else:
     # Executive mode is deliberately compact; Analyst mode exposes every tool.
     if st.session_state.get("view_mode", "Ejecutivo") == "Ejecutivo":
         analysis_views = [("Resumen ejecutivo", lambda: render_executive(df, schema, dashboard))]
+        analysis_views.append(("📊 Cuadro comparativo", lambda: render_cuadro_comparativo(df, schema)))
         analysis_views.append(("📈 Estrategia por canal", lambda: render_comercial(df, schema, dashboard)))
         analysis_views.append(("🎯 Planes de mejora", lambda: render_planes(df, schema, dashboard)))
         if has_entity(df, schema):
@@ -616,6 +618,7 @@ else:
             st.caption("Esta vista utiliza las métricas detectadas automáticamente; no presupone que el archivo sea de ventas.")
 
         analysis_views = [("Descripción", lambda: render_dashboard(df,dashboard))]
+        analysis_views.append(("📊 Cuadro comparativo", lambda: render_cuadro_comparativo(df, schema)))
         if has_entity(df, schema):
             analysis_views.append(("🔎 Análisis de seguimiento", lambda: render_person_profile(df, schema, dashboard)))
         if geo_enabled:
