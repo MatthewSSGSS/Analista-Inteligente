@@ -102,10 +102,13 @@ def render_imagenes(wb: dict) -> None:
 
             que = "una tabla" if resultado["tipo"] == "tabla" else "un gráfico de líneas"
             st.markdown(f"Se reconoció **{que}**. " + " ".join(html.escape(a) for a in resultado.get("avisos", [])))
-            if resultado.get("dudas"):
-                with st.expander(f"⚠️ {len(resultado['dudas'])} valor(es) para revisar"):
-                    for d in resultado["dudas"]:
-                        st.caption("· " + d)
+            dudas = resultado.get("dudas") or []
+            if dudas:
+                # A la vista, no plegadas: un valor mal leído que llega a un
+                # informe es peor que no tenerlo (un "90 %" leído como 6).
+                st.warning(f"**{len(dudas)} valor(es) para revisar contra la imagen antes de usar la tabla:**\n\n"
+                           + "\n".join(f"- {d}" for d in dudas[:15])
+                           + (f"\n- … y {len(dudas) - 15} más" if len(dudas) > 15 else ""))
             st.caption("Revisa la tabla contra la imagen de arriba. Puedes corregir cualquier celda antes de usarla.")
             editada = st.data_editor(resultado["ancha"], key=f"ocr_editor_{clave}", use_container_width=True,
                                      hide_index=True, num_rows="fixed")
@@ -121,9 +124,15 @@ def render_imagenes(wb: dict) -> None:
                 with b:
                     medida = st.text_input("¿Qué miden las cifras?", value=sugerida, key=f"ocr_medida_{clave}",
                                            help="Por ejemplo «Cumplimiento %». Es el nombre de la columna de valores.")
+            revisado = True
+            if dudas:
+                revisado = st.checkbox("Revisé los valores marcados y corregí lo que hacía falta",
+                                       key=f"ocr_revisado_{clave}")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("✅ Usar esta tabla en el panel", key=f"ocr_usar_{clave}", type="primary"):
+                if st.button("✅ Usar esta tabla en el panel", key=f"ocr_usar_{clave}", type="primary",
+                             disabled=not revisado,
+                             help=None if revisado else "Primero revisa los valores marcados arriba."):
                     usadas[clave] = _usar(wb, img, resultado, editada, nombre, medida)
                     st.rerun()
             with c2:

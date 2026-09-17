@@ -25,7 +25,15 @@ tabla junto a la imagen para revisarla y corregirla antes de usarla
 Dos hallazgos de probar con imágenes reales, que explican dos decisiones:
 
 - El clasificador de orientación del OCR voltea textos cortos: "90 %" salía
-  como "% 06". Se apaga; en una captura de pantalla nada viene girado.
+  como "% 06", y "% 06" se leía como 6. Se apaga; en una captura de pantalla
+  nada viene girado. OJO: la opción se llama distinto según la versión de
+  RapidOCR (`use_angle_cls` en 1.2, `use_cls` en 1.3+), y apagar solo una
+  dejó el giro activo en 1.4.4 sin ningún error: un informe real salió con
+  "6" donde la imagen decía "90 %". Por eso hay tres defensas, no una:
+  apagarlo en todas las formas (`_motor`, `_pasada`), releer cualquier cifra
+  con el "%" delante (`_corregir_giradas`) y revisar la coherencia de la
+  tabla contra su columna Total y contra los demás meses de cada fila
+  (`_revisar_coherencia`), marcando para revisión lo que no cuadra.
 - El modelo de reconocimiento pierde los espacios en mayúsculas
   ("CASTILLONAARJACKALVARO") y la Ñ. Los nombres se restauran contra los
   textos que ya existen en el libro (`vocabulario`), si coinciden.
@@ -74,9 +82,27 @@ def _motor():
     from rapidocr_onnxruntime import RapidOCR
     motor = RapidOCR()
     # Ver el docstring del módulo: el clasificador voltea "90 %" a "% 06".
-    if hasattr(motor, "use_angle_cls"):
-        motor.use_angle_cls = False
+    # El nombre de la opción cambia entre versiones: se apagan todos.
+    for atributo in ("use_angle_cls", "use_cls"):
+        if hasattr(motor, atributo):
+            setattr(motor, atributo, False)
     return motor
+
+
+@lru_cache(maxsize=1)
+def _acepta_use_cls() -> bool:
+    import inspect
+    try:
+        return "use_cls" in inspect.signature(_motor().__call__).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def _ejecutar(arr):
+    """Llama al OCR con el giro apagado también en la llamada, si la versión lo permite."""
+    if _acepta_use_cls():
+        return _motor()(arr, use_cls=False)
+    return _motor()(arr)
 
 
 # ── Imágenes del libro ──────────────────────────────────────────────────────
@@ -129,7 +155,7 @@ def _imagen_rgb(contenido: bytes):
 def _pasada(img, escala: float) -> list[dict]:
     from PIL import Image
     arr = np.array(img.resize((int(img.width * escala), int(img.height * escala)), Image.LANCZOS)) if escala != 1 else np.array(img)
-    resultado, _ = _motor()(arr)
+    resultado, _ = _ejecutar(arr)
     textos = []
     for caja, texto, score in resultado or []:
         xs = [p[0] / escala for p in caja]
@@ -158,6 +184,42 @@ def leer_textos(contenido: bytes) -> list[dict]:
                        for o in textos)
         if not repetido:
             textos.append(t)
+    return _corregir_giradas(img, textos)
+
+
+_GIRADA_RE = re.compile(r"^\s*%\s*[\d.,]+\s*$")
+_NORMAL_RE = re.compile(r"^\s*[-+]?[\d.,]+\s*%?\s*$")
+
+
+def _corregir_giradas(img, textos: list[dict]) -> list[dict]:
+    """Relee las cifras que salieron con el "%" delante ("% 06"): son lecturas giradas.
+
+    Nadie escribe "% 90" en un informe; si aparece, el OCR leyó "90 %" al
+    revés y la cifra (06) es falsa. Se recorta esa celda, se amplía y se lee
+    sola. Si aun así no queda en su forma normal, la celda NO se adivina: se
+    marca como ilegible para que quede vacía y se revise contra la imagen.
+    """
+    from PIL import Image
+    for t in textos:
+        if not _GIRADA_RE.match(t["texto"]):
+            continue
+        margen = 6
+        caja = (int(max(0, t["x0"] - margen)), int(max(0, t["y0"] - margen)),
+                int(min(img.width, t["x1"] + margen)), int(min(img.height, t["y1"] + margen)))
+        recorte = img.crop(caja)
+        recorte = recorte.resize((recorte.width * 4, recorte.height * 4), Image.LANCZOS)
+        fondo = Image.new("RGB", (recorte.width + 80, recorte.height + 80), recorte.getpixel((0, 0)))
+        fondo.paste(recorte, (40, 40))
+        try:
+            resultado, _ = _ejecutar(np.array(fondo))
+        except Exception:
+            resultado = None
+        leido = " ".join(str(r[1]).strip() for r in (resultado or []))
+        if leido and _NORMAL_RE.match(leido) and _numero(leido) is not None:
+            t["texto"], t["releida"] = leido, True
+        else:
+            t["ilegible"] = t["texto"]
+            t["texto"] = ""
     return textos
 
 
@@ -307,7 +369,12 @@ def interpretar_tabla(textos: list[dict], vocabulario=None, anio_por_defecto=Non
     limite_rotulo = min(a for a, _ in anclas) - paso * 0.55
 
     registros, dudas, total = [], [], None
+    ilegibles = []
     for fila in filas[encabezado + 1:]:
+        for t in fila:
+            if t.get("ilegible") and t["cx"] >= limite_rotulo:
+                cx, col = min(anclas, key=lambda a: abs(a[0] - t["cx"]))
+                ilegibles.append((t["cy"], col, t["ilegible"]))
         nombre = " ".join(t["texto"] for t in fila if t["cx"] < limite_rotulo and re.search("[A-Za-zÁÉÍÓÚÑ]", t["texto"]))
         valores = {}
         for t in fila:
@@ -331,7 +398,7 @@ def interpretar_tabla(textos: list[dict], vocabulario=None, anio_por_defecto=Non
             for col, dato in valores.items():  # "101" en un renglón y "%" en el siguiente
                 registros[-1]["valores"].setdefault(col, dato)
             continue
-        registro = {"nombre": nombre, "valores": valores}
+        registro = {"nombre": nombre, "valores": valores, "cy": float(np.mean([t["cy"] for t in fila]))}
         if _es_total(nombre):
             total = registro
         else:
@@ -353,6 +420,11 @@ def interpretar_tabla(textos: list[dict], vocabulario=None, anio_por_defecto=Non
                 dudas.append(f"{nombre} · {col}: se leyó {dato[0]:g} con poca seguridad")
         filas_tabla.append(fila)
     ancha = pd.DataFrame(filas_tabla)
+    # Celdas que el OCR leyó giradas y no se pudieron releer: vacías y marcadas.
+    for cy, col, texto in ilegibles:
+        fila_cercana = min(range(len(registros)), key=lambda i: abs(registros[i]["cy"] - cy))
+        dudas.append(f"{ancha.loc[fila_cercana, '_nombre']} · {col}: no se pudo leer con seguridad "
+                     f"(el lector vio «{texto}»); la celda quedó vacía, escríbela mirando la imagen")
     dimension = rotulo.strip().title() if rotulo else "Nombre"
     ancha = ancha.rename(columns={"_nombre": dimension})
     columnas_mes_tabla = [e for e in etiquetas if e in ancha.columns]
@@ -367,34 +439,97 @@ def interpretar_tabla(textos: list[dict], vocabulario=None, anio_por_defecto=Non
              if pd.notna(r[c]) and porcentaje and not 0 <= r[c] <= 1000]
     if fuera:
         avisos.append(f"{len(fuera)} valor(es) fuera de rango para un porcentaje: revisa {fuera[0][0]} · {fuera[0][1]}.")
+    dudas += _revisar_coherencia(ancha, dimension, columnas_mes_tabla, total, porcentaje)
     periodos = {e: (a, m) for e, a, m in zip(etiquetas, anios_col, meses)}
     return {"tipo": "tabla", "ancha": ancha, "dimension": dimension, "periodos": periodos,
             "porcentaje": bool(porcentaje), "dudas": dudas, "avisos": avisos,
             "total": total["valores"] if total else None}
 
 
+def _revisar_coherencia(ancha: pd.DataFrame, dimension: str, meses: list, total, porcentaje: bool) -> list[str]:
+    """Lo que no cuadra dentro de la propia tabla, dicho con nombre y mes.
+
+    No corrige nada —una cifra rara puede ser real—, pero la señala para que
+    se mire contra la imagen antes de usarla. Dos comprobaciones:
+
+    - **Cada celda contra los demás meses de su fila.** Un 6 entre valores de
+      80 a 100 es casi siempre una mala lectura (el "90 %" girado del informe
+      real). Se exige una diferencia grande para no marcar meses malos de verdad.
+    - **Cada fila contra su columna Total**, si la imagen la trae: si el
+      promedio de los meses se aleja mucho del Total escrito, algún mes está mal.
+    """
+    dudas = []
+    if not meses:
+        return dudas
+    for _, fila in ancha.iterrows():
+        valores = pd.to_numeric(fila[meses], errors="coerce")
+        validos = valores.dropna()
+        if len(validos) < 4:
+            continue
+        mediana = float(validos.median())
+        if mediana <= 0:
+            continue
+        for mes, v in validos.items():
+            resto = validos.drop(mes)
+            if v < mediana * 0.35 and v < float(resto.min()) * 0.5:
+                dudas.append(f"{fila[dimension]} · {mes}: {v:g} es muy distinto a sus otros meses "
+                             f"(mediana {mediana:g}); compáralo con la imagen")
+        if "Total" in ancha.columns and pd.notna(fila.get("Total")):
+            promedio = float(validos.mean())
+            escrito = float(fila["Total"])
+            tolerancia = max(5.0, abs(escrito) * 0.08) if porcentaje else max(abs(escrito) * 0.08, 1.0)
+            if porcentaje and abs(promedio - escrito) > tolerancia:
+                dudas.append(f"{fila[dimension]}: el promedio de sus meses ({promedio:.0f}) no cuadra con su Total "
+                             f"escrito ({escrito:g}); revisa sus celdas")
+    return dudas
+
+
 # ── Gráficos de líneas ──────────────────────────────────────────────────────
 
-def _color_leyenda(img: np.ndarray, t: dict) -> Optional[tuple]:
-    """Color del marcador que va a la izquierda del nombre de la serie en la leyenda."""
-    # Zona corta: con 30 px se alcanzaba el final del nombre de la serie
-    # anterior ("…dad" de Productividad) y se tomaba el negro del texto como
-    # color de "Asesores", que es rojo.
-    x0 = int(max(0, t["x0"] - 20)); x1 = int(max(0, t["x0"] - 2))
-    y0 = int(max(0, t["cy"] - 6)); y1 = int(min(img.shape[0], t["cy"] + 6))
-    zona = img[y0:y1, x0:x1].reshape(-1, 3).astype(int)
-    if not len(zona):
+def _marcador_leyenda(img: np.ndarray, t: dict) -> Optional[dict]:
+    """El marcador de color de una serie en la leyenda: su color y dónde está.
+
+    Se busca a la izquierda del nombre Y en su primer carácter, porque según
+    la versión de RapidOCR el círculo queda fuera de la caja del texto (1.2)
+    o dentro, leído como una letra ("OAsesores" en 1.4). El marcador es la
+    mancha más grande de UN solo color: las letras, aunque sean negras, son
+    trazos finos con bordes suavizados y no forman una mancha tan grande.
+    Antes se tomaba "el píxel más oscuro", que con el marcador dentro de la
+    caja era el negro del texto: Asesores (rojo) salía negro y perdía sus valores.
+    """
+    alto = max(8.0, t["h"])
+    x0 = int(max(0, t["x0"] - 22)); x1 = int(min(img.shape[1], t["x0"] + alto * 1.4))
+    y0 = int(max(0, t["cy"] - alto * 0.6)); y1 = int(min(img.shape[0], t["cy"] + alto * 0.6))
+    zona = img[y0:y1, x0:x1].astype(int)
+    if zona.size == 0:
         return None
-    lejania = 765 - zona.sum(axis=1)
-    tinta = zona[lejania >= 120]
-    if not len(tinta):
+    pix = zona.reshape(-1, 3)
+    xs = np.tile(np.arange(x0, x1), y1 - y0)
+    tinta = pix.sum(axis=1) < 700
+    if tinta.sum() < 10:
         return None
-    # Si hay color, es el marcador; el texto es negro o gris. Si no hay color,
-    # la serie es gris oscuro y vale el píxel más oscuro.
-    saturacion = tinta.max(axis=1) - tinta.min(axis=1)
-    if saturacion.max() >= 60:
-        return tuple(tinta[int(saturacion.argmax())])
-    return tuple(tinta[int((765 - tinta.sum(axis=1)).argmax())])
+    grupos = {}
+    for (r, g, b), x in zip(pix[tinta] // 16, xs[tinta]):
+        grupos.setdefault((r, g, b), []).append(x)
+    candidatos = sorted(((len(v), k, v) for k, v in grupos.items()), reverse=True)
+    elegido = None
+    for n, clave, pos in candidatos:
+        if n < 18:
+            break
+        casi_negro = sum(clave) * 16 < 110
+        if casi_negro and any(m >= 18 and sum(k) * 16 >= 110 for m, k, _ in candidatos):
+            continue  # es el texto; hay otra mancha con color
+        elegido = (clave, pos)
+        break
+    if elegido is None:
+        return None
+    clave, pos = elegido
+    mascara = tinta & np.all(pix // 16 == np.array(clave), axis=1)
+    return {"color": tuple(pix[mascara].mean(axis=0).round().astype(int)),
+            "cx": float(np.mean(pos))}
+
+
+_MARCADOR_COMO_LETRA = re.compile(r"^[Oo0●•○◦·]\s*(?=[A-ZÁÉÍÓÚÑ])")
 
 
 def interpretar_grafico(textos: list[dict], contenido: bytes, anio_por_defecto=None) -> Optional[dict]:
@@ -451,9 +586,14 @@ def interpretar_grafico(textos: list[dict], contenido: bytes, anio_por_defecto=N
     for t in arriba:
         if t["texto"] == titulo:
             continue
-        color = _color_leyenda(img, t)
-        if color is not None:
-            series.append({"nombre": t["texto"].strip(), "color": np.array(color), "y_leyenda": t["y1"]})
+        marcador = _marcador_leyenda(img, t)
+        if marcador is None:
+            continue
+        nombre = t["texto"].strip()
+        if marcador["cx"] > t["x0"]:
+            # El círculo quedó dentro de la caja y se leyó como una letra.
+            nombre = _MARCADOR_COMO_LETRA.sub("", nombre)
+        series.append({"nombre": nombre, "color": np.array(marcador["color"]), "y_leyenda": t["y1"]})
     if not series:
         return None
     y_arriba = max(s["y_leyenda"] for s in series) + 2
@@ -503,6 +643,11 @@ def interpretar_grafico(textos: list[dict], contenido: bytes, anio_por_defecto=N
     if llenas < 3:
         return None
     avisos = [f"Se leyeron {len(series)} serie(s) × {len(etiquetas)} meses."]
+    for sname in [s["nombre"] for s in series]:
+        faltan = int(ancha[sname].isna().sum())
+        if faltan > max(2, len(etiquetas) * 0.2):
+            dudas.append(f"{sname}: faltan {faltan} de {len(etiquetas)} valores; puede que no se haya reconocido bien "
+                         "el color de su línea. Complétalos mirando la imagen o vuelve a leerla.")
     vacias = int(ancha[[s["nombre"] for s in series]].isna().sum().sum())
     if vacias:
         avisos.append(f"{vacias} punto(s) sin valor: suelen ser etiquetas encimadas donde las líneas se cruzan; "

@@ -16,4 +16,6 @@ psycopg2-binary>=2.9
 
 # Lector de imágenes pegadas en el Excel. Corre en el mismo equipo/servidor,
 # con los modelos incluidos en el paquete: no envía ni descarga nada al usarse.
-rapidocr_onnxruntime>=1.2.3,<2
+# Verificado con 1.2.3 y 1.4.4 (la opción que apaga el giro cambió de nombre entre
+# ellas y leía "90 %" como 6). Antes de subir el tope, repetir la verificación.
+rapidocr_onnxruntime>=1.2.3,<1.5

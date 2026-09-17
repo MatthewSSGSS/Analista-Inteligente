@@ -193,8 +193,72 @@ def test_grafico_en_imagen():
     check("el mes queda como fecha", isinstance(largo["Mes"].iloc[0], pd.Timestamp))
 
 
+def test_lecturas_giradas_no_llegan_al_informe():
+    """El error real: con RapidOCR 1.4.4, "90 %" se leyó "% 06" y el panel mostró 6.
+
+    Tres defensas, probadas sin depender de la versión instalada.
+    """
+    # 1. El giro se apaga con el nombre de opción de cualquier versión, y en la llamada.
+    class MotorFalso:
+        use_cls = True
+        use_angle_cls = True
+
+        def __call__(self, img, use_det=None, use_cls=None, use_rec=None):
+            self.visto = use_cls
+            return [[[[0, 0], [10, 0], [10, 10], [0, 10]], "90 %", 0.9]], None
+
+    falso = MotorFalso()
+    original_motor = ocr._motor
+    try:
+        ocr._acepta_use_cls.cache_clear()
+        ocr._motor = lambda: falso
+        for atributo in ("use_angle_cls", "use_cls"):
+            if hasattr(falso, atributo):
+                setattr(falso, atributo, False)
+        ocr._ejecutar(np.zeros((20, 20, 3), dtype=np.uint8))
+        check("la llamada pide el giro apagado (use_cls=False)", falso.visto is False)
+    finally:
+        ocr._motor = original_motor
+        ocr._acepta_use_cls.cache_clear()
+
+    # 2. Una cifra con el "%" delante se relee; si sigue girada, queda vacía, nunca inventada.
+    img = Image.new("RGB", (200, 60), "white")
+    original_ejecutar = ocr._ejecutar
+    try:
+        ocr._ejecutar = lambda arr: ([[None, "90 %", 0.9]], None)
+        textos = ocr._corregir_giradas(img, [{"texto": "% 06", "x0": 10, "x1": 60, "y0": 10, "y1": 30,
+                                              "cx": 35, "cy": 20, "h": 20, "score": 0.8}])
+        check("una lectura girada se relee y queda bien", textos[0]["texto"] == "90 %")
+        ocr._ejecutar = lambda arr: ([[None, "% 06", 0.9]], None)
+        textos = ocr._corregir_giradas(img, [{"texto": "% 06", "x0": 10, "x1": 60, "y0": 10, "y1": 30,
+                                              "cx": 35, "cy": 20, "h": 20, "score": 0.8}])
+        check("si no se puede releer, la celda queda vacía y marcada", textos[0]["texto"] == ""
+              and textos[0]["ilegible"] == "% 06")
+    finally:
+        ocr._ejecutar = original_ejecutar
+
+    # 3. La coherencia de la tabla marca lo que no cuadra.
+    meses = ["oct 2025", "nov 2025", "dic 2025", "ene 2026", "feb 2026", "mar 2026"]
+    ancha = pd.DataFrame([
+        {"Jefe": "JIMENEZ MESTRA DABEIS", **dict(zip(meses, [83, 6, 66, 87, 96, 90])), "Total": 94},
+        {"Jefe": "LINERO DIAZ CARLOS", **dict(zip(meses, [59, 75, 63, 57, 62, 59])), "Total": 62},
+        {"Jefe": "PATERNINA BEDOYA", **dict(zip(meses, [100, 83, 121, 99, 39, 78])), "Total": 87},
+    ])
+    dudas = ocr._revisar_coherencia(ancha, "Jefe", meses, None, True)
+    check("un 6 entre valores de 80 a 96 se marca", any("JIMENEZ" in d and "nov 2025" in d for d in dudas))
+    check("y la fila no cuadra con su Total", any("JIMENEZ" in d and "Total" in d for d in dudas))
+    check("una fila coherente no se marca", not any("LINERO" in d for d in dudas))
+    check("un mes malo de verdad (39 entre 78 y 121) no se marca como error de lectura",
+          not any("PATERNINA" in d and "feb 2026" in d for d in dudas))
+
+    # La leyenda con el círculo leído como letra.
+    check("«OAsesores» pierde la O del marcador", ocr._MARCADOR_COMO_LETRA.sub("", "OAsesores") == "Asesores")
+    check("«Otros» conserva su O", ocr._MARCADOR_COMO_LETRA.sub("", "Otros") == "Otros")
+
+
 if __name__ == "__main__":
     test_numeros_y_nombres_sin_ocr()
+    test_lecturas_giradas_no_llegan_al_informe()
     test_imagenes_del_xlsx()
     test_tabla_en_imagen()
     test_grafico_en_imagen()
