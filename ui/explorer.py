@@ -150,7 +150,7 @@ def _lente_ranking(df, schema, dim, metrica, calculo, k):
     if t["Valor"].min() >= 0:
         fig.update_xaxes(range=[0, float(t["Valor"].max()) * 1.25], tickformat="~s")
     fig = realzar_barras(fig, referencia=r["promedio"])
-    _anotar_referencia(fig, r["promedio"], f"promedio {_fmt(r['promedio'])}")
+    _anotar_referencia(fig, r["promedio"], f"promedio de los {r['n']}: {_fmt(r['promedio'])}")
     extra = f" · se muestran {len(t)} de {r['n']}" if r["n"] > len(t) else ""
     chart_card(f"{metrica or 'Registros'} por {dim}",
                f"{r['calculo']} por grupo · verde: 10% o más sobre el promedio · rojo: 10% o más por debajo{extra}",
@@ -179,7 +179,7 @@ def _lente_evolucion(df, schema, dim, metrica, calculo, grano_def, k):
         previo = ex.ranking(df, schema, dim, metrica, calculo)
         opciones = previo["tabla"][dim].astype(str).tolist() if previo else []
         with c:
-            grupos = st.multiselect(f"Qué {dim} ver", opciones, default=opciones[:5], max_selections=10,
+            grupos = st.multiselect(f"Qué {dim} ver", opciones, default=opciones[:5],
                                     key=f"{k}_grupos_{dim}", placeholder="Los 5 más altos")
     r = ex.evolucion(df, schema, dim, metrica, calculo, grupos=grupos or None, grano=grano, modo=modo)
     if r is None:
@@ -192,6 +192,14 @@ def _lente_evolucion(df, schema, dim, metrica, calculo, grano_def, k):
         fig.add_trace(go.Scatter(x=[ex.etiqueta_periodo(p, grano) for p in m.index], y=m[g], mode="lines+markers",
                                  name=str(g), line=dict(color=color, width=2.6), marker=dict(size=6, color=color),
                                  hovertemplate=f"<b>{html.escape(str(g))}</b> · %{{x}}: %{{y:,.0f}}<extra></extra>"))
+    # Referencia del grupo completo, solo en «Valor»: acumulado o índice de un
+    # promedio mezclarían dos lecturas distintas en la misma línea.
+    if modo == "Valor" and r.get("promedio_grupo") is not None and r["total_grupo"] > len(m.columns):
+        prom = r["promedio_grupo"]
+        fig.add_trace(go.Scatter(x=[ex.etiqueta_periodo(p, grano) for p in prom.index], y=prom.values, mode="lines",
+                                 name=f"Promedio de los {r['total_grupo']}",
+                                 line=dict(color="#64748B", width=2.2, dash="dash"),
+                                 hovertemplate=f"<b>Promedio de los {r['total_grupo']}</b> · %{{x}}: %{{y:,.0f}}<extra></extra>"))
     if r["parcial"]:
         fig.add_vrect(x0=len(m.index) - 1.5, x1=len(m.index) - 0.5, fillcolor="#94A3B8", opacity=.12, line_width=0,
                       annotation_text="incompleto", annotation_position="top left",
@@ -202,7 +210,9 @@ def _lente_evolucion(df, schema, dim, metrica, calculo, grano_def, k):
     fig = _base(fig, 400)
     fig.update_layout(margin=dict(b=_MARGEN_EJE))
     chart_card(f"{metrica or 'Registros'} por {grano.lower()}" + (f" · {dim}" if dim else ""),
-               f"{r['calculo']} de cada {grano.lower()} · {modo}", fig, key=f"{k}_fig",
+               f"{r['calculo']} de cada {grano.lower()} · {modo}"
+               + (f" · discontinua = promedio de los {r['total_grupo']}" if modo == "Valor" and r.get("promedio_grupo") is not None
+                  and r["total_grupo"] > len(m.columns) else ""), fig, key=f"{k}_fig",
                visual_type="TENDENCIA", badge_text=f"{len(m.index)} periodos")
     _hallazgos(r["hallazgos"])
     tabla = m.copy()

@@ -317,9 +317,15 @@ def evolucion(df, schema, dim, metrica, calculo="Automático", grupos=None, gran
     if dim is None:
         datos["_grupo"] = "Total"
         elegidos = ["Total"]
+        promedio_grupo, total_grupo = None, 1
     else:
         orden = _agregar(datos.groupby("_grupo")["_valor"], calculo).sort_values(ascending=False)
         elegidos = [g for g in (grupos or []) if g in orden.index] or list(orden.index[:top])
+        # Referencia: el promedio por periodo de TODOS los grupos, antes de
+        # quedarse con los elegidos. Comparar 5 líneas solo entre ellas no dice
+        # si van bien o mal frente al resto.
+        por_grupo = _agregar(datos.groupby(["_periodo", "_grupo"])["_valor"], calculo).unstack("_grupo").sort_index()
+        promedio_grupo, total_grupo = por_grupo.mean(axis=1), len(orden)
         datos = datos[datos["_grupo"].isin(elegidos)]
     matriz = _agregar(datos.groupby(["_periodo", "_grupo"])["_valor"], calculo).unstack("_grupo").sort_index()
     matriz = matriz.reindex(columns=[g for g in elegidos if g in matriz.columns])
@@ -327,6 +333,8 @@ def evolucion(df, schema, dim, metrica, calculo="Automático", grupos=None, gran
         matriz = matriz.fillna(0)  # sin registros en un periodo = cero real
     if len(matriz) < 2:
         return None
+    if promedio_grupo is not None:
+        promedio_grupo = promedio_grupo.reindex(matriz.index)
 
     parcial = len(matriz) >= 3 and ultimo_incompleto(df, schema, metrica, calculo, grano)
     base_mat = matriz
@@ -365,11 +373,19 @@ def evolucion(df, schema, dim, metrica, calculo="Automático", grupos=None, gran
                    and ultimos[g].iloc[2] < ultimos[g].iloc[1] < ultimos[g].iloc[0]]
         if cayendo:
             hallazgos.append(f"Caen dos periodos seguidos: {_lista(cayendo[:4])}.")
+    if promedio_grupo is not None and total_grupo > len(comparable.columns):
+        ultimo = comparable.index[-1]
+        ref = promedio_grupo.get(ultimo)
+        if ref is not None and pd.notna(ref):
+            arriba = [g for g in comparable.columns if pd.notna(comparable[g].get(ultimo)) and comparable[g][ultimo] >= ref]
+            hallazgos.append(f"En {etiqueta_periodo(ultimo, grano)}, {len(arriba)} de los {len(comparable.columns)} "
+                             f"que estás viendo están en o sobre el promedio de los {total_grupo} ({_fmt(ref)}).")
     if parcial:
         hallazgos.insert(0, f"⚠️ {etiqueta_periodo(base_mat.index[-1], grano)} parece incompleto (vale mucho menos "
                             "que los anteriores o llega a menos días): se dejó fuera de estas conclusiones.")
     return {"matriz": matriz, "calculo": calculo, "grupos": list(matriz.columns), "grano": grano,
-            "modo": modo, "parcial": bool(parcial), "hallazgos": hallazgos}
+            "modo": modo, "parcial": bool(parcial), "hallazgos": hallazgos,
+            "promedio_grupo": promedio_grupo, "total_grupo": total_grupo}
 
 
 # ── 3. Periodo contra periodo ──────────────────────────────────────────────

@@ -11,11 +11,14 @@ Tres decisiones que vale la pena conservar:
 - **La vara es la meta cuando existe.** Vender 90 con meta de 80 es ir mejor
   que vender 120 con meta de 200. Si el archivo trae meta, el orden es por
   cumplimiento; si no, por el resultado, y entonces cada uno se compara
-  contra el promedio de los elegidos.
-- **Todo se calcula sobre los elegidos, no sobre el archivo.** El promedio,
-  la participación y la posición son "entre estos seis". Comparar a seis
-  vendedores contra un promedio que incluye a otros cuarenta no es lo que
-  se pidió.
+  contra el promedio del grupo completo.
+- **La vara sale del grupo completo, no de los elegidos.** Los elegidos
+  deciden qué se muestra; el promedio, la participación, la posición ("5.º
+  de 30") y el cumplimiento de referencia se calculan con TODOS los valores
+  de la columna, con los filtros del menú lateral. Antes eran "entre los
+  elegidos", y comparar a 3 de 30 personas contra el promedio de esas
+  mismas 3 no dice si van bien o mal frente al equipo: con 3 buenos
+  elegidos, uno de ellos salía "por debajo del promedio".
 - **Se avisa cuando el total mide tamaño.** Sin meta, un vendedor con el
   triple de registros aparece arriba por atender más, no necesariamente por
   hacerlo mejor. No se cambia el orden —el total sigue siendo lo que se
@@ -48,9 +51,7 @@ PERSONA_RE = re.compile(
     re.I,
 )
 
-# Más elementos que esto no caben en un cuadro que se lea de un vistazo. Es el
-# tope de la selección, no de las opciones: la lista deja elegir entre todos.
-MAX_ELEGIDOS = 12
+# Cuántos se proponen al abrir la pestaña. No hay tope: se pueden elegir todos.
 SUGERIDOS = 8
 
 # Por debajo de esta distancia del promedio se dice "en el promedio": un 2%
@@ -136,7 +137,7 @@ def _estado(fila: dict, base: str, menos_es_mejor: bool) -> tuple[str, str]:
     return ("Por encima del promedio", "bueno") if arriba else ("Por debajo del promedio", "malo")
 
 
-def _serie_por_periodo(grupo: pd.Series, valor: pd.Series, fechas: pd.Series, aditiva: bool):
+def _serie_por_periodo(grupo: pd.Series, valor: pd.Series, fechas: pd.Series, aditiva: bool, rellenar=True):
     """Matriz mes × elemento. En una métrica que se suma, no aparecer un mes es un cero real."""
     x = pd.DataFrame({"_periodo": pd.to_datetime(fechas, errors="coerce"),
                       "_grupo": grupo, "_valor": valor}).dropna()
@@ -145,7 +146,7 @@ def _serie_por_periodo(grupo: pd.Series, valor: pd.Series, fechas: pd.Series, ad
     x["_periodo"] = x["_periodo"].dt.to_period("M").dt.start_time
     tabla = x.pivot_table(index="_periodo", columns="_grupo", values="_valor",
                           aggfunc="sum" if aditiva else "mean").sort_index()
-    return tabla.fillna(0) if aditiva else tabla
+    return tabla.fillna(0) if aditiva and rellenar else tabla
 
 
 def cuadro_comparativo(df: pd.DataFrame, schema: dict, dimension: str, metrica=None,
@@ -187,17 +188,23 @@ def cuadro_comparativo(df: pd.DataFrame, schema: dict, dimension: str, metrica=N
     elegidos = [n for n in (seleccion or []) if n in valores.index]
     if not seleccion:
         elegidos = orden_todos[:SUGERIDOS]
-    elegidos = [n for n in orden_todos if n in set(elegidos)][:MAX_ELEGIDOS]
+    elegidos = [n for n in orden_todos if n in set(elegidos)]
     if len(elegidos) < 2:
         return None
 
     base = "meta" if usa_meta and cumplimiento.reindex(elegidos).notna().sum() >= 2 else "valor"
-    v = valores.reindex(elegidos)
-    promedio = float(v.mean())
-    suma = float(v.sum())
+    # La referencia es el grupo completo (ver el docstring del módulo).
+    total_grupo = len(valores)
+    promedio = float(valores.mean())
+    suma = float(valores.sum())
+    posicion_general = {n: i for i, n in enumerate(orden_todos, 1)}
+    cumplimiento_grupo = None
+    if base == "meta" and len(metas):
+        cumplimiento_grupo = (float(valores.reindex(metas.index).sum() / metas.sum() * 100) if aditiva
+                              else float(cumplimiento.mean()))
 
     # Movimiento del último mes frente al anterior, por elemento.
-    periodos, tabla, parcial = [], None, False
+    periodos, tabla, parcial, promedio_mensual = [], None, False, {}
     fechas = [d for d in schema.get("dates", []) if d in df.columns]
     # Qué rango de fechas cubren los registros de los elegidos: sin esto el
     # cuadro no dice si compara un mes o un año entero.
@@ -209,6 +216,11 @@ def cuadro_comparativo(df: pd.DataFrame, schema: dict, dimension: str, metrica=N
             desde, hasta = rango.min(), rango.max()
     if fechas:
         tabla = _serie_por_periodo(grupo, valor, df[fechas[0]], aditiva)
+        # Promedio mensual del grupo completo, entre quienes tuvieron registros
+        # ese mes: la línea de referencia de la evolución.
+        sin_rellenar = _serie_por_periodo(grupo, valor, df[fechas[0]], aditiva, rellenar=False)
+        if sin_rellenar is not None:
+            promedio_mensual = {p: float(x) for p, x in sin_rellenar.mean(axis=1).items() if pd.notna(x)}
         if tabla is not None:
             tabla = tabla.reindex(columns=elegidos)
             # Un mes a medias hace parecer que todos cayeron: si el último
@@ -227,7 +239,8 @@ def cuadro_comparativo(df: pd.DataFrame, schema: dict, dimension: str, metrica=N
             "valor": val,
             "registros": int(registros[n]),
             "por_registro": val / int(registros[n]) if aditiva and int(registros[n]) else None,
-            "participacion": (val / suma * 100) if aditiva and suma > 0 else None,
+            "participacion": (val / suma * 100) if aditiva and suma > 0 else None,  # del total del grupo
+            "posicion_general": posicion_general.get(n),
             "meta": float(metas[n]) if n in metas.index else None,
             "cumplimiento": float(cumplimiento[n]) if n in cumplimiento.index else None,
             "vs_promedio": ((val - promedio) / abs(promedio) * 100) if promedio else None,
@@ -263,6 +276,9 @@ def cuadro_comparativo(df: pd.DataFrame, schema: dict, dimension: str, metrica=N
         "sugeridos": [str(n) for n in orden_todos[:SUGERIDOS]],
         "total_opciones": len(orden_todos),
         "promedio": promedio,
+        "total_grupo": total_grupo,
+        "cumplimiento_grupo": cumplimiento_grupo,
+        "promedio_mensual": promedio_mensual,
         "referencia": 100.0 if base == "meta" else promedio,
         "periodos": periodos,
         "periodo_label": _mes(actual) if actual is not None else None,
@@ -329,10 +345,13 @@ def base_de_comparacion(cuadro: dict, filtros: Optional[list] = None) -> list[di
     if cuadro["base"] == "meta":
         contra = (f"Contra la meta de cada uno (columna «{cuadro['meta_col']}»). Cumplimiento = resultado ÷ meta. "
                   f"El orden va por cumplimiento {orden}, y la línea punteada del gráfico marca el 100%.")
+        if cuadro.get("cumplimiento_grupo") is not None:
+            contra += (f" Como referencia, los {cuadro['total_grupo']} valores de «{dim}» juntos van al "
+                       f"{cuadro['cumplimiento_grupo']:.0f}% de su meta.")
     else:
-        contra = (f"Contra el promedio de los {n} elegidos: {_fmt(cuadro['promedio'])}. El orden va por "
-                  f"resultado {orden}, y la línea punteada del gráfico es ese promedio. "
-                  "El archivo no trae una columna de meta.")
+        contra = (f"Contra el promedio de los {cuadro['total_grupo']} valores de «{dim}» —todos, no solo los "
+                  f"elegidos—: {_fmt(cuadro['promedio'])}. El orden va por resultado {orden}, y la línea "
+                  "punteada del gráfico es ese promedio. El archivo no trae una columna de meta.")
         if cuadro["menos_es_mejor"]:
             contra += f" En {metrica} menos es mejor, por eso el orden va al revés."
 
@@ -375,18 +394,23 @@ def base_de_comparacion(cuadro: dict, filtros: Optional[list] = None) -> list[di
 
 
 def _cifra(fila: dict, cuadro: dict) -> str:
+    puesto = (f"{fila['posicion_general']}.º de {cuadro['total_grupo']}"
+              if fila.get("posicion_general") and len(cuadro["filas"]) < cuadro["total_grupo"] else "")
     if cuadro["base"] == "meta" and fila.get("cumplimiento") is not None:
-        return f"{fila['cumplimiento']:,.0f}% de su meta ({_fmt(fila['valor'])} de {_fmt(fila['meta'])})"
-    return _fmt(fila["valor"]) + (" registros" if cuadro["conteo"] else "")
+        extra = f", {puesto}" if puesto else ""
+        return f"{fila['cumplimiento']:,.0f}% de su meta ({_fmt(fila['valor'])} de {_fmt(fila['meta'])}{extra})"
+    return _fmt(fila["valor"]) + (" registros" if cuadro["conteo"] else "") + (f" ({puesto})" if puesto else "")
 
 
 def lectura(cuadro: dict) -> list[str]:
     """Las conclusiones del cuadro, en frases con nombre y cifra."""
     filas = cuadro["filas"]
     n = len(filas)
+    total = cuadro["total_grupo"]
+    entre = " entre los elegidos" if n < total else ""
     primero, ultimo = filas[0], filas[-1]
-    frases = [f"**{primero['nombre']}** va primero con {_cifra(primero, cuadro)}.",
-              f"**{ultimo['nombre']}** va último con {_cifra(ultimo, cuadro)}."]
+    frases = [f"**{primero['nombre']}** va primero{entre} con {_cifra(primero, cuadro)}.",
+              f"**{ultimo['nombre']}** va último{entre} con {_cifra(ultimo, cuadro)}."]
 
     if cuadro["base"] == "meta":
         cumplen = [f["nombre"] for f in filas if f["tono"] == "bueno"]
@@ -397,15 +421,17 @@ def lectura(cuadro: dict) -> list[str]:
         else:
             frases.append(f"{len(cumplen)} de {n} están dentro de su meta: {_lista(cumplen[:5])}"
                           + (" y otros." if len(cumplen) > 5 else "."))
+        if cuadro.get("cumplimiento_grupo") is not None:
+            frases.append(f"El grupo completo ({total}) va al {cuadro['cumplimiento_grupo']:.0f}% de su meta.")
     else:
         brecha = abs(primero["valor"] - ultimo["valor"])
         if brecha > 0:
             frases.append(f"Entre el primero y el último hay {_fmt(brecha)} de diferencia; "
-                          f"el promedio de los {n} es {_fmt(cuadro['promedio'])}.")
+                          f"el promedio de los {total} (todos, no solo los elegidos) es {_fmt(cuadro['promedio'])}.")
         malos = [f["nombre"] for f in filas if f["tono"] == "malo"]
         if malos:
             lado = "por encima" if cuadro["menos_es_mejor"] else "por debajo"
-            frases.append(f"{len(malos)} de {n} están {lado} del promedio en más de "
+            frases.append(f"{len(malos)} de {n} están {lado} del promedio del grupo en más de "
                           f"{UMBRAL_PROMEDIO:.0f}%: {_lista(malos[:5])}" + (" y otros." if len(malos) > 5 else "."))
 
     con_mov = [f for f in filas if f["variacion"] is not None]
@@ -425,6 +451,6 @@ def lectura(cuadro: dict) -> list[str]:
                           f"{cuadro['periodo_anterior_label']} y {cuadro['periodo_label']}.")
 
     lider = max(filas, key=lambda f: f["participacion"] or 0)
-    if lider["participacion"] and lider["participacion"] >= 2 * 100 / n and n >= 3:
-        frases.append(f"**{lider['nombre']}** concentra el {lider['participacion']:.0f}% de lo que suman los {n}.")
+    if lider["participacion"] and lider["participacion"] >= 2 * 100 / total and total >= 3:
+        frases.append(f"**{lider['nombre']}** concentra el {lider['participacion']:.0f}% del total de los {total}.")
     return frases

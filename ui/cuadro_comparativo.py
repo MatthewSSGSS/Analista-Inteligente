@@ -25,7 +25,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from core.cuadro_comparativo import (MAX_ELEGIDOS, UMBRAL_PROMEDIO, base_de_comparacion, cuadro_comparativo,
+from core.cuadro_comparativo import (UMBRAL_PROMEDIO, base_de_comparacion, cuadro_comparativo,
                                      opciones_de_comparacion)
 from core.diagnostics import METRICA_CONTEO, _fmt
 from core.filter_engine import describir_regla
@@ -147,16 +147,35 @@ def _controles(df: pd.DataFrame, schema: dict):
                 st.session_state.pop(clave_sel)
             else:
                 st.session_state[clave_sel] = vigentes
+    # Atajos para no tener que elegir de a uno. Van antes de la lista porque
+    # Streamlit solo deja cambiar el valor de un widget antes de dibujarlo.
+    t1, t2, _ = st.columns([1, 1, 3])
+    with t1:
+        if st.button(f"Seleccionar los {previo['total_opciones']}", key=f"{clave_sel}_todos",
+                     use_container_width=True):
+            st.session_state[clave_sel] = list(previo["opciones"])
+    with t2:
+        if st.button(f"Solo los {min(len(previo['sugeridos']), previo['total_opciones'])} primeros",
+                     key=f"{clave_sel}_sugeridos", use_container_width=True):
+            st.session_state[clave_sel] = list(previo["sugeridos"])
     elegidos = st.multiselect(
         f"Elementos a comparar · {previo['total_opciones']} disponibles",
         previo["opciones"],
         default=previo["sugeridos"] if clave_sel not in st.session_state else None,
         key=clave_sel,
-        max_selections=MAX_ELEGIDOS,
         placeholder="Elige al menos dos…",
-        help=f"Hasta {MAX_ELEGIDOS}. La lista va ordenada de mejor a peor resultado.",
+        help="Sin tope: puedes elegir a todos. La lista va ordenada de mejor a peor resultado. "
+             "Elegir solo decide a quiénes se muestra: el promedio, la participación y la posición "
+             "se calculan siempre con todos.",
     )
     return dimension, metrica, elegidos, sorted(elegidos) != sorted(previo["sugeridos"])
+
+
+def _puesto(fila: dict, cuadro: dict) -> str:
+    """" · 5.º de 30", solo si no se eligió a todos (si están todos, la posición ya se ve en el orden)."""
+    if fila.get("posicion_general") and len(cuadro["filas"]) < cuadro["total_grupo"]:
+        return f" · {fila['posicion_general']}.º de {cuadro['total_grupo']}"
+    return ""
 
 
 def _kpis(cuadro: dict) -> None:
@@ -166,6 +185,7 @@ def _kpis(cuadro: dict) -> None:
     # Cada cifra dice contra qué se mide: "492.5K" solo no dice si es mucho.
     if cuadro["base"] == "meta":
         cifra = lambda f: (f"{_pct(f['cumplimiento'])} de su meta · {_fmt(f['valor'])} de {_fmt(f['meta'])}"
+                           + _puesto(f, cuadro)
                            if f["cumplimiento"] is not None else f"{_fmt(f['valor'])} · sin meta en el archivo")
         # Quien no tiene meta queda al final del orden: la distancia se mide
         # entre los que sí la tienen.
@@ -173,14 +193,16 @@ def _kpis(cuadro: dict) -> None:
         brecha = f"{abs(con_meta[0]['cumplimiento'] - con_meta[-1]['cumplimiento']):,.0f} pts"
         brecha_detalle = f"de cumplimiento: {_pct(con_meta[0]['cumplimiento'])} contra {_pct(con_meta[-1]['cumplimiento'])}"
         bien = sum(1 for f in filas if f["tono"] == "bueno")
+        grupo = (f" · el grupo completo ({cuadro['total_grupo']}) va al {cuadro['cumplimiento_grupo']:.0f}%"
+                 if cuadro.get("cumplimiento_grupo") is not None else "")
         cuarta = ("Dentro de su meta", f"{bien} de {n}", "bueno" if bien == n else "malo" if bien == 0 else "medio",
-                  "con 100% o más de cumplimiento")
+                  f"con 100% o más{grupo}")
     else:
         def cifra(f):
             if f["vs_promedio"] is None:
                 return _fmt(f["valor"])
             lado = "sobre" if f["vs_promedio"] >= 0 else "bajo"
-            return f"{_fmt(f['valor'])} · {abs(f['vs_promedio']):.0f}% {lado} el promedio"
+            return f"{_fmt(f['valor'])} · {abs(f['vs_promedio']):.0f}% {lado} el promedio" + _puesto(f, cuadro)
         brecha = _fmt(abs(primero["valor"] - ultimo["valor"]))
         # Corto a propósito: la tarjeta tiene alto fijo y un texto largo se cortaba.
         proporcion = (f" · último = {ultimo['valor'] / primero['valor'] * 100:.0f}% del 1.º"
@@ -189,7 +211,8 @@ def _kpis(cuadro: dict) -> None:
         bien = sum(1 for f in filas if f["tono"] != "malo")
         cuarta = ("En o sobre el promedio" if not cuadro["menos_es_mejor"] else "En o bajo el promedio",
                   f"{bien} de {n}", "bueno" if bien == n else "medio",
-                  f"promedio de los {n}: {_fmt(cuadro['promedio'])} (margen ±{UMBRAL_PROMEDIO:.0f}%)")
+                  f"promedio de los {cuadro['total_grupo']} (todos): {_fmt(cuadro['promedio'])} "
+                  f"(margen ±{UMBRAL_PROMEDIO:.0f}%)")
     tono_kpi = {"bueno": "positive", "medio": "neutral", "malo": "negative"}
     # El key da la clase .st-key-cuadro_kpis que usa el CSS de _css().
     with st.container(key="cuadro_kpis"):
@@ -224,7 +247,8 @@ def figura_ranking(cuadro: dict):
     ))
     fig.update_layout(showlegend=False, bargap=.3)
     fig.update_xaxes(tickformat="~s" if not por_meta else None, ticksuffix="%" if por_meta else "")
-    fig = _base(fig, max(300, 42 * len(filas) + 110), show_xgrid=True)
+    # Sin tope de elegidos: con 30 o 60 nombres cada barra conserva un alto legible.
+    fig = _base(fig, max(300, (42 if len(filas) <= 15 else 30) * len(filas) + 110), show_xgrid=True)
     # _base pone el hover unificado por eje, pensado para series en el
     # tiempo; en un ranking cada barra es su propio dato. Margen arriba para
     # el rótulo de la referencia.
@@ -237,8 +261,7 @@ def figura_ranking(cuadro: dict):
     fig = realzar_barras(fig, referencia=referencia)
     # El rótulo de la línea va por encima del gráfico y no dentro: dentro
     # quedaba montado sobre la primera barra y no se leía.
-    n = len(filas)
-    texto_ref = "meta 100%" if por_meta else f"promedio de los {n}: {_fmt(referencia)}"
+    texto_ref = "meta 100%" if por_meta else f"promedio de los {cuadro['total_grupo']} (todos): {_fmt(referencia)}"
     fig.add_annotation(x=referencia, y=1, xref="x", yref="paper", yanchor="bottom", showarrow=False,
                        text=f"┆ {texto_ref}", font=dict(size=11, color="#64748B"))
     return fig
@@ -261,6 +284,14 @@ def figura_evolucion(cuadro: dict):
         ))
     if not fig.data:
         return None
+    # Referencia: el promedio mensual de TODO el grupo, no de las líneas visibles.
+    prom = sorted((cuadro.get("promedio_mensual") or {}).items())
+    if len(prom) >= 2:
+        fig.add_trace(go.Scatter(
+            x=[p for p, _ in prom], y=[v for _, v in prom], mode="lines", name=f"Promedio de los {cuadro['total_grupo']}",
+            line=dict(color="#64748B", width=2.2, dash="dash"),
+            hovertemplate=f"<b>Promedio de los {cuadro['total_grupo']}</b>: %{{y:,.0f}}<extra></extra>",
+        ))
     # Una marca por mes: con pocos meses Plotly repetía la misma etiqueta.
     fig.update_xaxes(tickformat="%b %Y", dtick="M1")
     fig.update_yaxes(tickformat="~s", title=None)
@@ -290,7 +321,8 @@ def tabla_cuadro(cuadro: dict) -> pd.DataFrame:
     etiqueta = _ETIQUETA_CONTEO if cuadro["conteo"] else str(cuadro["metrica"])
     filas = []
     for f in cuadro["filas"]:
-        fila = {"#": f["posicion"], str(cuadro["dimension"]): f["nombre"], etiqueta: _fmt(f["valor"])}
+        fila = {f"Posición (de {cuadro['total_grupo']})": f["posicion_general"],
+                str(cuadro["dimension"]): f["nombre"], etiqueta: _fmt(f["valor"])}
         if cuadro["base"] == "meta":
             fila["Meta"] = _fmt(f["meta"])
             fila["Cumplimiento"] = round(f["cumplimiento"], 1) if f["cumplimiento"] is not None else None
@@ -344,16 +376,17 @@ def render_cuadro_comparativo(df: pd.DataFrame, schema: dict) -> None:
         subtitulo = (f"Cumplimiento = {etiqueta} ÷ {cuadro['meta_col']}, {orden} · "
                      f"línea punteada = 100% de la meta{periodo}")
     else:
-        subtitulo = (f"{como} por {dimension}, {orden} · línea punteada = promedio de los {n} "
-                     f"({_fmt(cuadro['promedio'])}){periodo}")
+        subtitulo = (f"{como} por {dimension}, {orden} · línea punteada = promedio de los {cuadro['total_grupo']}, "
+                     f"no solo de los elegidos ({_fmt(cuadro['promedio'])}){periodo}")
     chart_card(f"Cómo va cada uno · {dimension}", subtitulo, figura_ranking(cuadro),
-               key="cuadro_ranking", visual_type="COMPARACIÓN", badge_text=f"{n} elegidos")
+               key="cuadro_ranking", visual_type="COMPARACIÓN", badge_text=f"{n} de {cuadro['total_grupo']}")
 
     evolucion = figura_evolucion(cuadro)
     if evolucion is not None:
         suma_mes = "sumada" if cuadro["aditiva"] else "promediada"
         chart_card("Evolución mes a mes",
-                   f"{etiqueta} {suma_mes} por mes · una línea por cada {dimension} elegido",
+                   f"{etiqueta} {suma_mes} por mes · una línea por cada {dimension} elegido · "
+                   f"discontinua = promedio de los {cuadro['total_grupo']}",
                    evolucion, key="cuadro_evolucion", visual_type="TENDENCIA",
                    badge_text=f"{len(cuadro['periodos'])} meses")
     meta = figura_meta(cuadro)
@@ -366,13 +399,16 @@ def render_cuadro_comparativo(df: pd.DataFrame, schema: dict) -> None:
     tabla = tabla_cuadro(cuadro)
     # Cada columna explica de dónde sale su cifra al pasar el cursor por el título.
     ayudas = {
-        "#": "Posición en el orden del cuadro" + (" (por cumplimiento de meta)." if cuadro["base"] == "meta" else "."),
+        f"Posición (de {cuadro['total_grupo']})": (
+            f"Puesto entre los {cuadro['total_grupo']} valores de la columna, no solo entre los elegidos"
+            + (", por cumplimiento de meta." if cuadro["base"] == "meta" else ".")),
         etiqueta: ("Cuántos registros tiene cada uno." if cuadro["conteo"] else
                    f"{etiqueta} {'sumada de' if cuadro['aditiva'] else 'promedio de'} todos sus registros."),
         "Meta": f"{'Suma' if cuadro['aditiva'] else 'Promedio'} de la columna «{cuadro['meta_col']}» de cada uno.",
         "Registros": "Cuántas filas del archivo tiene cada uno.",
         "Promedio por registro": f"{etiqueta} dividido entre sus registros: descuenta el tamaño de la cartera.",
-        "Vs. promedio": f"Diferencia contra el promedio de los {n} elegidos ({_fmt(cuadro['promedio'])}).",
+        "Vs. promedio": (f"Diferencia contra el promedio de los {cuadro['total_grupo']} —todos, no solo los "
+                         f"elegidos— ({_fmt(cuadro['promedio'])})."),
         "Estado": "Veredicto según la meta o el promedio; ver «Cómo se lee el color» arriba.",
     }
     if cuadro["periodo_label"]:
@@ -386,8 +422,9 @@ def render_cuadro_comparativo(df: pd.DataFrame, schema: dict) -> None:
             help=f"{etiqueta} ÷ meta × 100. 100% = cumplió exactamente lo esperado.")
     if "Participación" in tabla:
         configuracion["Participación"] = st.column_config.ProgressColumn(
-            "Participación", format="%.1f%%", min_value=0, max_value=100,
-            help=f"Qué parte de lo que suman los {n} elegidos aporta cada uno.")
+            "Participación", format="%.1f%%", min_value=0,
+            max_value=max(1.0, float(tabla["Participación"].max() or 0)),
+            help=f"Qué parte del total de los {cuadro['total_grupo']} aporta cada uno.")
     st.dataframe(tabla, use_container_width=True, hide_index=True, column_config=configuracion)
     st.download_button("⬇️ Descargar cuadro (CSV)", tabla.to_csv(index=False).encode("utf-8-sig"),
                        file_name=f"cuadro_comparativo_{dimension}.csv", mime="text/csv", key="cuadro_descarga")

@@ -1,4 +1,4 @@
-"""Que el cuadro comparativo compare con la misma vara a todos los elegidos.
+"""Que el cuadro comparativo compare a los elegidos con la vara del grupo completo.
 
 Lo que se prueba son las decisiones que hacen que el cuadro no mienta:
 
@@ -6,7 +6,7 @@ Lo que se prueba son las decisiones que hacen que el cuadro no mienta:
   puede ir cuarto si su meta era mucho más alta);
 - la tabla típica de una fila por vendedor funciona, sin exigir que los
   nombres se repitan;
-- promedio, participación y posición se calculan entre los elegidos;
+- promedio, participación y posición salen del GRUPO COMPLETO, no de los elegidos;
 - en métricas donde subir es peor, el mejor es el que menos tiene;
 - sin columnas numéricas, se compara cuántos registros tiene cada uno.
 
@@ -71,7 +71,7 @@ def test_una_fila_por_vendedor_con_meta():
     check("va primero quien más cumple su meta, no quien más vende", nombres[0] == "Ana")
     check("el que más vende no encabeza por volumen", nombres.index("Pedro") > 0)
     check("va último quien menos cumple", nombres[-1] == "Sofía")
-    check("las posiciones van de 1 a 6", [f["posicion"] for f in cuadro["filas"]] == list(range(1, 7)))
+    check("las posiciones van de 1 a 6", [f["posicion_general"] for f in cuadro["filas"]] == list(range(1, 7)))
     ana = cuadro["filas"][0]
     check("el cumplimiento es resultado entre meta", abs(ana["cumplimiento"] - 120) < 0.01)
     check("quien supera su meta la cumple", ana["tono"] == "bueno")
@@ -80,16 +80,65 @@ def test_una_fila_por_vendedor_con_meta():
     check("y dice cuántos cumplen", any("2 de 6" in f for f in cuadro["lectura"]))
 
 
-def test_seleccion_y_promedio_entre_los_elegidos():
+def test_la_vara_es_el_grupo_completo():
+    """Elegir decide a quiénes se muestra; promedio, participación y posición salen de TODOS.
+
+    Comparar a 3 de 30 personas contra el promedio de esas 3 no dice si van
+    bien o mal frente al equipo.
+    """
     df, schema = _seis_vendedores()
+    total = 120000 + 95000 + 80000 + 150000 + 60000 + 99000
     cuadro = cuadro_comparativo(df, schema, "Vendedor", "Ventas", seleccion=["Pedro", "Sofía", "Ana"])
-    check("solo entran los elegidos", {f["nombre"] for f in cuadro["filas"]} == {"Pedro", "Sofía", "Ana"})
-    check("el promedio es el de los elegidos", abs(cuadro["promedio"] - (150000 + 60000 + 120000) / 3) < 0.01)
-    check("la participación suma 100 entre ellos",
-          abs(sum(f["participacion"] for f in cuadro["filas"]) - 100) < 0.01)
+    check("solo se muestran los elegidos", {f["nombre"] for f in cuadro["filas"]} == {"Pedro", "Sofía", "Ana"})
+    check("el grupo completo son los seis", cuadro["total_grupo"] == 6)
+    check("el promedio es el de los seis, no el de los tres", abs(cuadro["promedio"] - total / 6) < 0.01)
+    pedro = next(f for f in cuadro["filas"] if f["nombre"] == "Pedro")
+    check("la participación es sobre el total de los seis", abs(pedro["participacion"] - 150000 / total * 100) < 0.01)
+    check("y la de los tres ya no suma 100", sum(f["participacion"] for f in cuadro["filas"]) < 99)
+    check("la posición es entre los seis (Pedro es 4.º en cumplimiento)", pedro["posicion_general"] == 4)
+    check("el cumplimiento del grupo es real ÷ meta de todos",
+          abs(cuadro["cumplimiento_grupo"] - total / (100000 + 100000 + 90000 + 160000 + 80000 + 90000) * 100) < 0.01)
+    check("la lectura dice el puesto entre todos", "1.º de 6" in cuadro["lectura"][0] and "6.º de 6" in cuadro["lectura"][1])
+    check("y lo que va el grupo completo", any("grupo completo (6)" in f for f in cuadro["lectura"]))
+    check("la base lo explica", "juntos van al" in base_de_comparacion(cuadro)[2]["texto"])
+
+    # Sin meta: con dos buenos elegidos, ninguno queda "por debajo del promedio"
+    # por culpa de compararlos solo entre ellos.
+    sin_meta = _perfil(pd.DataFrame({"Vendedor": ["Ana", "Luis", "Marta", "Pedro", "Sofía", "Juan"],
+                                     "Ventas": [120000, 95000, 80000, 150000, 60000, 99000]}))
+    dos = cuadro_comparativo(*sin_meta, "Vendedor", "Ventas", seleccion=["Ana", "Pedro"])
+    check("sin meta, dos buenos no se castigan entre sí", all(f["tono"] == "bueno" for f in dos["filas"]))
+    check("la base dice contra el promedio de todos", "todos, no solo los elegidos" in base_de_comparacion(dos)[2]["texto"])
+
     check("la lista para elegir sigue ofreciendo a los seis", len(cuadro["opciones"]) == 6)
+    check("se puede elegir a todos (sin tope)",
+          len(cuadro_comparativo(df, schema, "Vendedor", "Ventas", seleccion=cuadro["opciones"])["filas"]) == 6)
     check("con un solo elegido no hay cuadro",
           cuadro_comparativo(df, schema, "Vendedor", "Ventas", seleccion=["Ana"]) is None)
+
+
+def test_sin_tope_de_elegidos():
+    filas = [{"Vendedor": f"Vendedor {i:02d}", "Ventas": 1000 + i * 10} for i in range(40)]
+    df, schema = _perfil(pd.DataFrame(filas))
+    opciones = cuadro_comparativo(df, schema, "Vendedor", "Ventas")["opciones"]
+    todos = cuadro_comparativo(df, schema, "Vendedor", "Ventas", seleccion=opciones)
+    check("los 40 entran en el cuadro", len(todos["filas"]) == 40)
+    tres = cuadro_comparativo(df, schema, "Vendedor", "Ventas", seleccion=opciones[:3])
+    check("con 3 elegidos el promedio sigue siendo el de los 40",
+          abs(tres["promedio"] - sum(1000 + i * 10 for i in range(40)) / 40) < 0.01)
+
+
+def test_evolucion_trae_promedio_del_grupo():
+    df, schema = _detalle_con_fechas()
+    cuadro = cuadro_comparativo(df, schema, "Asesor", "Ventas", seleccion=["Marta", "Juan"])
+    prom = cuadro["promedio_mensual"]
+    enero = min(prom)
+    check("hay un promedio por mes del grupo completo", len(prom) == 4)
+    check("el de enero es el de los seis asesores, no el de los dos",
+          abs(prom[enero] - (20 + 16 + 24 + 8 + 18 + 22) * 1000 / 6) < 0.01)
+    from ui.cuadro_comparativo import figura_evolucion
+    nombres = [t.name for t in figura_evolucion(cuadro).data]
+    check("el gráfico dibuja esa referencia", "Promedio de los 6" in nombres)
 
 
 def test_detalle_con_fechas_trae_movimiento():
@@ -150,7 +199,7 @@ def test_la_base_dice_en_que_se_basa():
     df2, schema2 = _detalle_con_fechas()
     cuadro2 = cuadro_comparativo(df2, schema2, "Asesor", "Ventas")
     base2 = {b["titulo"]: b["texto"] for b in base_de_comparacion(cuadro2)}
-    check("sin meta, se compara contra el promedio de los elegidos, con su cifra",
+    check("sin meta, se compara contra el promedio de todos, con su cifra",
           "promedio de los 6" in base2["Contra qué"] and "no trae una columna de meta" in base2["Contra qué"])
     check("el periodo trae fechas reales y la columna",
           "1 de enero de 2026" in base2["Periodo"] and "«Fecha»" in base2["Periodo"])
@@ -174,14 +223,16 @@ def test_la_pestana_se_dibuja():
     df2, schema2 = _detalle_con_fechas()
     render_cuadro_comparativo(df2, schema2)
     cuadro2 = cuadro_comparativo(df2, schema2, "Asesor", "Ventas")
-    check("con fechas hay una línea por asesor", len(figura_evolucion(cuadro2).data) == 6)
+    check("con fechas hay una línea por asesor y otra del promedio", len([t for t in figura_evolucion(cuadro2).data if not t.name.startswith("Promedio")]) == 6)
     check("sin meta no hay gráfico de meta", figura_meta(cuadro2) is None)
     check("el cuadro trae la variación del último mes", any(c.startswith("Variación") for c in tabla_cuadro(cuadro2).columns))
 
 
 if __name__ == "__main__":
     test_una_fila_por_vendedor_con_meta()
-    test_seleccion_y_promedio_entre_los_elegidos()
+    test_la_vara_es_el_grupo_completo()
+    test_sin_tope_de_elegidos()
+    test_evolucion_trae_promedio_del_grupo()
     test_detalle_con_fechas_trae_movimiento()
     test_menos_es_mejor()
     test_sin_columnas_numericas_cuenta_registros()
