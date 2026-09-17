@@ -135,15 +135,19 @@ def _por_que(atribucion: dict | None, schema: dict, resultado: dict) -> None:
                 señales.append(f"{impulsor['operaciones']:,} registros en el histórico")
             nivel = (f"{impulsor['ultimo']:,.0f} → {impulsor['proyectado']:,.0f}"
                      if impulsor["ultimo"] else f"→ {impulsor['proyectado']:,.0f}")
+            # En una sola línea a propósito. Con el HTML repartido en líneas
+            # indentadas, cuando no había motivo quedaba una línea en blanco:
+            # Markdown cerraba ahí el bloque HTML y mostraba el resto como
+            # código («<small style=…>» y «</div></div>» a la vista).
+            motivo = (f'<div class="insight-action"><b>Por qué:</b> {clean_display_text(impulsor["motivo"])}</div>'
+                      if impulsor.get("motivo") else "")
+            detalle = (f'<small style="color:var(--soft);display:block;margin-top:7px">'
+                       f'{clean_display_text(" · ".join(señales))}</small>' if señales else "")
             st.markdown(
-                f"""<div class="insight-card {'warning' if baja else 'positive'} compact">
-                <div class="insight-body">
-                <div class="insight-title">{clean_display_text(impulsor['nombre'])}</div>
-                <div class="insight-text"><b>{impulsor['peso']:.0f}%</b> de la tendencia ·
-                nivel {nivel}</div>
-                {f'<div class="insight-action"><b>Por qué:</b> {clean_display_text(impulsor["motivo"])}</div>' if impulsor.get("motivo") else ""}
-                <small style="color:var(--soft);display:block;margin-top:7px">{clean_display_text(" · ".join(señales))}</small>
-                </div></div>""",
+                f'<div class="insight-card {"warning" if baja else "positive"} compact"><div class="insight-body">'
+                f'<div class="insight-title">{clean_display_text(impulsor["nombre"])}</div>'
+                f'<div class="insight-text"><b>{impulsor["peso"]:.0f}%</b> de la tendencia · nivel {nivel}</div>'
+                f'{motivo}{detalle}</div></div>',
                 unsafe_allow_html=True,
             )
 
