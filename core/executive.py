@@ -65,7 +65,7 @@ def _monthly(df, date_col, metric, como='sum'):
     }).dropna()
     if x.empty: return None
     por_mes = x.set_index('__fecha__')['__valor__'].resample('MS')
-    return (por_mes.sum() if como == 'sum' else por_mes.mean()).dropna()
+    return (por_mes.sum(min_count=1) if como == 'sum' else por_mes.mean()).dropna()  # un mes sin dato no es cero
 
 
 def build_executive(df, schema, insights=None, anomalies=None):

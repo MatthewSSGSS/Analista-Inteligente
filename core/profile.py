@@ -4,7 +4,8 @@ from .quality import assess
 
 
 def profile_sheet(raw, context=None, structural_log=None):
-    processed, log = clean(raw)
+    # Un informe convertido marca que sus celdas vacías no son cero (ver clean).
+    processed, log = clean(raw, faltantes_son_cero=(context or {}).get("faltantes_son_cero", True))
     schema = detect_schema(processed, context=context or {})
     quality = assess(processed, schema)
     # structural_log viene de core/pivot_flatten.py (aplanado de tablas

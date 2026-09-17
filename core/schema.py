@@ -4,6 +4,11 @@ from .dates import detect_date, is_month_name_series, month_year_series, extract
 from .semantic_engine import interpret_dataframe
 
 ID_RE = re.compile(r"(^id$|(^|[_\s-])id([_\s-]|$)|codigo|código|sku|invoice|factura|documento|numero|número)", re.I)
+# NIT, cédula, NUIP, RUT/RUC: siempre identificadores, se repitan o no. ID_RE
+# exige que la mayoría de valores sean distintos, y en un listado de zonas un
+# mismo agente (y su NIT, 9000236859) aparece en varias filas: entraba como
+# métrica y el panel lo sumaba.
+DOC_ID_RE = re.compile(r"(\bnit\b|c[eé]dula|\bnuip\b|\bdni\b|\brut\b|\bruc\b)", re.I)
 MONEY_RE = re.compile(r"(money|currency|moneda|monto|importe|precio|price|cost|costo|ingreso|revenue|salary|salario|valor|total|amount|profit|utilidad)", re.I)
 PCT_RE = re.compile(r"(%|porcentaje|percent|ratio|margen)", re.I)
 GEO_RE = re.compile(r"(pais|país|country|ciudad|city|estado|state|region|región|zona|address|direccion|dirección|lat|lon|longitude|latitude)", re.I)
@@ -93,7 +98,8 @@ def detect_schema(df, context=None):
             # Never treat numeric identifiers as measures. This is semantic,
             # so cédulas, seriales, teléfonos, códigos, etc. stay out of
             # sums/averages even when Excel stores them as numbers.
-            if c in semantic.get("ids", []) or sem_type in {"id", "phone", "postal_code"} or (ID_RE.search(str(c)) and ratio > .5):
+            if (c in semantic.get("ids", []) or sem_type in {"id", "phone", "postal_code"}
+                    or (ID_RE.search(str(c)) and ratio > .5) or DOC_ID_RE.search(str(c))):
                 if c not in schema["ids"]:
                     schema["ids"].append(c)
                 schema["types"][c] = "Identificador"
@@ -114,7 +120,7 @@ def detect_schema(df, context=None):
         if len(x) and x.map(lambda v: bool(EMAIL_RE.match(v))).mean() > .95:
             schema["emails"].append(c); schema["types"][c] = "Correo"; continue
         ratio = x.nunique() / max(len(x), 1)
-        if ID_RE.search(str(c)) and ratio > .5:
+        if (ID_RE.search(str(c)) and ratio > .5) or DOC_ID_RE.search(str(c)):
             schema["ids"].append(c); schema["types"][c] = "Identificador"
         elif GEO_RE.search(str(c)):
             schema["geography"].append(c); schema["categorical"].append(c); schema["types"][c] = "Geografía"

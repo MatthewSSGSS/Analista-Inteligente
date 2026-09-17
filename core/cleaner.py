@@ -269,7 +269,7 @@ def _consolidate_spelling_variants(series: pd.Series):
     return series.replace(replacements), changed
 
 
-def clean(df):
+def clean(df, faltantes_son_cero=True):
     out=df.copy(deep=True); log=[]
     # PRIMER paso, antes que cualquier otra cosa: unificar zonas horarias.
     # Todo lo que venga con desfase horario pasa a hora de Colombia y pierde
@@ -315,12 +315,22 @@ def clean(df):
     # En columnas que ya son numéricas, los faltantes pasan a cero para que
     # cualquier cálculo posterior sea estable. Las columnas de texto/categoría
     # conservan sus faltantes para no convertir una categoría ausente en "0".
+    #
+    # Excepción: las tablas que salen de un informe (core/informe.py). Ahí una
+    # celda vacía es "ese mes no se reportó", no "fue cero": en el informe
+    # real, agosto no traía los ingresos por comisión y el panel decía que
+    # habían caído 100%.
     numeric_cols = out.select_dtypes(include=["number"]).columns
     numeric_missing = int(out[numeric_cols].isna().sum().sum()) if len(numeric_cols) else 0
     if len(numeric_cols):
-        out[numeric_cols] = out[numeric_cols].replace([float("inf"), float("-inf")], pd.NA).fillna(0)
-    if numeric_missing:
+        out[numeric_cols] = out[numeric_cols].replace([float("inf"), float("-inf")], pd.NA)
+        if faltantes_son_cero:
+            out[numeric_cols] = out[numeric_cols].fillna(0)
+    if numeric_missing and faltantes_son_cero:
         log.append(f"{numeric_missing:,} valores numéricos faltantes convertidos a 0 para los cálculos.")
+    elif numeric_missing:
+        log.append(f"{numeric_missing:,} celda(s) sin dato en el informe se dejaron vacías: "
+                   "un mes sin reportar no se cuenta como cero.")
     dup=int(out.duplicated().sum())
     if dup: log.append(f"{dup:,} filas duplicadas detectadas; no se eliminaron automáticamente.")
     return out,log

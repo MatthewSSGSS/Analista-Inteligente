@@ -235,8 +235,20 @@ def _concept_for(schema, column):
 
 
 def _label(schema, column):
-    concept = _concept_for(schema, column)
-    return CONCEPT_LABELS.get(concept, str(column))
+    """El nombre con el que se muestra una columna: el suyo, no el concepto.
+
+    Antes devolvía el concepto del motor semántico ("Cantidad", "Ingresos"),
+    así que un archivo con Altas, Altas Eje, Altas Totales y PORTA mostraba
+    "Cantidad" en todos los gráficos y en la proyección, sin decir cuál era.
+    Ahora hace lo mismo que las otras copias de `_label` del proyecto
+    (core/executive, core/chart_explainer, ui/report_html): el nombre para
+    mostrar del motor, o el encabezado del Excel. CONCEPT_LABELS se conserva
+    para quien necesite el nombre del concepto.
+    """
+    for x in _semantic_items(schema):
+        if x.get("column") == column:
+            return str(x.get("display_name") or column)
+    return str(column)
 
 
 def _is_month_number(df, col):

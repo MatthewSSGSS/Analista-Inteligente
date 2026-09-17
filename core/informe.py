@@ -126,10 +126,38 @@ def titulos(G: np.ndarray) -> list[tuple[int, str]]:
         if len(textos) != 1:
             continue
         t = next(iter(textos))
-        if len(t) < 8 or len(t.split()) < 2 or periodo_de(t) is not None or np.isfinite(_numero(t)):
+        if periodo_de(t) is not None or np.isfinite(_numero(t)):
             continue
+        if len(t) < 8 or len(t.split()) < 2:
+            if not _titulo_corto(G, r, t):
+                continue
         salida.append((r, t))
     return salida
+
+
+def _titulo_corto(G, r, t) -> bool:
+    """¿Una sola palabra en mayúsculas ("FWA") que titula la tabla de abajo?
+
+    Sin esto, una sección con nombre de una palabra no tenía título, y la
+    tabla quedaba bajo el título anterior —en el informe real, el de un
+    ranking que era una imagen—: salía como "RANKING SUPERVISORES" una tabla
+    que no tenía nada que ver. Se exige mayúsculas y una tabla justo debajo
+    para no confundirla con "R1" o "Mes", que rotulan una tabla, no la titulan.
+    """
+    limpio = re.sub(r"[^A-Za-zÁÉÍÓÚÑáéíóúñ]", "", t)
+    if len(limpio) < 3 or not t.isupper() or _norm(t) in _EJES or _es_total(t):
+        return False
+    if re.fullmatch(r"[RZ]\s?\d{1,2}", t, re.I):
+        return False
+    for rr in range(r + 1, min(G.shape[0], r + 4)):
+        celdas = [v for v in G[rr] if _txt(v)]
+        if len(celdas) >= 3:
+            # "BMS" sobre "Mes | ene | feb…" con Ejecución y Presupuesto debajo
+            # no titula: nombra al agente de esa tabla, como "R1" en otras. Un
+            # título de verdad ("FWA") va sobre un encabezado que dice qué son
+            # las filas ("Zona"), no sobre el eje de meses.
+            return _norm(celdas[0]) not in _EJES
+    return False
 
 
 def titulo_principal(raw: pd.DataFrame, filas: int = 6) -> Optional[str]:
@@ -147,11 +175,19 @@ def _seccion(fila: int, lista_titulos: list) -> Optional[str]:
 
 # ── Tablas con los meses en una fila ────────────────────────────────────────
 
+def _es_etiqueta(v) -> bool:
+    """Un rótulo de fila: texto con letras. "R1" lo es aunque `_numero` le saque un 1."""
+    t = _txt(v)
+    return bool(t) and bool(re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]", t)) and periodo_de(v) is None
+
+
 def _columna_de_etiquetas(G, fila, primera_col):
     mejor, puntos = None, 0
     for c in range(primera_col):
-        textos = sum(1 for r in range(fila + 1, min(G.shape[0], fila + 60))
-                     if _txt(G[r, c]) and not np.isfinite(_numero(G[r, c])))
+        # Antes se contaba "texto que no es número", y `_numero("R1")` da 1:
+        # una tabla con R1…R5 como filas (FWA en el informe real) no tenía
+        # columna de etiquetas y se perdía, salvo el primer mes.
+        textos = sum(1 for r in range(fila + 1, min(G.shape[0], fila + 60)) if _es_etiqueta(G[r, c]))
         if textos > puntos or (textos == puntos and textos and c > (mejor or -1)):
             mejor, puntos = c, textos
     return mejor if puntos else None
@@ -349,6 +385,216 @@ def _tablas_resumen(G, usadas, grupos_conocidos):
     return tablas
 
 
+# ── Tablas con los meses agrupando varias medidas ───────────────────────────
+
+def _es_texto(v) -> bool:
+    return bool(_txt(v)) and periodo_de(v) is None and not np.isfinite(_numero(v))
+
+
+def _filas_de_datos(G, desde, lc, columnas, filas_titulo):
+    """Filas con etiqueta y números debajo de un encabezado. Devuelve (filas, totales excluidos)."""
+    filas, totales, blancos = [], 0, 0
+    n = G.shape[0]
+    for rr in range(desde, n):
+        if rr in filas_titulo or sum(periodo_de(v) is not None for v in G[rr]) >= 2:
+            break
+        etiqueta = _txt(G[rr, lc])
+        valores = [_numero(G[rr, c]) for c in columnas]
+        con_dato = sum(np.isfinite(v) for v in valores)
+        if not etiqueta and con_dato == 0:
+            blancos += 1
+            if blancos >= 1:
+                break
+            continue
+        if not etiqueta or con_dato == 0:
+            break
+        blancos = 0
+        if _es_total(etiqueta):
+            totales += 1
+            continue
+        filas.append((rr, etiqueta, valores))
+    return filas, totales
+
+
+def _tablas_meses_agrupados(G, filas_titulo, usadas):
+    """Meses que agrupan varias medidas. Dos formas reales:
+
+    1. Los meses en una fila, combinados sobre sus medidas en la de abajo:
+           Región | abr-26              | may-26              | …
+                  | Altas | Meta | Cum  | Altas | Meta | Cum  | …
+    2. Los meses intercalados en la misma fila con otra medida que se repite:
+           Productos | abr-26 | % Participación | may-26 | % Participación | …
+
+    Antes la primera forma se leía como "una tabla resumen" con solo las altas
+    del primer mes, y la segunda perdía la participación. La columna del mes
+    en la forma 2 no tiene nombre propio: se guarda sin nombre y se le pone
+    después, con el título de la sección (ver `_nombrar_medida`).
+    """
+    tablas = []
+    n, m = G.shape
+    for r in range(n - 1):
+        pcols = [c for c in range(m) if periodo_de(G[r, c]) is not None and (r, c) not in usadas]
+        periodos_fila = [periodo_de(G[r, c]) for c in pcols]
+        if len(pcols) < 2 or len(set(periodos_fila)) < 2 or r in filas_titulo:
+            continue
+        c0 = pcols[0]
+        ultimo = max(c for c in range(m) if _txt(G[r, c]) or _txt(G[r + 1, c]))
+
+        # Forma 1: medidas debajo de cada mes.
+        debajo = {c: _txt(G[r + 1, c]) for c in range(c0, ultimo + 1) if _es_texto(G[r + 1, c])}
+        nombres = [_norm(v) for v in debajo.values()]
+        repetidas = {x for x in nombres if nombres.count(x) >= 2}
+        if len(debajo) >= 2 * len(set(periodos_fila)) and len(set(nombres)) >= 2 and repetidas:
+            columnas, periodo_actual, asignacion = [], None, {}
+            for c in range(c0, ultimo + 1):
+                if periodo_de(G[r, c]) is not None:
+                    periodo_actual = periodo_de(G[r, c])
+                if c in debajo and periodo_actual is not None:
+                    columnas.append(c)
+                    asignacion[c] = (periodo_actual, debajo[c])
+            lc = _columna_de_etiquetas(G, r + 1, c0)
+            if lc is not None and columnas:
+                filas, totales = _filas_de_datos(G, r + 2, lc, columnas, filas_titulo)
+                if filas:
+                    eje = _txt(G[r, lc]) or _txt(G[r + 1, lc])
+                    registros = [(etiqueta, asignacion[c][0], asignacion[c][1], v)
+                                 for _, etiqueta, valores in filas for c, v in zip(columnas, valores)]
+                    _marcar(usadas, r, filas[-1][0], lc, ultimo)
+                    tablas.append({"fila": r, "fin": filas[-1][0], "eje": eje, "registros": registros,
+                                   "etiquetas": [e for _, e, _ in filas], "totales": totales})
+                    continue
+
+        # Forma 2: el mes y, a su derecha, otra medida con el mismo nombre en cada mes.
+        textos = {c: _txt(G[r, c]) for c in range(c0, ultimo + 1) if c not in pcols and _es_texto(G[r, c])}
+        nombres = [_norm(v) for v in textos.values()]
+        if textos and all(nombres.count(x) >= 2 for x in nombres):
+            columnas, asignacion, periodo_actual = [], {}, None
+            for c in range(c0, ultimo + 1):
+                if c in pcols:
+                    periodo_actual = periodo_de(G[r, c])
+                    columnas.append(c)
+                    asignacion[c] = (periodo_actual, None)  # la medida principal, sin nombre todavía
+                elif c in textos and periodo_actual is not None:
+                    columnas.append(c)
+                    asignacion[c] = (periodo_actual, textos[c])
+            lc = _columna_de_etiquetas(G, r, c0)
+            if lc is None:
+                continue
+            filas, totales = _filas_de_datos(G, r + 1, lc, columnas, filas_titulo)
+            if not filas:
+                continue
+            registros = [(etiqueta, asignacion[c][0], asignacion[c][1], v)
+                         for _, etiqueta, valores in filas for c, v in zip(columnas, valores)]
+            _marcar(usadas, r, filas[-1][0] + totales, lc, ultimo)
+            tablas.append({"fila": r, "fin": filas[-1][0], "eje": _txt(G[r, lc]), "registros": registros,
+                           "etiquetas": [e for _, e, _ in filas], "totales": totales})
+    return tablas
+
+
+def _marcar(usadas, r0, r1, c0, c1):
+    for x in range(r0, r1 + 1):
+        for c in range(c0, c1 + 1):
+            usadas.add((x, c))
+
+
+# ── Tablas planas dentro de un informe ──────────────────────────────────────
+
+def _tablas_planas(G, usadas, filas_titulo):
+    """Una tabla normal (encabezado + registros) metida entre las demás.
+
+    En el informe real, "DISTRIBUCIÓN DE LA ZONIFICACIÓN" es un listado de 65
+    agentes con su jefe, zona y supervisor. No tiene meses, así que ninguno de
+    los detectores de arriba lo veía, y al leer la hoja como informe
+    desaparecía entero. Se exige un encabezado de al menos 3 textos seguidos
+    y al menos 3 filas debajo que lo llenen, con alguna columna numérica: una
+    lista de notas o un bloque de títulos no cumple eso.
+    """
+    tablas = []
+    n, m = G.shape
+    r = 0
+    while r < n:
+        if r in filas_titulo:
+            r += 1
+            continue
+        cols = [c for c in range(m) if (r, c) not in usadas and _es_texto(G[r, c])]
+        if len(cols) < 3 or len(cols) < 0.8 * (max(cols) - min(cols) + 1):
+            r += 1
+            continue
+        filas = []
+        for rr in range(r + 1, n):
+            if rr in filas_titulo or any((rr, c) in usadas for c in cols):
+                break
+            if sum(1 for c in cols if _txt(G[rr, c])) < max(2, 0.5 * len(cols)):
+                break
+            filas.append(rr)
+        numericas = [c for c in cols
+                     if filas and sum(np.isfinite(_numero(G[x, c])) for x in filas) >= 0.6 * len(filas)]
+        if len(filas) < 3 or not numericas:
+            r += 1
+            continue
+        encabezados, vistos = [], {}
+        for c in cols:
+            base = _txt(G[r, c])
+            vistos[base] = vistos.get(base, 0) + 1
+            encabezados.append(base if vistos[base] == 1 else f"{base}_{vistos[base]}")
+        datos = pd.DataFrame([[G[x, c] for c in cols] for x in filas], columns=encabezados)
+        datos = datos[~datos.iloc[:, 0].map(_es_total)].reset_index(drop=True)
+        _marcar(usadas, r, filas[-1], min(cols), max(cols))
+        tablas.append({"fila": r, "datos": datos})
+        r = filas[-1] + 1
+    return tablas
+
+
+# ── Nombres ─────────────────────────────────────────────────────────────────
+
+def _parece_proporcion(valores) -> bool:
+    """¿Son proporciones (0,92 = 92%)? Se mira el 90% de los valores, no el máximo:
+    un agente con 1.280% de cumplimiento no convierte al resto en cifras absolutas."""
+    v = pd.to_numeric(pd.Series(list(valores)), errors="coerce").dropna()
+    v = v[v != 0]
+    return len(v) > 0 and float(v.quantile(0.9)) <= 3 and float(v.min()) >= -1
+
+
+def _nombrar_medida(titulo, valores, porcentaje=False) -> str:
+    """El nombre de una medida sin rótulo propio, sacado del título de su sección.
+
+    "EVOLUCIÓN CUMPLIMIENTO @ AGENTES" trae valores 0,85 → "Cumplimiento";
+    "EVOLUCIÓN DE VENTA @ AGENTES" → "Ventas @". Antes todas se llamaban
+    "Valor", y con cuatro tablas así no se sabía cuál era cuál.
+    """
+    t = _norm(titulo or "")
+    if re.search(r"cumplim|\bcum\b", t) and (porcentaje or _parece_proporcion(valores)):
+        return "Cumplimiento"
+    if re.search(r"participa", t):
+        return "Participación"
+    if re.search(r"\bventa", t):
+        return "Ventas @" if "@" in t else "Ventas"
+    if re.search(r"\baltas?\b", t) or "@" in t:
+        return "Altas @" if "@" in t else "Altas"
+    palabras = _txt(titulo).split()
+    if titulo and len(palabras) == 1:
+        return _txt(titulo)  # "FWA": el título ya es el nombre de lo que se mide
+    return "Valor (%)" if porcentaje else "Valor"
+
+
+_UNIDADES_TITULO = [("agente", "Agente"), ("jefe", "Jefe"), ("supervisor", "Supervisor"), ("asesor", "Asesor"),
+                    ("vendedor", "Vendedor"), ("distrito", "Distrito"), ("zona", "Zona"), ("region", "Región"),
+                    ("producto", "Producto"), ("canal", "Canal"), ("punto", "Punto")]
+
+
+def _dimension_por_titulo(titulo) -> Optional[str]:
+    """"CASOS DE ÉXITO AGENTES CALLE COSTA" → "Agente", cuando las filas no traen encabezado."""
+    t = _norm(titulo or "")
+    return next((nombre for clave, nombre in _UNIDADES_TITULO if re.search(rf"\b{clave}", t)), None)
+
+
+def _dimension(eje, etiquetas) -> str:
+    """Cómo se llama lo que agrupan las filas: el encabezado si dice algo; si no, por sus valores."""
+    if eje and _norm(eje) not in _EJES and _norm(eje) != "grupo":
+        return _txt(eje)
+    return _nombre_de_grupo(etiquetas)
+
+
 # ── Armado ──────────────────────────────────────────────────────────────────
 
 def _subsecuencia(corta: str, larga: str) -> bool:
@@ -356,15 +602,24 @@ def _subsecuencia(corta: str, larga: str) -> bool:
     return bool(corta) and corta[0] == larga[:1] and all(ch in it for ch in corta)
 
 
+# Abreviaturas de los informes comerciales, para cuando la forma larga no
+# aparece en la misma tabla (en "CUMPLIMIENTO OTTS" solo dice "Cum").
+_ABREVIATURAS = {"cum": "Cumplimiento", "cump": "Cumplimiento", "ejc": "Ejecución", "ejec": "Ejecución",
+                 "ppto": "Presupuesto", "presup": "Presupuesto"}
+
+
 def _unificar_medidas(nombres) -> dict:
-    """"Ejc" → "Ejecución", "Ppto" → "Presupuesto", "Cum" → "Cumplimiento", si ambas aparecen."""
+    """"Ejc" → "Ejecución", "Ppto" → "Presupuesto", "Cum" → "Cumplimiento"."""
     unicos = list(dict.fromkeys(nombres))
     mapa = {}
     for corta in unicos:
         nc = re.sub(r"[^a-z]", "", _norm(corta))
         candidatos = [l for l in unicos if l != corta and len(_norm(l)) > len(nc)
                       and _subsecuencia(nc, re.sub(r"[^a-z]", "", _norm(l)))]
-        mapa[corta] = max(candidatos, key=len) if len(nc) <= 5 and candidatos else corta
+        if len(nc) <= 5 and candidatos:
+            mapa[corta] = max(candidatos, key=len)
+        else:
+            mapa[corta] = _ABREVIATURAS.get(nc, corta)
     return mapa
 
 
@@ -397,40 +652,60 @@ def leer_informe(raw: pd.DataFrame, hoja: str, anio_por_defecto: Optional[int] =
     lista_titulos = titulos(G)
     filas_titulo = {r for r, _ in lista_titulos}
     usadas: set = set()
+    # Los meses agrupados van primero: si no, el detector horizontal toma su
+    # fila de meses y deja fuera las medidas de debajo.
+    agrupados = _tablas_meses_agrupados(G, filas_titulo, usadas)
     horizontales = _tablas_horizontales(G, filas_titulo, usadas)
     verticales = _tablas_verticales(G, usadas)
-    if not horizontales and not any(t["con_bloques"] for t in verticales) and len(verticales) < 2:
+    if (not agrupados and not horizontales and not any(t["con_bloques"] for t in verticales)
+            and len(verticales) < 2):
         return []
 
     etiquetas = [t["entidad"] for t in horizontales] + [g for t in verticales for g, _ in t["grupos"]]
     resumenes = _tablas_resumen(G, usadas, etiquetas)
+    planas = _tablas_planas(G, usadas, filas_titulo)
 
+    # Una sección por (título, qué agrupan las filas). Bajo un mismo título
+    # puede haber una tabla por región y otra por producto: juntarlas mezclaba
+    # "R1" y "Netflix" en la misma columna.
     secciones: dict = {}
 
-    def seccion_para(fila):
+    def seccion_para(fila, dimension):
         titulo = _seccion(fila, lista_titulos)
-        return secciones.setdefault(titulo, {"registros": [], "dimension": None, "eje": None,
-                                             "tablas": 0, "resumen": {}, "totales": 0})
+        if dimension == "Grupo":
+            dimension = _dimension_por_titulo(titulo) or dimension
+        return secciones.setdefault((titulo, dimension), {
+            "titulo": titulo, "registros": [], "dimension": dimension, "eje": None,
+            "tablas": 0, "resumen": {}, "totales": 0})
 
+    for t in agrupados:
+        s = seccion_para(t["fila"], _dimension(t["eje"], t["etiquetas"]))
+        s["tablas"] += 1
+        s["totales"] += t["totales"]
+        for etiqueta, periodo, medida, valor in t["registros"]:
+            if np.isfinite(valor):
+                s["registros"].append((etiqueta, periodo, medida, valor))
     for t in horizontales:
-        s = seccion_para(t["fila"])
+        etiquetas_t = [e for e, _ in t["filas"]] if t["filas_son_entidades"] else [t["entidad"]]
+        eje_t = t["eje"] if t["filas_son_entidades"] else None
+        s = seccion_para(t["fila"], _dimension(eje_t, etiquetas_t))
         s["tablas"] += 1
         s["totales"] += t["totales_excluidos"]
         if _norm(t["eje"]) in _EJES and t["eje"]:
             s["eje"] = s["eje"] or t["eje"]
+        if t["filas_son_entidades"]:
+            todos = [v for _, valores in t["filas"] for v in valores]
+            medida = t["entidad"] or _nombrar_medida(s["titulo"], todos, t["porcentaje"])
         for etiqueta, valores in t["filas"]:
             for periodo, valor in zip(t["periodos"], valores):
                 if not np.isfinite(valor):
                     continue
                 if t["filas_son_entidades"]:
-                    s["dimension"] = s["dimension"] or t["eje"]
-                    # Sin rótulo propio, la medida se llama por lo que es: un valor, o un porcentaje.
-                    medida = t["entidad"] or ("Valor (%)" if t["porcentaje"] else "Valor")
                     s["registros"].append((etiqueta, periodo, medida, valor))
                 else:
                     s["registros"].append((t["entidad"], periodo, etiqueta, valor))
     for t in verticales:
-        s = seccion_para(t["fila"])
+        s = seccion_para(t["fila"], _dimension(None, [g for g, _ in t["grupos"]]))
         s["tablas"] += 1
         if _norm(t["eje"]) in _EJES and t["eje"]:
             s["eje"] = s["eje"] or t["eje"]
@@ -440,34 +715,68 @@ def leer_informe(raw: pd.DataFrame, hoja: str, anio_por_defecto: Optional[int] =
                     if np.isfinite(valor):
                         s["registros"].append((grupo, periodo, nombre, valor))
     for t in resumenes:
-        s = seccion_para(t["fila"])
+        s = seccion_para(t["fila"], _dimension(None, list(t["valores"])))
         for grupo, valor in t["valores"].items():
             s["resumen"].setdefault(grupo, {})[t["columna"]] = valor
 
+    _nombrar_medidas_sin_nombre(secciones)
+
+    por_titulo: dict = {}
+    for (titulo, _), s in secciones.items():
+        if s["registros"]:
+            por_titulo[titulo] = por_titulo.get(titulo, 0) + 1
+
     salida = []
-    for titulo, s in secciones.items():
+    for (titulo, dimension), s in secciones.items():
         nombre_base = titulo or hoja
+        # Solo se agrega "· por X" cuando el título tiene más de una tabla distinta.
+        nombre = f"{nombre_base} · por {dimension}" if por_titulo.get(titulo, 0) > 1 else nombre_base
         if s["registros"]:
             df = _tabla_ordenada(s, anio_por_defecto)
             if df is not None and not df.empty:
-                log = [f"Hoja «{hoja}» leída como informe: «{nombre_base}» sale de {s['tablas']} tabla(s) "
-                       f"de la hoja, convertidas a una fila por grupo y mes."]
+                log = [f"Hoja «{hoja}» leída como informe: «{nombre}» sale de {s['tablas']} tabla(s) "
+                       f"de la hoja, convertidas a una fila por {dimension.lower()} y mes."]
                 if s["totales"]:
                     log.append(f"{s['totales']} fila(s) de Total excluida(s): son un agregado, no un registro.")
-                salida.append({"nombre": nombre_base, "titulo": nombre_base, "datos": df, "log": log})
+                salida.append({"nombre": nombre, "titulo": nombre_base, "datos": df, "log": log,
+                               "faltantes_son_cero": False})
         if s["resumen"]:
             filas = [{"_grupo": g, **vals} for g, vals in s["resumen"].items()]
-            resumen = pd.DataFrame(filas)
-            dimension = s["dimension"] or _nombre_de_grupo(list(s["resumen"]))
-            resumen = resumen.rename(columns={"_grupo": dimension})
+            resumen = pd.DataFrame(filas).rename(columns={"_grupo": dimension})
             for col in resumen.columns[1:]:
-                if _PORCENTAJE_RE.search(str(col)) and resumen[col].abs().max() <= 3:
+                if _PORCENTAJE_RE.search(str(col)) and _parece_proporcion(resumen[col]):
                     resumen[col] = (resumen[col] * 100).round(2)
-            salida.append({"nombre": f"{nombre_base} · Resumen", "titulo": f"{nombre_base} · Resumen",
-                           "datos": resumen,
+            salida.append({"nombre": f"{nombre} · Resumen", "titulo": f"{nombre_base} · Resumen",
+                           "datos": resumen, "faltantes_son_cero": False,
                            "log": [f"Tabla resumen de «{nombre_base}» ({', '.join(map(str, resumen.columns[1:]))}): "
                                    f"una fila por {dimension.lower()}."]})
+    for t in planas:
+        titulo = _seccion(t["fila"], lista_titulos) or hoja
+        salida.append({"nombre": titulo, "titulo": titulo, "datos": t["datos"],
+                       "log": [f"Hoja «{hoja}»: «{titulo}» es una tabla normal dentro del informe "
+                               f"({len(t['datos'])} registros); se lee tal cual."]})
     return salida
+
+
+def _nombrar_medidas_sin_nombre(secciones: dict) -> None:
+    """Le pone nombre a la medida principal de las tablas que no la rotulan.
+
+    En "Productos | abr-26 | % Participación | …" el número bajo el mes no
+    tiene encabezado. Si otra tabla del mismo título mide una sola cosa con
+    nombre ("Altas" junto a Meta y Cum), es esa; si no, se nombra por el título.
+    """
+    for (titulo, dimension), s in secciones.items():
+        if not any(r[2] is None for r in s["registros"]):
+            continue
+        hermanas = set()
+        for (t2, d2), s2 in secciones.items():
+            if t2 == titulo and d2 != dimension:
+                hermanas |= {r[2] for r in s2["registros"] if r[2]
+                             and not _PORCENTAJE_RE.search(str(r[2]))
+                             and not re.search(r"meta|ppto|presup|objetivo", _norm(r[2]))}
+        valores = [r[3] for r in s["registros"] if r[2] is None]
+        nombre = next(iter(hermanas)) if len(hermanas) == 1 else _nombrar_medida(titulo, valores)
+        s["registros"] = [(g, p, nombre if m is None else m, v) for g, p, m, v in s["registros"]]
 
 
 def _tabla_ordenada(s, anio_por_defecto) -> Optional[pd.DataFrame]:
@@ -486,7 +795,9 @@ def _tabla_ordenada(s, anio_por_defecto) -> Optional[pd.DataFrame]:
     tabla = tabla.dropna(how="all").reset_index()
     tabla.columns.name = None
     etiquetas = tabla["_grupo"].dropna().astype(str).unique().tolist()
-    dimension = s["dimension"] or _nombre_de_grupo(etiquetas)
+    dimension = s["dimension"] if s["dimension"] and s["dimension"] != "Grupo" else _nombre_de_grupo(etiquetas)
+    if dimension == "Grupo":
+        dimension = _dimension_por_titulo(s.get("titulo")) or dimension
     eje = s["eje"] if s["eje"] and _norm(s["eje"]) not in {"", "ano", "year"} else "Mes"
     tabla = tabla.rename(columns={"_grupo": dimension, "_periodo": eje})
     if tabla[dimension].isna().all():
@@ -498,7 +809,7 @@ def _tabla_ordenada(s, anio_por_defecto) -> Optional[pd.DataFrame]:
     medidas = [m for m in orden if m in tabla.columns] + [m for m in medidas if m not in orden]
     for col in medidas:
         serie = pd.to_numeric(tabla[col], errors="coerce")
-        if _PORCENTAJE_RE.search(str(col)) and serie.abs().max() <= 3:
+        if _PORCENTAJE_RE.search(str(col)) and _parece_proporcion(serie):
             tabla[col] = (serie * 100).round(2)
     columnas = ([dimension] if dimension in tabla.columns else []) + [eje] + medidas
     orden_filas = [c for c in [dimension, eje] if c in tabla.columns]
@@ -634,10 +945,11 @@ def graficos_e_imagenes(data: bytes, hojas_grid=None) -> dict:
         parte = rels_libro.get(hoja.get(f"{{{_R}}}id"))
         if not parte or parte not in z.namelist():
             continue
-        graficos, imagenes = [], 0
+        graficos, imagenes, filas_imagen = [], 0, []
         for _, tipo, dibujo in _relaciones(z, parte):
             if not tipo.endswith("/drawing") or dibujo not in z.namelist():
                 continue
+            filas_imagen += _filas_de_imagenes(z.read(dibujo))
             for _, tipo_d, destino in _relaciones(z, dibujo):
                 if tipo_d.endswith("/image"):
                     imagenes += 1
@@ -649,5 +961,22 @@ def graficos_e_imagenes(data: bytes, hojas_grid=None) -> dict:
                     if grafico:
                         graficos.append(grafico)
         if graficos or imagenes:
-            salida[nombre] = {"graficos": graficos, "imagenes": imagenes}
+            salida[nombre] = {"graficos": graficos, "imagenes": imagenes, "filas_imagen": sorted(filas_imagen)}
     return salida
+
+
+_XDR = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+
+
+def _filas_de_imagenes(xml: bytes) -> list[int]:
+    """Fila (desde 0) donde empieza cada imagen pegada, para decir en qué sección está."""
+    try:
+        raiz = ET.fromstring(xml)
+    except ET.ParseError:
+        return []
+    filas = []
+    for ancla in list(raiz.iter(f"{{{_XDR}}}twoCellAnchor")) + list(raiz.iter(f"{{{_XDR}}}oneCellAnchor")):
+        fila = ancla.find(f"{{{_XDR}}}from/{{{_XDR}}}row")
+        if ancla.find(f"{{{_XDR}}}pic") is not None and fila is not None and (fila.text or "").isdigit():
+            filas.append(int(fila.text))
+    return filas

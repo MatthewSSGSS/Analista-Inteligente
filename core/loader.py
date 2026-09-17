@@ -5,8 +5,9 @@ import pandas as pd
 from .profile import profile_sheet
 from .relationships import detect_relationships
 from .pivot_flatten import merged_ranges_by_sheet, fill_merged_cells, flatten_pivot_grid
-from .informe import leer_informe, graficos_e_imagenes, titulo_principal
+from .informe import leer_informe, graficos_e_imagenes, titulo_principal, titulos as titulos_de
 from .dates import extract_year_hint
+from .imagen_ocr import imagenes_del_libro
 
 
 def _norm_header(v):
@@ -63,6 +64,16 @@ def _grid(data, sheet_name, merge_ranges=None, engine=None):
     # comentario largo en pivot_flatten.merged_ranges_by_sheet).
     n_merged = fill_merged_cells(raw, merge_ranges) if merge_ranges and not raw.empty else 0
     return raw, n_merged
+
+
+def _misma_tabla(a, b) -> bool:
+    """¿Dos tablas con exactamente las mismas columnas y valores?"""
+    try:
+        return (a is not None and b is not None and a.shape == b.shape
+                and list(map(str, a.columns)) == list(map(str, b.columns))
+                and a.reset_index(drop=True).equals(b.reset_index(drop=True)))
+    except Exception:
+        return False
 
 
 def _nombre_unico(nombre, usados):
@@ -137,6 +148,7 @@ def load_workbook(uploaded):
     name = filename.lower()
     titulos: dict = {}
     avisos: list = []
+    sin_ceros: set = set()  # tablas de informe: una celda vacía es "sin reportar", no cero
     if name.endswith(".csv"):
         raw = {"CSV": _read_csv(data)}
     elif name.endswith((".xlsx", ".xls", ".xlsb", ".xlsm")):
@@ -160,8 +172,19 @@ def load_workbook(uploaded):
                 tablas = []  # un informe raro nunca debe impedir leer la hoja como siempre
             if tablas:
                 for t in tablas:
+                    # Los informes suelen copiar la misma tabla en otra hoja
+                    # (INDICADORES CLAVE repite tres de BUENAS NOTICIAS). Se
+                    # muestra una vez y se avisa, en vez de llenar el selector
+                    # de hojas con "(2)" que dicen exactamente lo mismo.
+                    igual = next((n for n, (d, _) in raw.items() if _misma_tabla(d, t["datos"])), None)
+                    if igual is not None:
+                        avisos.append(f"«{t['nombre']}» de la hoja «{sheet}» es idéntica a «{igual}»: "
+                                      "se muestra una sola vez.")
+                        continue
                     nombre = _nombre_unico(t["nombre"], raw)
                     raw[nombre] = (t["datos"], t["log"])
+                    if not t.get("faltantes_son_cero", True):
+                        sin_ceros.add(nombre)
                     titulos[nombre] = t["titulo"]
                 continue
             if grid.empty:
@@ -186,19 +209,56 @@ def load_workbook(uploaded):
                     titulos[nombre] = titulo
                 if contenido["imagenes"]:
                     n = contenido["imagenes"]
-                    avisos.append(
-                        f"La hoja «{hoja}» tiene {n} imagen{'es' if n != 1 else ''} pegada{'s' if n != 1 else ''}. "
-                        "Una imagen no trae números, así que no se puede analizar: si es un gráfico, "
-                        "incluye también su tabla de datos o pégalo como gráfico de Excel.")
+                    # Qué sección es cada imagen: "tiene 2 imágenes" no dice
+                    # qué se perdió; "RANKING DE LOS JEFES es una imagen" sí.
+                    grid = grids.get(hoja)
+                    secciones = []
+                    if grid is not None and not grid.empty:
+                        lista = titulos_de(grid.to_numpy(dtype=object))
+                        for fila in contenido.get("filas_imagen", []):
+                            previos = [t for r, t in lista if r <= fila]
+                            if previos and previos[-1] not in secciones:
+                                secciones.append(previos[-1])
+                    if secciones:
+                        nombres = " y ".join(f"«{s}»" for s in secciones) if len(secciones) <= 2 else \
+                            ", ".join(f"«{s}»" for s in secciones[:-1]) + f" y «{secciones[-1]}»"
+                        avisos.append(
+                            f"En la hoja «{hoja}», {nombres} {'es una imagen pegada' if len(secciones) == 1 else 'son imágenes pegadas'}: "
+                            "una imagen no trae celdas con números. Si muestra cifras escritas (una tabla o un gráfico "
+                            "con sus valores), se puede leer en «🖼️ Imágenes del archivo», más abajo en esta pestaña.")
+                    else:
+                        avisos.append(
+                            f"La hoja «{hoja}» tiene {n} imagen{'es' if n != 1 else ''} pegada{'s' if n != 1 else ''}. "
+                            "Una imagen no trae números, así que no se puede analizar: si es un gráfico, "
+                            "incluye también su tabla de datos o pégalo como gráfico de Excel.")
     else:
         raise ValueError("Formato no soportado")
+
+    # Las imágenes se guardan con su sección para poder leerlas después con el
+    # OCR local (core/imagen_ocr.py), a pedido y con revisión. No se leen aquí:
+    # tarda varios segundos por imagen y el resultado hay que revisarlo antes
+    # de analizarlo.
+    imagenes = []
+    if name.endswith((".xlsx", ".xlsm")):
+        try:
+            imagenes = imagenes_del_libro(data)
+        except Exception:
+            imagenes = []
+        for img in imagenes:
+            grid = grids.get(img["hoja"])
+            lista = titulos_de(grid.to_numpy(dtype=object)) if grid is not None and not grid.empty else []
+            previos = [t for r, t in lista if r <= img["fila"]]
+            img["seccion"] = previos[-1] if previos else img["hoja"]
+            img["anio"] = extract_year_hint(img["hoja"], filename)
 
     sheets = {}
     for sheet_name, (raw_df, structural_log) in raw.items():
         if raw_df is None or raw_df.empty or len(raw_df.columns) == 0:
             continue
         sheets[sheet_name] = profile_sheet(
-            raw_df, context={"sheet_name": sheet_name, "workbook_name": filename}, structural_log=structural_log,
+            raw_df, context={"sheet_name": sheet_name, "workbook_name": filename,
+                             "faltantes_son_cero": sheet_name not in sin_ceros},
+            structural_log=structural_log,
         )
 
     if not sheets:
@@ -216,4 +276,5 @@ def load_workbook(uploaded):
         "sheets": sheets,
         "relationships": relationships,
         "avisos": avisos,
+        "imagenes": imagenes,
     }

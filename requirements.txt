@@ -13,3 +13,7 @@ geopy>=2.4
 openai>=1.0
 SQLAlchemy>=2.0
 psycopg2-binary>=2.9
+
+# Lector de imágenes pegadas en el Excel. Corre en el mismo equipo/servidor,
+# con los modelos incluidos en el paquete: no envía ni descarga nada al usarse.
+rapidocr_onnxruntime>=1.2.3,<2

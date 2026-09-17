@@ -4,7 +4,7 @@ from .statistics import describe
 from .anomalies import detect
 from .insights import generate
 from .executive import build_executive, build_alerts, explain_change
-from .numeric import numeric_series, safe_sum, safe_mean
+from .numeric import numeric_series, numeric_valid, safe_sum, safe_mean
 from .performance import analyze as analyze_performance
 from .universal_analysis import dynamic_kpis
 
@@ -43,13 +43,16 @@ def build_dashboard(df, profile):
         d=schema["dates"][0]
         tmp=df[[d,primary]].copy()
         tmp[d]=pd.to_datetime(tmp[d],errors="coerce")
-        tmp[primary]=numeric_series(tmp[primary])
-        tmp=tmp.dropna(subset=[d])
+        # numeric_valid y no numeric_series: un mes sin dato (un informe que aún
+        # no reporta agosto) no es un mes en cero. Con ceros, el panel decía
+        # que los ingresos habían caído 100%.
+        tmp[primary]=numeric_valid(tmp[primary])
+        tmp=tmp.dropna(subset=[d, primary])
         if len(tmp)>=2:
             _sem={x.get("column"):x.get("semantic_type") for x in schema.get("semantic",{}).get("columns",[])}
             _por_mes=tmp.set_index(d)[primary].resample("MS")
             # Un porcentaje o un promedio no se suma entre registros: se promedia.
-            tmp=(_por_mes.sum() if _sem.get(primary) in {"revenue","profit","cost","quantity","discount","tax"} else _por_mes.mean()).dropna()
+            tmp=(_por_mes.sum(min_count=1) if _sem.get(primary) in {"revenue","profit","cost","quantity","discount","tax"} else _por_mes.mean()).dropna()
             if len(tmp)>=2:
                 previous=float(tmp.iloc[-2]); current=float(tmp.iloc[-1])
                 if np.isfinite(previous) and np.isfinite(current) and previous != 0:
