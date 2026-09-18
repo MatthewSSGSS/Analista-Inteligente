@@ -288,6 +288,17 @@ def test_los_numeros_de_las_jugadas_tienen_color_con_sentido():
         st.markdown = original
     html = "".join(capturado)
     check("en pantalla hay cifras en rojo y en verde", "color:#E4002B" in html and "color:#22A06B" in html)
+
+    # Las palabras no se pegan al pintar las cifras: la frase viene partida y
+    # `clean_display_text` recorta los extremos de cada trozo, así que salía
+    # "Recuperar lo queRetailperdió" (ver ui/comercial._frase_con_color).
+    import re as _re
+    from ui.comercial import _frase_con_color
+    frases = [_re.sub(r"<[^>]+>", "", _frase_con_color(j["partes"])) for j in oportunidades(matriz)]
+    check("las palabras no se pegan a las cifras de color",
+          not any(_re.search(r"[a-záéíóúñ][A-ZÁÉÍÓÚÑ0-9]|[0-9%][a-záéíóúñ]", f) for f in frases))
+    check("y cada frase se lee entera", any("Recuperar lo que Retail perdió" in f for f in frases))
+    check("las frases de la pantalla son las mismas", all(f in _re.sub(r"<[^>]+>", "", html) for f in frases))
     check("y se explica qué significa cada color", "va mal" in html and "va bien" in html)
 
 

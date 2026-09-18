@@ -444,15 +444,28 @@ _TONO_BORDE = {"malo": "#E4002B", "bueno": "#22A06B", "info": "#64748B"}
 
 
 def _frase_con_color(partes) -> str:
-    """La frase de la jugada, con cada cifra pintada según lo que significa."""
+    """La frase de la jugada, con cada cifra pintada según lo que significa.
+
+    Los espacios que separan las partes se conservan a mano: la frase viene
+    partida ("Recuperar lo que ", "R4", " perdió…") y `clean_display_text`
+    recorta los extremos de cada trozo, así que al unirlos quedaba
+    "Recuperar lo queR4perdió". Van FUERA de la negrita, para no pintar de
+    rojo un espacio en blanco.
+    """
     html = []
     for texto, tono in partes:
-        limpio = clean_display_text(texto)
+        crudo = "" if texto is None else str(texto)
+        izquierda = " " if crudo[:1].isspace() else ""
+        derecha = " " if crudo[-1:].isspace() else ""
+        limpio = clean_display_text(crudo)
+        if not limpio:
+            html.append(izquierda or derecha)
+            continue
         if tono == "info":
-            html.append(limpio)
+            html.append(f"{izquierda}{limpio}{derecha}")
         else:
             color = _TONO_COLOR.get(tono, "var(--text)")
-            html.append(f'<b style="color:{color}">{limpio}</b>')
+            html.append(f'{izquierda}<b style="color:{color}">{limpio}</b>{derecha}')
     return "".join(html)
 
 

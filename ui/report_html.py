@@ -9,6 +9,8 @@ import pandas as pd
 
 from core.quality import assess
 from ui.labels import clean_display_text
+from ui.report_secciones import (CSS as CSS_SECCIONES, bloque_cambio_periodos,
+                                 bloque_cuadro_comparativo, bloque_estrategia, bloque_planes)
 from core.dashboard_engine import build_dashboard
 from core.geo_engine import geographic_summary, supports_georeferencing
 from core.universal_analysis import semantic_map, ADDITIVE, drilldown_table
@@ -179,7 +181,8 @@ def _chart_block(title: str, subtitle: str, fig, chart_number: int, include_js: 
     """
 
 
-def _build_charts(df: pd.DataFrame, schema: dict, dashboard: dict, include_geo: bool = True) -> list[str]:
+def _build_charts(df: pd.DataFrame, schema: dict, dashboard: dict, include_geo: bool = True,
+                  incluir_motor: bool = True) -> list[str]:
     metrics = metric_candidates(df, schema)
     dims = dimension_candidates(df, schema)
     primary = dashboard.get("primary_metric") or (metrics[0] if metrics else None)
@@ -243,9 +246,13 @@ def _build_charts(df: pd.DataFrame, schema: dict, dashboard: dict, include_geo: 
             # Export must never fail just because geocoding/map support is unavailable.
             pass
 
+    # El motor de Plotly (~3.5 MB) va incrustado UNA sola vez por documento:
+    # en el informe de todo el Excel cada hoja llamaba aquí y metía su propia
+    # copia, y el archivo llegaba a 58 MB —imposible de enviar por correo—
+    # cuando con una sola copia pesa una fracción de eso.
     blocks = []
     for i, (title, subtitle, fig) in enumerate(charts, 1):
-        blocks.append(_chart_block(title, subtitle, fig, i, include_js=(i == 1)))
+        blocks.append(_chart_block(title, subtitle, fig, i, include_js=(incluir_motor and i == 1)))
     return blocks
 
 
@@ -518,6 +525,39 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     # que el resto de gráficos, se adaptan a lo que el archivo realmente
     # tiene. El resto queda como material de apoyo más abajo.
     chart_blocks = _build_charts(df, schema, dashboard, include_geo=True)
+
+    # ── Secciones de decisión (mismas que las pestañas del panel) ──────────
+    # Los gráficos siguen la numeración de los de arriba, y si el informe no
+    # tuviera ningún gráfico universal, el primero de estos carga el motor de
+    # Plotly: sin él, los demás quedarían en blanco al abrir el archivo.
+    estado_js = {"pendiente": not chart_blocks, "n": len(chart_blocks)}
+
+    def _numerar() -> int:
+        estado_js["n"] += 1
+        return estado_js["n"]
+
+    def _bloque(titulo, subtitulo, fig, numero) -> str:
+        incluir = estado_js["pendiente"]
+        estado_js["pendiente"] = False
+        return _chart_block(titulo, subtitulo, fig, numero, include_js=incluir)
+
+    try:
+        cuadro_html = bloque_cuadro_comparativo(df, schema, primary, _bloque, _numerar)
+    except Exception:
+        cuadro_html = ""
+    try:
+        cambio_periodos_html = bloque_cambio_periodos(df, schema, primary, _bloque, _numerar)
+    except Exception:
+        cambio_periodos_html = ""
+    try:
+        estrategia_html = bloque_estrategia(df, schema)
+    except Exception:
+        estrategia_html = ""
+    try:
+        planes_html = bloque_planes(df, schema, dashboard)
+    except Exception:
+        planes_html = ""
+
     primary_charts_html = "".join(chart_blocks[:2])
     secondary_chart_blocks = chart_blocks[2:]
     if not chart_blocks:
@@ -579,6 +619,14 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
         nav_groups[1][1].append(("top-bottom", "Top y Bottom 10"))
     if change_html:
         nav_groups[1][1].append(("cambio", "Cambio principal"))
+    if cuadro_html:
+        nav_groups[1][1].append(("cuadro-comparativo", "Cómo va cada uno"))
+    if cambio_periodos_html:
+        nav_groups[1][1].append(("cambio-periodos", "Qué cambió y quién lo explica"))
+    if estrategia_html:
+        nav_groups[1][1].append(("estrategia", "Estrategia por canal"))
+    if planes_html:
+        nav_groups[1][1].append(("planes", "Planes de mejora"))
     nav_groups[1][1].append(("lectura", "Lectura analítica"))
     if statistics_html:
         nav_groups[2][1].append(("estadistica", "Estadística"))
@@ -738,6 +786,7 @@ td.num,th.num{{text-align:right;font-variant-numeric:tabular-nums}}
 .footer{{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--soft);font-size:11px;text-align:center}}
 
 @media(max-width:1080px){{.side-nav{{display:none}}}}
+{CSS_SECCIONES}
 @media(max-width:850px){{.report-shell{{padding:16px 12px}}.cover{{padding:22px 20px}}.cover h1{{font-size:24px}}.grid2,.exec-card{{grid-template-columns:1fr}}.meta-grid{{grid-template-columns:repeat(2,1fr)}}.cover-stats{{gap:16px}}}}
 
 /* ===== Impresión / PDF =====
@@ -780,6 +829,10 @@ td.num,th.num{{text-align:right;font-variant-numeric:tabular-nums}}
 {concentration_html}
 {f'<section class="section" id="top-bottom"><div class="sec-head"><span class="sec-num">05</span><div><h2>Top y Bottom 10</h2><p>Extremos por {_esc(_label(schema, primary))}, usando {_esc(_label(schema, dims[0]))} como categoría.</p></div></div><div class="grid2">{top_bottom_html}</div></section>' if top_bottom_html else ''}
 {change_html.replace('<section class="change-box">', '<section class="change-box" id="cambio">', 1)}
+{cuadro_html}
+{cambio_periodos_html}
+{estrategia_html}
+{planes_html}
 <section class="section" id="lectura"><div class="sec-head"><span class="sec-num">06</span><div><h2>Lectura analítica</h2><p>Hallazgos priorizados por el motor universal, con contexto y acción cuando existe.</p></div></div><div class="insights">{''.join(insight_html) or '<div class="empty">No se detectaron hallazgos suficientes para esta selección.</div>'}</div></section>
 {statistics_html}
 {anomalies_html}
@@ -901,6 +954,10 @@ def build_workbook_html_report(workbook: dict) -> str:
 
     sheet_sections = []
     chart_counter = 0
+    # El motor de Plotly viaja en el PRIMER gráfico que se dibuje en todo el
+    # documento, sea de la hoja que sea: si la primera hoja no tiene gráficos,
+    # lo lleva el primero de la siguiente sección que sí los tenga.
+    motor = {"pendiente": True}
     used_slugs: dict = {}
     for r in reports:
         d = r["dashboard"]
@@ -937,7 +994,9 @@ def build_workbook_html_report(workbook: dict) -> str:
         if not insight_html:
             insight_html = "<div class='empty'>No se detectaron hallazgos suficientes en esta hoja.</div>"
 
-        charts = _build_charts(df, schema, d, include_geo=True)
+        charts = _build_charts(df, schema, d, include_geo=True, incluir_motor=motor["pendiente"])
+        if charts:
+            motor["pendiente"] = False
         numbered_blocks = []
         for block in charts[:8]:
             chart_counter += 1
@@ -968,6 +1027,36 @@ def build_workbook_html_report(workbook: dict) -> str:
                 <table><thead><tr><th>#</th><th>{_esc(_label(schema, sheet_dims[0]))}</th><th>{_esc(_label(schema, r['primary']))}</th></tr></thead><tbody>{_tb_rows(bottom_df)}</tbody></table></div>
                 """
 
+        # Mismas secciones de decisión que el informe individual, una por hoja.
+        # El motor de Plotly ya viene en el primer gráfico del libro; estos
+        # solo agregan sus figuras.
+        def _bloque_hoja(titulo, subtitulo, fig, numero):
+            incluir = motor["pendiente"]
+            motor["pendiente"] = False
+            return _chart_block(titulo, subtitulo, fig, numero, include_js=incluir)
+
+        def _numerar_hoja():
+            nonlocal chart_counter
+            chart_counter += 1
+            return chart_counter
+
+        secciones_hoja = []
+        for constructor in (
+            lambda: bloque_cuadro_comparativo(df, schema, r["primary"], _bloque_hoja, _numerar_hoja),
+            lambda: bloque_cambio_periodos(df, schema, r["primary"], _bloque_hoja, _numerar_hoja),
+            lambda: bloque_estrategia(df, schema),
+            lambda: bloque_planes(df, schema, d),
+        ):
+            try:
+                bloque = constructor()
+            except Exception:
+                bloque = ""
+            if bloque:
+                # El ancla ya la usa la sección del informe individual; en el
+                # libro hay una por hoja, así que se hace única.
+                secciones_hoja.append(bloque.replace('<section class="section" id="', f'<section class="section" id="{sheet_id}-', 1))
+        secciones_hoja_html = "".join(secciones_hoja)
+
         qrows = "".join(f"<tr><td>{_esc(c)}</td><td>{_esc(v)}</td><td>{_esc(s)}</td></tr>" for c,v,s in r["quality"])
         sheet_sections.append(f"""
         <section class='sheet-section' id='{sheet_id}'>
@@ -976,6 +1065,7 @@ def build_workbook_html_report(workbook: dict) -> str:
           <div class='kpis'>{kpi_html}</div>
           <div class='grid2'>{primary_charts_html}</div>
           {f"<div class='grid2'>{top_bottom_html}</div>" if top_bottom_html else ""}
+          {secciones_hoja_html}
           <div class='sheet-detail-divider'>Detalle adicional de esta hoja</div>
           <div class='sheet-grid'><div><h3>Lectura de esta hoja</h3><div class='insights'>{insight_html}</div></div><div class='table-card'><h3>Calidad</h3><table><tbody>{qrows}</tbody></table></div></div>
           {f"<div class='grid2'>{secondary_charts_html}</div>" if secondary_charts_html else ""}
@@ -999,7 +1089,8 @@ def build_workbook_html_report(workbook: dict) -> str:
 <html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>Informe general del Excel — {_esc(filename)}</title>
 <style>
-:root{{--bg:#f4f6fa;--card:#fff;--text:#172033;--muted:#667085;--line:#dfe4ec;--blue:#e4002b;--teal:#10b9a6;--green:#1b9a67;--amber:#d88708;--red:#c52a3d;--shadow:0 5px 18px rgba(23,32,51,.06);--glow:0 0 0 1px rgba(228,0,43,.08),0 10px 24px rgba(228,0,43,.06)}}
+:root{{--bg:#f4f6fa;--card:#fff;--text:#172033;--muted:#667085;--line:#dfe4ec;--line-soft:#eef1f6;--ink:#0f172a;--soft:#94a3b8;--brand:#e4002b;--brand-dark:#a80e1f;--blue:#e4002b;--teal:#10b9a6;--green:#1b9a67;--amber:#d88708;--red:#c52a3d;--shadow:0 5px 18px rgba(23,32,51,.06);--glow:0 0 0 1px rgba(228,0,43,.08),0 10px 24px rgba(228,0,43,.06)}}
+{CSS_SECCIONES}
 *{{box-sizing:border-box}}body{{margin:0;background:
     radial-gradient(ellipse 900px 480px at 100% 0%,rgba(228,0,43,.05),transparent 60%),
     radial-gradient(ellipse 900px 480px at 0% 100%,rgba(228,0,43,.035),transparent 60%),
