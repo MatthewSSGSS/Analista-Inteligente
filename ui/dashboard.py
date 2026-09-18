@@ -75,24 +75,60 @@ def _kpi_style(k, schema=None):
 
 
 def _universal_kpi_grid(df, schema, dashboard):
-    kpis=dynamic_kpis(df,schema,dashboard)
-    if not kpis: return
-    cols=st.columns(min(4,len(kpis)))
-    for i,k in enumerate(kpis[:4]):
-        with cols[i]:
-            delta=None
-            label,tone,icon=_kpi_style(k,schema)
-            if k.get("kind")=="growth":
-                delta="Mejora reciente" if k["value"]>=0 else "Caída reciente"
-            elif k.get("kind")=="leader":
-                delta=k.get("detalle")
-            st.markdown(_card(label,_display_kpi_value(k),delta,tone,icon),unsafe_allow_html=True)
-    if len(kpis)>4:
-        cols=st.columns(min(4,len(kpis)-4))
-        for i,k in enumerate(kpis[4:8]):
-            with cols[i]:
-                label,tone,icon=_kpi_style(k,schema)
-                st.markdown(_card(label,_display_kpi_value(k),k.get("detalle") if k.get("kind")=="leader" else None,tone,icon),unsafe_allow_html=True)
+    """Las cifras del archivo arriba; quién va mejor, en su propia franja.
+
+    Dos arreglos de presentación sobre lo que había:
+
+    - La segunda fila se dibujaba con `st.columns(len(restantes))`: con 6
+      indicadores, los 2 de abajo salían al doble de ancho que los de arriba
+      y parecían más importantes sin serlo.
+    - La tarjeta de "mejor en cumplimiento" no es una cifra más: trae nombre,
+      porcentaje y contra qué se mide, no cabía en el mismo alto que "25
+      registros" y quedaba cortada contra el borde. Ahora va aparte, a todo
+      el ancho, donde su frase se lee entera.
+    """
+    kpis = dynamic_kpis(df, schema, dashboard)
+    if not kpis:
+        return
+    # La regla global de .kpi-card iguala el alto de la fila; la tarjeta del
+    # líder lleva una línea más ("28.0K de una meta de 25.8K") y quedaba
+    # cortada contra el borde. Aquí, y solo aquí, las tarjetas crecen con su
+    # contenido sin perder el alto mínimo común.
+    st.markdown(
+        """
+        <style>
+        .st-key-dashboard_kpis .kpi-card{height:auto !important;min-height:100%}
+        .st-key-dashboard_kpis [data-testid="stElementContainer"]:has(.kpi-card) > div,
+        .st-key-dashboard_kpis [data-testid="stElementContainer"]:has(.kpi-card) > div > div,
+        .st-key-dashboard_kpis [data-testid="stElementContainer"]:has(.kpi-card) > div > div > div{height:auto !important}
+        .st-key-dashboard_kpis{padding-bottom:14px}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    lideres = [k for k in kpis if k.get("kind") == "leader"]
+    cifras = [k for k in kpis if k.get("kind") != "leader"][:5]
+
+    def render(k):
+        label, tone, icon = _kpi_style(k, schema)
+        delta = ("Mejora reciente" if (k.get("value") or 0) >= 0 else "Caída reciente") \
+            if k.get("kind") == "growth" else None
+        return _card(label, _display_kpi_value(k), delta, tone, icon)
+
+    with st.container(key="dashboard_kpis"):
+        _kpi_grid_layout(cifras, render, per_row=min(5, len(cifras)) or 1)
+        for k in lideres[:2]:
+            label, _, icon = _kpi_style(k, schema)
+            detalle = clean_display_text(k.get("detalle") or "")
+            st.markdown(
+                f'<div class="kpi-card leader" style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">'
+                f'<span class="kpi-label">{icon or "🏆"} {clean_display_text(label)}</span>'
+                f'<span class="kpi-value" style="margin:0">{clean_display_text(_display_kpi_value(k))}</span>'
+                + (f'<span class="kpi-delta neutral" style="margin:0">{detalle}</span>' if detalle else "")
+                + '</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def _drilldown_panel(df,schema,metric,dimension):
@@ -276,29 +312,68 @@ def _executive_signals(dashboard):
     _shared_executive_signals(dashboard)
 
 
-def _alerts_panel(df, dashboard):
-    alerts=dashboard.get("alerts",[])
-    st.markdown('<div class="section-intro compact"><div><span class="eyebrow">CONTROL</span><h2>Alertas inteligentes</h2></div></div>',unsafe_allow_html=True)
-    if not alerts:
-        st.success("No hay alertas prioritarias con los datos visibles.")
-        return
-    for i,a in enumerate(alerts[:4]):
-        cls="warning" if a.get("severity")=="Alta" else "positive"
-        c1,c2=st.columns([4.2,1])
-        with c1:
-            implication=a.get("implication") or ""
-            extra=f'<small><b>Qué significa:</b> {implication}</small>' if implication else ""
-            pruebas=evidence_list(a.get("evidence"))
-            st.markdown(f'<div class="alert-row compact {cls}"><div class="alert-severity">{clean_display_text(a.get("severity"))}</div><div><b>{clean_display_text(a.get("title"))}</b><div>{clean_display_text(a.get("text"))}</div>{pruebas}{extra}<small><b>Qué hacer:</b> {clean_display_text(a.get("action"))}</small></div></div>',unsafe_allow_html=True)
-        with c2:
-            target=a.get("target") or {}
-            if target and st.button("Ver análisis",key=f"alert_focus_{i}",use_container_width=True):
-                st.session_state["focus_dimension"]=target.get("dimension")
-                st.session_state["focus_metric"]=target.get("metric") or dashboard.get("primary_metric")
-                st.session_state["focus_view"]=target.get("view","análisis")
-                if target.get("filter_column") in df.columns and target.get("filter_value") is not None:
-                    st.session_state["filters"][target["filter_column"]]={"op":"in","value":[target["filter_value"]]}
+def _hallazgos_panel(df, dashboard):
+    """Los hallazgos, UNA sola vez, ordenados por lo que exige acción.
+
+    Antes esta pestaña mostraba lo mismo dos veces: "Alertas inteligentes" y,
+    más abajo, "Hallazgos y líneas de acción". No eran dos análisis distintos:
+    `core/executive.build_alerts` construye las alertas A PARTIR de los
+    hallazgos, así que quien leía el panel veía las mismas cuatro tarjetas
+    repetidas y no sabía si eran dos cosas o un error. Ahora:
+
+    - arriba, lo que pide acción (los hallazgos que son alerta), con su
+      evidencia, qué significa, qué hacer y el botón que abre ese análisis
+      justo debajo de su tarjeta —antes vivía en una columna aparte, a la
+      derecha del todo, y no se veía de quién era—;
+    - abajo, y más discreto, el contexto que no exige acción (nivel de
+      actividad, concentración), que antes se mezclaba con lo urgente.
+    """
+    alertas = dashboard.get("alerts", [])[:5]
+    for i, a in enumerate(alertas):
+        cls = "warning" if a.get("severity") == "Alta" else "positive"
+        implicacion = a.get("implication") or ""
+        extra = f'<small><b>Qué significa:</b> {clean_display_text(implicacion)}</small>' if implicacion else ""
+        accion = a.get("action")
+        accion_html = f'<small><b>Qué hacer:</b> {clean_display_text(accion)}</small>' if accion else ""
+        st.markdown(
+            f'<div class="alert-row compact {cls}"><div class="alert-severity">{clean_display_text(a.get("severity"))}</div>'
+            f'<div><b>{clean_display_text(a.get("title"))}</b><div>{clean_display_text(a.get("text"))}</div>'
+            f'{evidence_list(a.get("evidence"))}{extra}{accion_html}</div></div>',
+            unsafe_allow_html=True,
+        )
+        target = a.get("target") or {}
+        if target:
+            valor = target.get("filter_value")
+            dimension = target.get("dimension")
+            etiqueta = (f"🔎 Abrir el análisis de {valor}" if valor is not None
+                        else f"🔎 Abrir el análisis por {dimension}" if dimension else "🔎 Abrir este análisis")
+            if st.button(etiqueta, key=f"alert_focus_{i}"):
+                st.session_state["focus_dimension"] = dimension
+                st.session_state["focus_metric"] = target.get("metric") or dashboard.get("primary_metric")
+                st.session_state["focus_view"] = target.get("view", "análisis")
+                if target.get("filter_column") in df.columns and valor is not None:
+                    st.session_state["filters"][target["filter_column"]] = {"op": "in", "value": [valor]}
                 st.rerun()
+
+    # Contexto: los hallazgos que no llegaron a ser alerta (informativos).
+    ya_dicho = {clean_display_text(a.get("title")) for a in alertas}
+    otros = [i for i in dashboard.get("insights", [])
+             if clean_display_text(i.get("title", "")) not in ya_dicho][:4]
+    if otros:
+        st.markdown('<div class="section-intro compact"><div><h2>Contexto, sin acción inmediata</h2>'
+                    '<div class="chart-subtitle">Describe la situación; no hay nada que corregir aquí.</div>'
+                    '</div></div>', unsafe_allow_html=True)
+        columnas = st.columns(2)
+        for j, item in enumerate(otros):
+            columnas[j % 2].markdown(
+                insight_card(clean_display_text(item.get("finding", "")),
+                             title=clean_display_text(item.get("title", "Hallazgo")),
+                             kind=item.get("kind", "info"), icon="i", compact=True,
+                             action=clean_display_text(item.get("action", "")) or None,
+                             evidence=item.get("evidence")),
+                unsafe_allow_html=True)
+    if not alertas and not otros:
+        st.success("No hay hallazgos que revisar con los datos visibles.")
 
 
 def _why_changed(df, dashboard):
@@ -503,22 +578,6 @@ def _performance_panel(df, dashboard):
         st.markdown(f'<div class="insight-card positive"><div class="insight-body"><div class="insight-title">Más productivo</div><div class="insight-text"><b>{best[0]}</b><br>{_fmt(best[1])}</div></div></div>',unsafe_allow_html=True)
         st.markdown(f'<div class="insight-card warning"><div class="insight-body"><div class="insight-title">Menos productivo</div><div class="insight-text"><b>{worst[0]}</b><br>{_fmt(worst[1])}</div></div></div>',unsafe_allow_html=True)
 
-def _insights_panel(insights):
-    """Lectura analítica compacta: evidencia, impacto y acción en pocas líneas."""
-    if not insights:
-        return
-    cols = st.columns(2)
-    for i, item in enumerate(insights[:4]):
-        cls = item.get("kind", "info")
-        icon = "▲" if cls == "positive" else "!" if cls == "warning" else "i"
-        title = clean_display_text(item.get("title", "Hallazgo"))
-        finding = clean_display_text(item.get("finding", ""))
-        action = clean_display_text(item.get("action", ""))
-        html = insight_card(finding, title=title, kind=cls, icon=icon, action=action, compact=True,
-                            evidence=item.get("evidence"))
-        cols[i % 2].markdown(html, unsafe_allow_html=True)
-
-
 def _primary_analysis_section(df, schema, controls, m, d, available_dates):
     """Gráfico principal (según el tipo elegido) + comparación individual +
     comparación temporal de los últimos periodos. Antes vivía inline dentro
@@ -690,23 +749,28 @@ def render_dashboard(df, dashboard):
 
     # ── Vista general: lo primero que se ve, sin necesidad de desplegar nada ──
     st.markdown(banner_header("Qué está pasando", "Descripción completa · todo recalculado con los filtros actuales.", "ciudad_red.jpg"), unsafe_allow_html=True)
-    st.caption(dashboard["summary"])
+    # El recuento técnico ("25 registros y 5 columnas, 3 métricas…") pasó a
+    # «Contexto y acción»: describe el archivo, no lo que está pasando, y era
+    # lo primero que se leía en la pestaña.
 
     # El análisis de seguimiento ya no vive aquí dentro: tiene pestaña propia
     # ("🔎 Análisis de seguimiento"). Enterrado a media página, con un botón
     # que había que descubrir, era de las herramientas menos usadas del panel
     # pese a responder una de las preguntas más frecuentes.
+    _universal_kpi_grid(df, schema, dashboard)
+
+    # La franja "Lectura rápida: caída reciente de 7.8%" decía exactamente lo
+    # mismo que el veredicto de abajo ("Altas retrocedió 7.8% frente al periodo
+    # anterior"), una encima de la otra. Se deja el veredicto, que además dice
+    # las dos cifras comparadas.
+    _executive_headline(dashboard)
+
+    # El atajo a la pestaña de seguimiento va DESPUÉS del veredicto: es una
+    # indicación de navegación, y antes era lo primero que se leía de la
+    # pestaña, por encima de las cifras y de la conclusión.
     if has_entity(df, schema):
         st.caption("¿Quieres ver un punto, asesor o código en concreto? Está en la pestaña "
                    "**🔎 Análisis de seguimiento**, con sus alertas y su comparación contra el grupo.")
-
-    _universal_kpi_grid(df, schema, dashboard)
-
-    if dashboard.get("growth") is not None:
-        g = dashboard["growth"]; cls = "positive" if g >= 0 else "negative"; text = "crecimiento" if g >= 0 else "caída"
-        st.markdown(f'<div class="decision-strip {cls}"><span class="decision-dot"></span><b>Lectura rápida:</b> {text} reciente de <strong>{abs(g):.1f}%</strong> frente al periodo anterior.</div>', unsafe_allow_html=True)
-
-    _executive_headline(dashboard)
 
     # ── Detalle progresivo: nada se elimina, solo se reorganiza en dos
     # columnas temáticas para que no sea una fila larga de acordeones y se
@@ -725,21 +789,19 @@ def render_dashboard(df, dashboard):
     detail_tabs = named_tabs(["📌 Diagnóstico", "🏆 Desempeño", "🗂️ Contexto y acción"])
 
     with detail_tabs["📌 Diagnóstico"]:
-        if ex.get("positive") or ex.get("watch"):
-            st.markdown("#### 📌 Señales positivas y puntos a vigilar")
-            _executive_signals(dashboard)
-            st.divider()
-        if alerts:
-            st.markdown(f"#### 🔔 Alertas inteligentes · {len(alerts[:4])} hallazgos prioritarios")
-            _alerts_panel(df, dashboard)
+        if alerts or insights:
+            urgentes = len([a for a in alerts[:5] if a.get("severity") == "Alta"])
+            st.markdown(f"#### 🔔 Qué revisar primero"
+                        + (f" · {urgentes} de atención alta" if urgentes else ""))
+            _hallazgos_panel(df, dashboard)
             st.divider()
         if dashboard.get("change_analysis"):
             st.markdown("#### 🔍 ¿Por qué cambió?")
             _why_changed(df, dashboard)
             st.divider()
-        if insights:
-            st.markdown(f"#### 🧭 Hallazgos y líneas de acción ({len(insights)})")
-            _insights_panel(insights)
+        if ex.get("positive") or ex.get("watch"):
+            st.markdown("#### 📌 Señales positivas y puntos a vigilar")
+            _executive_signals(dashboard)
         if not (ex.get("positive") or ex.get("watch") or alerts or dashboard.get("change_analysis") or insights):
             st.info("No hay señales, alertas ni hallazgos suficientes con los datos visibles.")
 
@@ -760,6 +822,7 @@ def render_dashboard(df, dashboard):
         _drilldown_panel(df, schema, dashboard.get("primary_metric"), (dashboard.get("performance") or {}).get("dimension"))
 
     with detail_tabs["🗂️ Contexto y acción"]:
+        st.caption(dashboard["summary"])
         st.markdown("#### 🗂️ Perfil del archivo y cómo se interpretó")
         _profile_panel(df, dashboard)
         semantic = schema.get("semantic", {})
