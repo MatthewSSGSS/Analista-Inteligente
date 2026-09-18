@@ -56,6 +56,77 @@ def evidence_list(evidence) -> str:
     return f'<div class="evidence-list">{"".join(filas)}</div>'
 
 
+def finding_card(
+    title,
+    text,
+    severity=None,
+    kind: str = "warning",
+    evidence=None,
+    meaning=None,
+    action=None,
+) -> str:
+    """Tarjeta de hallazgo accionable (`.finding-card`).
+
+    Reemplaza el `.alert-row` que usaba `ui/dashboard.py::_hallazgos_panel`.
+    Ahí el nivel («ALTA») ocupaba una columna propia a la izquierda, y las
+    dos lecturas del hallazgo —qué significa y qué hacer— caían una debajo
+    de otra como dos párrafos pequeños con el rótulo en negrita al inicio
+    de la línea: cuatro tarjetas seguidas se leían como un muro de texto.
+
+    La información es exactamente la misma; lo que cambia es la jerarquía:
+
+    - el nivel pasa a ser una píldora de color junto al título, donde el ojo
+      ya está mirando, en vez de una columna de 60px que empuja todo el
+      contenido a la derecha;
+    - el rótulo de cada lectura sube como etiqueta pequeña encima de su
+      texto, así que se distingue de un vistazo qué es interpretación y qué
+      es acción sin leer el principio de la frase;
+    - las dos lecturas van lado a lado mientras haya ancho (se apilan solas
+      cuando cada columna bajaría de ~240px), lo que reduce a la mitad el
+      alto de la tarjeta;
+    - «Qué hacer» lleva el tinte de marca porque es lo único que pide una
+      decisión.
+    """
+    badge_html = f'<span class="finding-badge">{severity}</span>' if severity else ""
+    notas = []
+    if meaning:
+        notas.append(
+            f'<div class="finding-note"><span class="note-label">Qué significa</span>'
+            f'<p>{meaning}</p></div>'
+        )
+    if action:
+        notas.append(
+            f'<div class="finding-note action"><span class="note-label">Qué hacer</span>'
+            f'<p>{action}</p></div>'
+        )
+    notas_html = f'<div class="finding-notes">{"".join(notas)}</div>' if notas else ""
+    lede_html = f'<div class="finding-lede">{text}</div>' if text else ""
+    return (
+        f'<div class="finding-card {kind}">'
+        f'<div class="finding-head">{badge_html}<span class="finding-title">{title}</span></div>'
+        f'{lede_html}{evidence_list(evidence)}{notas_html}</div>'
+    )
+
+
+def note_group(icon, titulo, motivo, items) -> str:
+    """Un grupo de notas de lectura: el motivo UNA vez, y debajo los nombres.
+
+    Lo usa `ui/home.py`. Antes cada aviso del cargador era una franja de
+    ancho completo con su explicación repetida dentro: cuatro tablas
+    repetidas decían cuatro veces «se muestra una sola vez» y dos hojas con
+    imágenes repetían el mismo párrafo sobre qué es una imagen pegada. El
+    motivo es del grupo, no de cada fila, así que se dice una sola vez.
+    """
+    filas = "".join(f'<li>{x}</li>' for x in items)
+    return (
+        f'<div class="note-group"><div class="note-group-head">'
+        f'<span class="note-group-icon">{icon}</span><b>{titulo}</b>'
+        f'<span class="note-group-count">{len(items)}</span></div>'
+        f'<div class="note-group-why">{motivo}</div>'
+        f'<ul class="note-items">{filas}</ul></div>'
+    )
+
+
 def insight_card(
     text,
     title=None,

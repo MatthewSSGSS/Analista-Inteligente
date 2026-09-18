@@ -12,7 +12,7 @@ from core.chart_explainer import explain_chart
 from core.universal_analysis import dynamic_kpis, drilldown_options, drilldown_table, smart_chart_questions
 import plotly.graph_objects as go
 from ui.person_profile import has_entity
-from ui.components.cards import kpi_card, insight_card, evidence_list, executive_headline as _shared_executive_headline, executive_signals as _shared_executive_signals
+from ui.components.cards import kpi_card, insight_card, finding_card, executive_headline as _shared_executive_headline, executive_signals as _shared_executive_signals
 from ui.components.charts import chart_card as _shared_chart_card
 from ui.components.section import banner_header
 from ui.layouts.columns import kpi_grid as _kpi_grid_layout, two_column
@@ -331,14 +331,16 @@ def _hallazgos_panel(df, dashboard):
     alertas = dashboard.get("alerts", [])[:5]
     for i, a in enumerate(alertas):
         cls = "warning" if a.get("severity") == "Alta" else "positive"
-        implicacion = a.get("implication") or ""
-        extra = f'<small><b>Qué significa:</b> {clean_display_text(implicacion)}</small>' if implicacion else ""
-        accion = a.get("action")
-        accion_html = f'<small><b>Qué hacer:</b> {clean_display_text(accion)}</small>' if accion else ""
         st.markdown(
-            f'<div class="alert-row compact {cls}"><div class="alert-severity">{clean_display_text(a.get("severity"))}</div>'
-            f'<div><b>{clean_display_text(a.get("title"))}</b><div>{clean_display_text(a.get("text"))}</div>'
-            f'{evidence_list(a.get("evidence"))}{extra}{accion_html}</div></div>',
+            finding_card(
+                clean_display_text(a.get("title")),
+                clean_display_text(a.get("text")),
+                severity=clean_display_text(a.get("severity")),
+                kind=cls,
+                evidence=a.get("evidence"),
+                meaning=clean_display_text(a.get("implication") or "") or None,
+                action=clean_display_text(a.get("action") or "") or None,
+            ),
             unsafe_allow_html=True,
         )
         target = a.get("target") or {}
@@ -347,7 +349,12 @@ def _hallazgos_panel(df, dashboard):
             dimension = target.get("dimension")
             etiqueta = (f"🔎 Abrir el análisis de {valor}" if valor is not None
                         else f"🔎 Abrir el análisis por {dimension}" if dimension else "🔎 Abrir este análisis")
-            if st.button(etiqueta, key=f"alert_focus_{i}"):
+            # El botón ocupaba todo el ancho debajo de la tarjeta y pesaba
+            # visualmente tanto como el hallazgo. Acotado a un cuarto del
+            # ancho sigue siendo el mismo botón, pero se lee como el pie de
+            # la tarjeta y no como otra franja más.
+            boton_col, _ = st.columns([1, 3])
+            if boton_col.button(etiqueta, key=f"alert_focus_{i}", use_container_width=True):
                 st.session_state["focus_dimension"] = dimension
                 st.session_state["focus_metric"] = target.get("metric") or dashboard.get("primary_metric")
                 st.session_state["focus_view"] = target.get("view", "análisis")

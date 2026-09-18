@@ -902,13 +902,6 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 .mini-positive,.mini-warning{margin-top:6px;padding:9px 11px;border-radius:var(--radius-sm);font-size:12.5px}
 .mini-positive{color:var(--green-strong);background:var(--green-soft);border-left:3px solid var(--green)}
 .mini-warning{color:var(--amber-strong);background:var(--amber-soft);border-left:3px solid var(--amber)}
-.alert-row{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow-sm)}
-.alert-row.warning{border-left:4px solid var(--amber)}
-.alert-row.positive{border-left:4px solid var(--green)}
-.alert-severity{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--soft);min-width:60px}
-.alert-row b{color:var(--text)}
-.alert-row div div{font-size:12.5px;color:var(--muted);margin-top:3px}
-.alert-row small{display:block;color:var(--soft);margin-top:6px;line-height:1.4}
 /* Evidencia de la alerta: los nombres concretos con su cifra. Es lo que
    convierte "164 atípicos" en algo sobre lo que se puede decidir, así que
    se lee como una lista corta y no como más texto corrido. */
@@ -918,6 +911,66 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 .evidence-row .evidence-value{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
 .evidence-row .evidence-detail{color:var(--soft);white-space:nowrap}
 .insight-card .evidence-list{margin-top:9px}
+/* Hallazgo accionable (.finding-card, ver ui/components/cards.py). Sustituye
+   al .alert-row de "Qué revisar primero": mismo contenido, pero el nivel es
+   una píldora junto al título en vez de una columna a la izquierda, y las
+   dos lecturas (qué significa / qué hacer) van en rejilla lado a lado en
+   lugar de dos párrafos apilados. Con 4 o 5 hallazgos seguidos eso es la
+   diferencia entre una lista legible y una pared de texto. */
+.finding-card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--amber);
+  border-radius:var(--radius-md);padding:13px 15px;margin:0 0 10px;box-shadow:var(--shadow-sm);
+  transition:transform .18s ease,box-shadow .18s ease}
+.finding-card:hover{transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.finding-card.positive{border-left-color:var(--green)}
+.finding-card.info{border-left-color:var(--blue)}
+.finding-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.finding-badge{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+  padding:3px 9px;border-radius:999px;background:var(--amber-soft);color:var(--amber-strong);white-space:nowrap}
+.finding-card.positive .finding-badge{background:var(--green-soft);color:var(--green-strong)}
+.finding-card.info .finding-badge{background:var(--blue-soft);color:var(--blue-strong)}
+.finding-title{font-size:15px;font-weight:800;color:var(--text);line-height:1.25}
+.finding-lede{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:5px}
+/* auto-fit + minmax: dos columnas cuando hay ancho, una sola en pantallas
+   angostas, sin media query ni saber cuántas notas trae la tarjeta. */
+.finding-notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-top:9px}
+.finding-note{padding:9px 11px;border-radius:var(--radius-sm);background:var(--panel-2);border:1px solid var(--line)}
+.finding-note.action{background:var(--blue-soft);border-color:var(--line-soft)}
+.finding-note .note-label{display:block;font-size:9.5px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--soft);margin-bottom:3px}
+.finding-note.action .note-label{color:var(--blue-strong)}
+.finding-note p{margin:0;font-size:12.5px;line-height:1.45;color:var(--text)}
+.finding-card .evidence-list{margin-top:9px}
+
+/* Qué se está viendo y cómo se interpretó, en una sola tarjeta (ui/home.py).
+   Las capacidades activadas son chips y no una frase con comas: seis
+   nombres separados por comas se leen como texto corrido, y en chips se
+   cuentan de un vistazo. */
+.context-bar{margin:10px 0 12px;padding:12px 15px;border:1px solid var(--line);border-radius:var(--radius-md);
+  background:var(--panel);box-shadow:var(--shadow-sm)}
+.context-main{font-size:13px;color:var(--text);line-height:1.4}
+.context-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.context-tipo{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--blue-strong);background:var(--blue-soft);border-radius:999px;padding:3px 10px}
+.context-conf{font-size:11px;color:var(--muted);font-weight:700}
+.context-caps{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:8px;padding-top:8px;
+  border-top:1px solid var(--line-soft)}
+.context-caps-label{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--soft);margin-right:2px}
+.context-chip{font-size:11px;color:var(--text);background:var(--panel-2);border:1px solid var(--line);
+  border-radius:999px;padding:2px 9px;white-space:nowrap}
+
+/* Notas de lectura del archivo (.note-group, ver ui/components/cards.py):
+   el motivo del grupo una sola vez y los nombres como lista. */
+.note-group{margin:2px 0 12px}
+.note-group-head{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)}
+.note-group-icon{font-size:14px}
+.note-group-count{font-size:10.5px;font-weight:800;color:var(--muted);background:var(--panel-2);
+  border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+.note-group-why{font-size:11.5px;color:var(--muted);margin:3px 0 6px;line-height:1.45}
+.note-items{margin:0;padding-left:18px;color:var(--text);font-size:12px;line-height:1.6}
+.note-items li{margin:2px 0}
+.note-item-meta{color:var(--muted)}
+
 .why-card{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-md);padding:15px 18px;margin-bottom:10px}
 .why-title{font-size:16px;color:var(--text);font-weight:750}
 .why-subtitle{font-size:11px;color:var(--muted);margin-top:4px}
@@ -942,7 +995,6 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 6px 16px rgba(20,26,43,.05);
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .drilldown-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(228,0,43,.10);border-color:rgba(228,0,43,.22)}
-.alert-row.compact{padding:10px 12px;margin-bottom:6px}
 .analysis-note{font-size:11.5px;color:var(--muted);margin:4px 0 8px}
 
 /* ===== Comparison panel ===== */
