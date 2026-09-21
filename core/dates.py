@@ -254,10 +254,15 @@ def a_datetime(series, **kwargs):
     sin_zona = ~con_zona
     if bool(sin_zona.any()):
         try:
-            salida.loc[sin_zona] = pd.to_datetime(texto[sin_zona], errors="coerce", **kwargs)
+            resto = pd.to_datetime(texto[sin_zona], errors="coerce", **kwargs)
         except (ValueError, TypeError):
-            salida.loc[sin_zona] = _a_hora_colombia(
-                pd.to_datetime(texto[sin_zona], errors="coerce", utc=True, **kwargs))
+            resto = pd.to_datetime(texto[sin_zona], errors="coerce", utc=True, **kwargs)
+        # Puede volver CON zona aunque el patrón no la hubiera visto: "-05"
+        # (desfase de dos dígitos), " UTC", "GMT-5"… pandas los entiende y el
+        # patrón no. En vez de ampliar el patrón —que es la trampa en la que
+        # cayeron los intentos anteriores, siempre faltaba un formato— se
+        # mira el RESULTADO: si trae zona, se convierte igual que el resto.
+        salida.loc[sin_zona] = _a_hora_colombia(resto)
     return salida
 
 

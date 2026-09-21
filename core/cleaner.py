@@ -88,15 +88,24 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
     "14:30-05:00" quedan comparables entre sí, referidas al mismo reloj.
     """
     convertidas = []
-    for col in df.columns:
-        serie = df[col]
+    # Se recorre por POSICIÓN, no por nombre. Con dos columnas que se llaman
+    # igual —dos "Fecha", o varias sin encabezado, que es de lo más común en
+    # estos informes— `df[nombre]` no devuelve una serie sino un DataFrame:
+    # `serie.dtype` lanza AttributeError, el `except` de abajo se lo traga y
+    # la columna se saltaba ENTERA, sin convertir y sin avisar. Después
+    # `clean()` renombra los duplicados y sus zonas horarias llegaban
+    # intactas a la clasificación semántica, que es donde reventaba
+    # ("Mixed timezones detected" en semantic_engine._date_rate).
+    for pos in range(df.shape[1]):
+        col = df.columns[pos]
+        serie = df.iloc[:, pos]
         try:
             # Caso 1: la columna YA es de tipo fecha con zona. Se pregunta por
             # el atributo `tz` en vez de comprobar un tipo concreto, para que
             # también valgan los tipos respaldados por Arrow
             # (timestamp[us, tz=UTC]) y no solo el datetime64 clásico.
             if getattr(serie.dtype, "tz", None) is not None:
-                df[col] = serie.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None)
+                df.isetitem(pos, serie.dt.tz_convert(COLOMBIA_TZ).dt.tz_localize(None))
                 convertidas.append(str(col))
                 continue
 
@@ -159,7 +168,7 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
             validos = locales.notna()
             nueva = serie.astype(object).copy()
             nueva.loc[locales.index[validos]] = locales[validos]
-            df[col] = nueva
+            df.isetitem(pos, nueva)
             convertidas.append(str(col))
         except Exception:
             # Nunca tumbar la carga por esto: si una columna rara no se deja
@@ -177,9 +186,12 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
     # por un camino distinto que no se había previsto. Perder la precisión
     # de la zona en un puñado de valores raros es mucho mejor que dejar al
     # usuario sin poder abrir su archivo.
-    for col in df.columns:
+    # También por posición, por el mismo motivo que la pasada de arriba: con
+    # nombres repetidos, `df[nombre]` no da una serie y la columna se salta.
+    for pos in range(df.shape[1]):
+        col = df.columns[pos]
         try:
-            serie = df[col]
+            serie = df.iloc[:, pos]
             if not (serie.dtype == object or pd.api.types.is_string_dtype(serie)):
                 continue
             distintos = _candidatos_con_zona(serie)
@@ -206,7 +218,7 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
                     limpieza[v] = limpio
             if not limpieza:
                 continue
-            df[col] = serie.replace(limpieza)
+            df.isetitem(pos, serie.replace(limpieza))
             if str(col) not in convertidas:
                 convertidas.append(str(col))
         except Exception:

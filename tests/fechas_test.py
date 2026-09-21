@@ -23,6 +23,7 @@ from openpyxl import Workbook
 
 from core import dates as D
 from core.dates import a_datetime, date_only
+from core.semantic_engine import _date_rate
 from core.filter_engine import mascara_regla
 from core.loader import load_workbook
 
@@ -144,6 +145,62 @@ def las_fechas_sin_zona_no_se_mueven():
     check("y los vacíos siguen vacíos", bool(r.isna().iloc[2]))
 
 
+def columnas_con_nombre_duplicado_tambien_se_normalizan():
+    """La causa real del fallo que siguió apareciendo en producción.
+
+    Con dos columnas que se llaman igual —dos "Fecha", o varias sin
+    encabezado, de lo más común en estos informes— `df[nombre]` no devuelve
+    una serie sino un DataFrame. `normalize_timezones` lanzaba AttributeError,
+    su `except` se lo tragaba y la columna se saltaba ENTERA, sin avisar.
+    Luego `clean()` renombraba los duplicados y las zonas horarias llegaban
+    vivas a la clasificación semántica, que es donde reventaba
+    (`semantic_engine._date_rate`).
+    """
+    from core.cleaner import clean, normalize_timezones
+
+    df = pd.DataFrame([["2026-01-15 10:00:00+00:00", "2026-02-15 23:30:00-05:00", 1],
+                       ["2026-03-15 08:00:00+02:00", "2026-04-15 10:00:00+00:00", 2]],
+                      columns=["Fecha", "Fecha", "V"])
+    check("con nombres duplicados, las DOS columnas se normalizan",
+          len(normalize_timezones(df.copy())) == 2)
+
+    limpio, _ = clean(df)
+    con_zona = 0
+    for col in limpio.columns:
+        serie = limpio[col]
+        if getattr(serie, "ndim", 1) != 1:
+            continue
+        for v in serie.dropna():
+            try:
+                t = pd.Timestamp(v)
+                con_zona += (not pd.isna(t)) and t.tzinfo is not None
+            except (ValueError, TypeError):
+                pass
+    check("tras limpiar no queda ningún valor con zona horaria", con_zona == 0)
+
+    # Y el punto exacto donde reventaba: la clasificación semántica.
+    with _pandas_estricto():
+        for col in limpio.columns:
+            serie = limpio[col]
+            if getattr(serie, "ndim", 1) == 1:
+                _date_rate(serie)
+    check("la clasificación semántica ya no revienta con esas columnas", True)
+
+
+def la_clasificacion_semantica_aguanta_los_formatos_raros():
+    """`_date_rate` recortaba la zona con un patrón que reconocía "+00:00" y
+    "Z" pero no "-05", " UTC" ni "GMT-5": con esos, el desfase sobrevivía al
+    recorte y pandas se negaba a construir la columna."""
+    with _pandas_estricto():
+        for etiqueta, valores in {
+            "-05 (dos dígitos)": ["2026-01-15 10:00:00-05", "2026-02-15 23:30:00+00:00"],
+            "UTC escrito": ["2026-01-15 10:00:00 UTC", "2026-02-15 23:30:00-05:00"],
+            "con zona y sin zona": ["2026-01-15 10:00:00+00:00", "2026-02-15 23:30:00"],
+        }.items():
+            tasa = _date_rate(pd.Series(valores))
+            check(f"«{etiqueta}» se clasifica como fecha sin reventar", tasa == 1.0)
+
+
 def columnas_ya_fechadas_y_casos_raros():
     with _pandas_estricto():
         check("una columna ya con zona única sale sin zona",
@@ -180,6 +237,8 @@ if __name__ == "__main__":
     un_registro_nocturno_no_salta_de_dia()
     todo_queda_en_hora_de_colombia()
     las_fechas_sin_zona_no_se_mueven()
+    columnas_con_nombre_duplicado_tambien_se_normalizan()
+    la_clasificacion_semantica_aguanta_los_formatos_raros()
     columnas_ya_fechadas_y_casos_raros()
     el_archivo_completo_carga_y_se_puede_filtrar()
     print("\nFechas test completado sin errores.")
