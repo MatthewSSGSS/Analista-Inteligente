@@ -201,6 +201,40 @@ def la_clasificacion_semantica_aguanta_los_formatos_raros():
             check(f"«{etiqueta}» se clasifica como fecha sin reventar", tasa == 1.0)
 
 
+def una_columna_con_formatos_distintos_no_pierde_filas():
+    """Una misma columna puede traer "2026-01-15" en una fila y
+    "20/02/2026 09:00" en otra. pandas, por defecto, deduce el formato del
+    primer valor y convierte en vacío TODO lo que no encaje — media columna
+    desaparecía sin decir nada. Por eso se interpreta valor por valor."""
+    with _pandas_estricto():
+        r = a_datetime(pd.Series(["2026-01-15", "2026-02-20 09:00:00", "15/03/2026",
+                                  "2026-04-16 04:30:00+00:00"]))
+    check("las cuatro filas se leen, con formatos distintos", r.notna().all())
+    check("cada una con su fecha correcta",
+          r.dt.strftime("%Y-%m-%d").tolist() == ["2026-01-15", "2026-02-20", "2026-03-15", "2026-04-15"])
+
+
+def el_resultado_es_siempre_una_columna_de_fechas():
+    """La versión anterior partía la columna en trozos, los interpretaba por
+    separado y los volvía a juntar con `.loc`. Cuando un trozo volvía como
+    objetos con zonas distintas, esa asignación metía fechas con zona dentro
+    de una columna sin zona y pandas reventaba por dentro con un "Something
+    has gone wrong, please report a bug". El resultado debe ser siempre una
+    columna de fechas de verdad, nunca una de objetos sueltos."""
+    entradas = [
+        ["2026-01-15 10:00:00+00:00", "2026-02-15 23:30:00-05:00"],       # desfases mezclados
+        ["2026-01-15 10:00:00-05", "2026-01-15 15:00:00 UTC"],            # formatos raros
+        ["2026-01-15 10:00:00+00:00", "2026-02-15 23:30:00", "no es"],    # con zona, sin zona y basura
+        ["hola", "mundo"],                                                 # nada parseable
+        [None, None],                                                      # todo vacío
+    ]
+    with _pandas_estricto():
+        for valores in entradas:
+            r = a_datetime(pd.Series(valores))
+            check(f"«{str(valores[0])[:26]}…» devuelve una columna de fechas",
+                  str(r.dtype) == "datetime64[ns]")
+
+
 def columnas_ya_fechadas_y_casos_raros():
     with _pandas_estricto():
         check("una columna ya con zona única sale sin zona",
@@ -239,6 +273,8 @@ if __name__ == "__main__":
     las_fechas_sin_zona_no_se_mueven()
     columnas_con_nombre_duplicado_tambien_se_normalizan()
     la_clasificacion_semantica_aguanta_los_formatos_raros()
+    una_columna_con_formatos_distintos_no_pierde_filas()
+    el_resultado_es_siempre_una_columna_de_fechas()
     columnas_ya_fechadas_y_casos_raros()
     el_archivo_completo_carga_y_se_puede_filtrar()
     print("\nFechas test completado sin errores.")

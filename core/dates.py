@@ -185,6 +185,24 @@ def yyyymm_series(s):
 TZ_SUFFIX_RE = re.compile(r"\s*(?:Z|[+-]\d{2}:?\d{2})$", re.I)
 _TZ_SUFFIX_RE = TZ_SUFFIX_RE  # alias interno histórico
 
+# El mismo sufijo, pero reconociendo TODAS las formas en que un archivo real
+# escribe la zona. `TZ_SUFFIX_RE` (arriba) solo cubre "+00:00", "-0500" y "Z",
+# y esa estrechez fue justo lo que hizo fallar dos intentos de arreglo: con
+# "-05" (desfase de dos dígitos), " UTC" o "GMT-5" el desfase sobrevivía sin
+# que nadie lo viera. Aquí se usa para decidir qué valores hay que pasar a
+# hora de Colombia, así que dejar uno fuera significa reportarlo cinco horas
+# corrido.
+# Se exige que ANTES del desfase haya una hora ("10:30", "10:30:00"). Sin esa
+# condición, el patrón mordía la propia fecha: en "2026-01-15" el "-15" final
+# tiene exactamente la forma de un desfase de dos dígitos, así que toda fecha
+# normal se habría dado por "con zona" y se habría corrido cinco horas al día
+# anterior. Una zona horaria solo aparece detrás de una hora.
+TZ_EN_TEXTO_RE = re.compile(
+    r"\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\s*"
+    r"(?:Z|[+-]\d{2}(?::?\d{2})?|(?:UTC|GMT)(?:[+-]\d{1,2}(?::?\d{2})?)?)\s*$",
+    re.I,
+)
+
 
 def a_datetime(series, **kwargs):
     """`pd.to_datetime` que NUNCA tumba la carga por zonas horarias.
@@ -232,38 +250,39 @@ def a_datetime(series, **kwargs):
     except (AttributeError, TypeError, ValueError):
         return _a_hora_colombia(pd.to_datetime(series, errors="coerce", utc=True, **kwargs))
 
-    con_zona = texto.str.contains(TZ_SUFFIX_RE, regex=True, na=False)
-    if not bool(con_zona.any()):
-        # Ningún valor trae desfase: la columna ya está en hora local y no hay
-        # nada que convertir. Es el caso normal y NO debe tocarse — parsear
-        # esto como UTC y pasarlo a Bogotá restaría 5 horas y mandaría cada
-        # fecha al día anterior.
-        try:
-            return pd.to_datetime(texto, errors="coerce", **kwargs)
-        except (ValueError, TypeError):
-            return _a_hora_colombia(pd.to_datetime(texto, errors="coerce", utc=True, **kwargs))
+    con_zona = texto.str.contains(TZ_EN_TEXTO_RE, regex=True, na=False)
 
-    salida = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
-    # Con desfase: se reconcilian en UTC (`utc=True` nunca lanza, con desfases
-    # mezclados o no) y se pasan a la hora de Colombia.
-    conv = pd.to_datetime(texto[con_zona], errors="coerce", utc=True, **kwargs)
-    salida.loc[con_zona] = _a_hora_colombia(conv)
-    # Sin desfase dentro de una columna que sí los trae: el archivo no dice a
-    # qué zona pertenecen, así que se toman como ya escritas en hora local.
-    # Es la única lectura que no inventa un desplazamiento.
-    sin_zona = ~con_zona
-    if bool(sin_zona.any()):
-        try:
-            resto = pd.to_datetime(texto[sin_zona], errors="coerce", **kwargs)
-        except (ValueError, TypeError):
-            resto = pd.to_datetime(texto[sin_zona], errors="coerce", utc=True, **kwargs)
-        # Puede volver CON zona aunque el patrón no la hubiera visto: "-05"
-        # (desfase de dos dígitos), " UTC", "GMT-5"… pandas los entiende y el
-        # patrón no. En vez de ampliar el patrón —que es la trampa en la que
-        # cayeron los intentos anteriores, siempre faltaba un formato— se
-        # mira el RESULTADO: si trae zona, se convierte igual que el resto.
-        salida.loc[sin_zona] = _a_hora_colombia(resto)
-    return salida
+    # UNA sola interpretación para toda la columna, siempre con `utc=True`.
+    #
+    # Es la clave de que esto no pueda fallar. `utc=True` nunca lanza —da
+    # igual que cada fila traiga un desfase distinto, o ninguno— y siempre
+    # devuelve una columna de fechas de verdad, nunca una de objetos sueltos.
+    #
+    # La versión anterior de esta función hacía lo contrario: partía la
+    # columna en dos trozos, los interpretaba por separado y los volvía a
+    # juntar con `.loc`. Ahí, si un trozo volvía como objetos con zonas
+    # distintas, la asignación metía fechas con zona dentro de una columna
+    # sin zona y pandas reventaba por dentro con un "Something has gone
+    # wrong, please report a bug". Interpretar una vez y transformar después
+    # elimina por completo ese ensamblado.
+    # `format="mixed"` interpreta CADA valor por su cuenta. Sin él, pandas
+    # deduce un formato del primer valor y descarta como vacío todo el que no
+    # encaje: una columna con "2026-01-15" en una fila y "20/02/2026 09:00"
+    # en otra perdía la mitad de las fechas en silencio. Es el mismo ajuste
+    # que ya usaba `detect_date` más abajo.
+    opciones = {"format": "mixed", **kwargs}
+    fechas = pd.to_datetime(texto, errors="coerce", utc=True, **opciones)
+
+    # Un valor SIN desfase se acaba de interpretar como si fuera UTC, así que
+    # quitarle la zona devuelve exactamente la hora que estaba escrita: no se
+    # mueve nada. Un valor CON desfase sí se pasa a la hora de Colombia.
+    como_esta = fechas.dt.tz_localize(None)
+    if not bool(con_zona.any()):
+        return como_esta
+    en_colombia = fechas.dt.tz_convert(_zona_colombia()).dt.tz_localize(None)
+    # `where` combina las dos columnas —ambas del mismo tipo y ya sin zona—
+    # sin asignar nada por trozos.
+    return en_colombia.where(con_zona, como_esta)
 
 
 # Colombia no aplica horario de verano desde 1993, así que su hora es
