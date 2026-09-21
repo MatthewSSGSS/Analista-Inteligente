@@ -17,6 +17,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from core.dates import extract_year_hint
 from core.loader import load_workbook
 
 SUPERVISOR_RE = re.compile(r"(supervisor|jefe|l[ií]der|responsable|encargad[oa]|team\s*lead|coordinador)", re.I)
@@ -24,6 +25,19 @@ LOCATION_HEADER_RE = re.compile(r"(?:punto de venta|pdv|tienda|sucursal|puesto|s
 ID_PRIORITY_RE = re.compile(r"(cedula|cédula|documento|id.?empleado|id.?funcionario|dni|nit)", re.I)
 LOCATION_CONCEPTS = {"city", "region", "country", "address"}
 METRIC_CONCEPTS = {"revenue", "profit", "cost", "price", "quantity", "percentage", "rating"}
+# Tipos semánticos que identifican a una PERSONA, del más específico al más
+# general (ver _pick_name_column). Es una tupla, no un set: el orden es la
+# preferencia, y un set no lo garantiza.
+PERSON_CONCEPTS = ("name", "employee")
+PERSON_HEADER_RE = re.compile(
+    r"(asesor|vendedor|funcionari|colaborador|empleado|ejecutiv|promotor|gestor|"
+    r"agente|consultor|nombre|apellido)", re.I,
+)
+
+# Nombre de la medida cuando la tabla es una dinámica ancha y las columnas
+# son los meses: el archivo no dice cómo se llama lo que mide, y es el mismo
+# nombre que usa core/informe.py al aplanar esta forma desde un Excel.
+WIDE_VALUE_COLUMN = "Valor"
 
 CONSOLIDATED_COLUMNS = [
     "person_key", "person_id", "person_name", "supervisor", "source_file",
@@ -59,16 +73,45 @@ def _pick_id_column(schema: dict):
 
 
 def _pick_name_column(df: pd.DataFrame, schema: dict):
+    """La columna que dice QUIÉN es cada fila.
+
+    Buscaba únicamente `semantic_type == "name"`, y eso dejaba fuera la
+    forma más común en los reportes comerciales que usa esta herramienta: la
+    columna no se llama "Nombre" sino "Asesor", "Vendedor", "Colaborador" o
+    "Funcionario", que el motor semántico clasifica como `employee`, no como
+    `name` (ver PATTERNS en core/semantic_engine.py). Sin ID en el archivo,
+    `ingest_file` descartaba la hoja entera —"no tiene una columna de ID o
+    nombre reconocible"— aunque la persona estuviera ahí, con su nombre, en
+    la primera columna.
+
+    Eso golpeaba sobre todo a las dinámicas: al convertir una tabla de
+    personas × meses en tabla ordenada, el lector de informes conserva UNA
+    columna de etiqueta (la del nombre) y la de ID se pierde por el camino,
+    así que el nombre pasa a ser el único identificador que queda.
+
+    Orden de preferencia: el nombre completo que ya armó el perfil → una
+    columna tipada como `name` → una tipada como `employee` → el encabezado
+    que nombra un rol de persona. Siempre de lo más específico a lo más
+    general, para que un archivo con "Nombre" y "Asesor" siga eligiendo
+    "Nombre".
+    """
     full = (schema.get("full_name") or {}).get("column")
     if full and full in df.columns:
         return full
-    best = None
+    por_tipo: dict = {}
     for item in schema.get("semantic", {}).get("columns", []):
-        if item.get("semantic_type") == "name" and item.get("column") in df.columns:
+        tipo, col = item.get("semantic_type"), item.get("column")
+        if tipo in PERSON_CONCEPTS and col in df.columns:
             conf = item.get("confidence", 0)
-            if best is None or conf > best[1]:
-                best = (item["column"], conf)
-    return best[0] if best else None
+            if tipo not in por_tipo or conf > por_tipo[tipo][1]:
+                por_tipo[tipo] = (col, conf)
+    for tipo in PERSON_CONCEPTS:
+        if tipo in por_tipo:
+            return por_tipo[tipo][0]
+    for c in df.columns:
+        if PERSON_HEADER_RE.search(str(c)):
+            return c
+    return None
 
 
 def _pick_supervisor_column(df: pd.DataFrame):
@@ -81,6 +124,50 @@ def _pick_supervisor_column(df: pd.DataFrame):
 def _pick_date_column(schema: dict):
     dates = schema.get("dates", []) or []
     return dates[0] if dates else None
+
+
+def _period_by_column(df: pd.DataFrame, year_hint: int | None = None) -> dict:
+    """{columna: Timestamp} para las columnas cuyo NOMBRE es un mes.
+
+    Es el caso de una tabla dinámica ancha —una fila por persona y una
+    columna por mes ("ene-26", "feb-26"…)—, que llega así cuando el archivo
+    es un CSV: el lector de informes, que es quien convierte esa forma en
+    tabla ordenada, solo corre sobre hojas de Excel (ver core/loader.py), así
+    que un CSV exportado desde una dinámica conserva los meses como columnas.
+
+    Sin esto, cada mes entraba al historial como si fuera una métrica
+    distinta ("ene-26", "feb-26"…) y con `period` en NULL, porque el periodo
+    solo se leía de una columna de fecha. Con `period` vacío no hay línea de
+    tiempo ni proyección posible (ver project_metric): el dato estaba en el
+    archivo, pero no llegaba a la base.
+
+    Se exigen 2+ columnas de mes para no reinterpretar una tabla plana que
+    por casualidad tenga una columna llamada como un mes. Un mes sin año
+    ("Oct") usa el año que se dedujo del nombre del archivo o de la hoja; si
+    no hay ninguno, esa columna se deja como estaba (no se inventa un año).
+    """
+    # Qué nombres de columna son un periodo lo decide UNA sola función, la
+    # misma que usa el aplanador al despivotar (core/pivot_flatten). Aquí
+    # antes se volvía a decidir con un recorrido propio: dos reglas para la
+    # misma pregunta acaban discrepando, y entonces el mismo archivo se
+    # interpreta distinto según por dónde entró.
+    from core.informe import periodo_de
+    from core.pivot_flatten import period_like_columns
+
+    out = {}
+    for c in period_like_columns(df.columns):
+        try:
+            periodo = periodo_de(c) or periodo_de(str(c))
+        except Exception:
+            continue
+        if not periodo:
+            continue  # un año suelto ("2025") nombra un periodo pero no un mes
+        anio, mes = periodo
+        anio = anio or year_hint
+        if not anio or not mes:
+            continue
+        out[c] = pd.Timestamp(year=int(anio), month=int(mes), day=1)
+    return out if len(out) >= 2 else {}
 
 
 def ingest_file(uploaded, batch_label: str | None = None) -> list[dict]:
@@ -110,6 +197,10 @@ def ingest_file(uploaded, batch_label: str | None = None) -> list[dict]:
             "name_col": name_col,
             "supervisor_col": _pick_supervisor_column(df),
             "date_col": _pick_date_column(schema),
+            # Para los meses que llegan como nombre de columna sin año
+            # ("Oct" en vez de "oct-26"): el mismo año que ya deduce el
+            # lector de Excel del nombre del archivo y de la hoja.
+            "year_hint": extract_year_hint(wb.get("filename"), sheet_name),
             "batch_label": batch_label or wb.get("filename"),
         })
     return sources
@@ -128,6 +219,11 @@ def sources_to_long(sources: list[dict], upload_batch: str | None = None) -> pd.
         skip_cols = {c for c in [id_col, name_col, sup_col, date_col] if c}
         value_cols = [c for c in df.columns if c not in skip_cols]
         concepts = {x.get("column"): x.get("semantic_type") for x in src["schema"].get("semantic", {}).get("columns", [])}
+        # Dinámica ancha (una columna por mes): el periodo está en el NOMBRE
+        # de la columna, no en una columna de fecha. Solo se mira cuando la
+        # hoja NO trae columna de fecha propia — si la trae, manda esa y esto
+        # no se activa, para no reinterpretar una tabla que ya era ordenada.
+        period_cols = {} if date_col else _period_by_column(df, src.get("year_hint"))
 
         for idx, row in df.iterrows():
             raw_id = row.get(id_col) if id_col else None
@@ -147,6 +243,12 @@ def sources_to_long(sources: list[dict], upload_batch: str | None = None) -> pd.
                 v = row.get(c)
                 if pd.isna(v) or str(v).strip() == "":
                     continue
+                # Si el nombre de la columna ES el periodo, ese es el periodo
+                # de la fila y la medida pasa a llamarse "Valor" — el mismo
+                # nombre que le pone el lector de informes cuando aplana esta
+                # misma forma desde un Excel (core/informe.py), para que el
+                # historial quede igual venga el archivo como .xlsx o .csv.
+                col_period = period_cols.get(c)
                 rows.append({
                     "person_key": key,
                     "person_id": person_id,
@@ -154,8 +256,8 @@ def sources_to_long(sources: list[dict], upload_batch: str | None = None) -> pd.
                     "supervisor": supervisor,
                     "source_file": src["filename"],
                     "source_sheet": src["sheet"],
-                    "period": period,
-                    "column": str(c),
+                    "period": col_period if col_period is not None else period,
+                    "column": WIDE_VALUE_COLUMN if col_period is not None else str(c),
                     "value": v,
                     "concept": concepts.get(c, ""),
                     "upload_batch": upload_batch,

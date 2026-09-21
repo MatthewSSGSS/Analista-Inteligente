@@ -331,6 +331,39 @@ def clean(df, faltantes_son_cero=True):
     elif numeric_missing:
         log.append(f"{numeric_missing:,} celda(s) sin dato en el informe se dejaron vacías: "
                    "un mes sin reportar no se cuenta como cero.")
+    # ── Un entero es un entero, venga por donde venga ──
+    # Este es el punto por el que pasan TODAS las rutas de carga, así que es
+    # donde tiene que quedar un solo tipo por columna. Sin esto, la misma
+    # tabla terminaba con dos tipos distintos según cómo hubiera llegado:
+    # por la ruta normal los números vienen como texto y `to_numeric` (arriba)
+    # los deja en Int64; por la ruta de informe/dinámica ya vienen calculados
+    # como float64 y nadie los volvía a mirar, así que el mismo archivo daba
+    # Int64 como .csv y float64 como .xlsx.
+    #
+    # Solo se convierte lo que es entero de verdad: si alguna fila tiene
+    # decimales, la columna se queda en float (un porcentaje 93.5 no es un
+    # entero). Int64 es el tipo "nulificable", así que los vacíos que el
+    # informe conserva a propósito (un mes sin reportar) siguen vacíos.
+    # También los enteros "de numpy" (int64): una tabla suelta llega como
+    # texto y termina en Int64, pero la misma tabla leída dentro de una hoja
+    # tipo informe llega ya tipada como int64 y se quedaba así. Son dos
+    # nombres para lo mismo, y con dos nombres el esquema no converge; Int64
+    # es además el que ya usa la mayoría del panel y admite vacíos.
+    convertidas = []
+    candidatas = out.select_dtypes(include=["float64", "float32", "int64", "int32"]).columns
+    for c in candidatas:
+        serie = out[c]
+        validos = serie.dropna()
+        if validos.empty or not bool((validos % 1 == 0).all()):
+            continue
+        try:
+            out[c] = serie.astype("Int64")
+            convertidas.append(str(c))
+        except (TypeError, ValueError):
+            pass  # fuera del rango de Int64: se queda como estaba
+    if convertidas:
+        cols_txt = ", ".join(convertidas[:5]) + ("…" if len(convertidas) > 5 else "")
+        log.append(f"{len(convertidas)} columna(s) sin decimales tipadas como número entero: {cols_txt}.")
     dup=int(out.duplicated().sum())
     if dup: log.append(f"{dup:,} filas duplicadas detectadas; no se eliminaron automáticamente.")
     return out,log

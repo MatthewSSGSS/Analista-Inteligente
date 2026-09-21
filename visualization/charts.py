@@ -317,7 +317,21 @@ def metric_candidates(df, schema):
         if s.notna().sum() == 0:
             continue
         unique = s.dropna().nunique()
-        if unique <= 12 and pd.api.types.is_integer_dtype(s) and _concept_for(schema, c) in {"unknown", "id"}:
+        # Una columna de enteros con pocos valores distintos y sin concepto
+        # conocido suele ser un CÓDIGO (zona 1..5, tipo 1..3), no una medida.
+        # La señal de que es un código es que se REPITE: cinco zonas en
+        # quinientas filas. Si casi cada fila trae un valor distinto, es una
+        # medida con pocos registros, no una categoría.
+        #
+        # Antes bastaba `unique <= 12` + dtype entero, y eso dependía de por
+        # dónde hubiera entrado el archivo: la misma medida llegaba como
+        # float64 desde una hoja tipo informe (y pasaba el filtro) y como
+        # entero desde una tabla normal (y lo bloqueaba). Al unificar los
+        # tipos —para que las dos rutas entreguen el mismo esquema— esa
+        # diferencia accidental desapareció y el filtro se tragaba la medida
+        # de cualquier informe pequeño: sin métrica no hay gráficos ni KPIs.
+        parece_codigo = unique <= 12 and len(s.dropna()) >= unique * 3
+        if parece_codigo and pd.api.types.is_integer_dtype(s) and _concept_for(schema, c) in {"unknown", "id"}:
             continue
         out.append(c)
     priority = {"revenue": 0, "profit": 1, "quantity": 2, "price": 3, "cost": 4,

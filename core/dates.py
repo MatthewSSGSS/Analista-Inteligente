@@ -96,10 +96,22 @@ def is_month_name_series(s):
 
 
 def extract_year_hint(*texts):
+    """El año que nombra el archivo o la hoja ("Ventas 2026", "reporte_2026").
+
+    Sirve de respaldo cuando los meses del archivo no traen año ("Oct", "Ene"):
+    lo usan core/informe.py al ordenar un informe y core/pivot_flatten.py al
+    despivotar meses que están como columnas.
+
+    El límite se marca con "no haya otro dígito al lado" y no con `\\b`:
+    el guion bajo es un carácter de palabra, así que `\\b` NO existe entre
+    "_" y "2" y el año de "reporte_2026.xlsx" —la forma de nombrar un
+    archivo más común que hay— no se encontraba nunca. Con este límite sigue
+    sin colarse un año dentro de un número más largo ("120260").
+    """
     for text in texts:
         if not text:
             continue
-        m = re.search(r"\b(19\d{2}|20\d{2}|21\d{2})\b", str(text))
+        m = re.search(r"(?<!\d)(19\d{2}|20\d{2}|21\d{2})(?!\d)", str(text))
         if m:
             return int(m.group(1))
     return None

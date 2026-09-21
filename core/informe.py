@@ -40,9 +40,9 @@ import pandas as pd
 
 from .dates import MONTHS
 from .numeric import _parse_number
+from .pivot_flatten import es_total
 
 MIN_PERIODOS = 3
-_TOTALES = {"total", "total general", "gran total", "subtotal", "totales", "grand total"}
 _EJES = {"mes", "meses", "month", "periodo", "fecha", "ano", "year", "corte", ""}
 _PORCENTAJE_RE = re.compile(r"cum|%|porc|tasa|part|ratio|pct|avance", re.I)
 _MES_RE = re.compile(r"(?:\d{1,2}\s*[.\-/]?\s*)?([a-z]{3,10})\.?(?:(?:\s*de\s+|\s*[\-/.\s]\s*)'?(\d{2}|\d{4}))?")
@@ -108,7 +108,12 @@ def _anio_de(v) -> Optional[int]:
 
 
 def _es_total(texto) -> bool:
-    return _norm(texto) in _TOTALES
+    """Delegado en `core/pivot_flatten.es_total`, la fuente única para las
+    dos rutas de carga. Antes era una lista literal propia de este módulo
+    que no reconocía "Sub total" ni "Subtotales": esas filas se colaban
+    como un registro más en las hojas tipo informe, cuando el mismo
+    archivo leído por la otra ruta sí las excluía."""
+    return es_total(texto)
 
 
 # ── Títulos ─────────────────────────────────────────────────────────────────
@@ -249,6 +254,32 @@ def _tablas_horizontales(G, filas_titulo, usadas):
         filas_son_entidades = _norm(eje) not in _EJES or len(filas) > 12
         if filas_son_entidades and _norm(eje) in _EJES:
             eje = "Grupo"
+
+        # ── Las demás columnas de etiqueta, a la izquierda de la elegida ──
+        # `_columna_de_etiquetas` se queda con UNA (la que más texto trae, y
+        # ante empate la de más a la derecha: la más específica). Las otras
+        # se perdían sin más: en "Región | Ciudad | ene-26 | feb-26…" salía
+        # la ciudad y la región desaparecía, aunque el mismo archivo en CSV
+        # sí la conserva (ver core/pivot_flatten.unpivot_period_columns).
+        #
+        # No entran al modelo (etiqueta, periodo, medida, valor) —no varían
+        # por mes ni por medida—, sino como ATRIBUTO de la entidad: la región
+        # de Bogotá es la misma en enero que en marzo. `_tabla_ordenada` las
+        # vuelve a poner como columnas, a la izquierda, donde estaban.
+        atributos: dict = {}
+        if filas_son_entidades:
+            extra = [c for c in range(lc) if _txt(G[r, c])
+                     and any(_es_etiqueta(G[rr, c]) for rr, *_ in filas)]
+            for rr, etiqueta, _ in filas:
+                valores_extra = {_txt(G[r, c]): _txt(G[rr, c]) for c in extra if _txt(G[rr, c])}
+                if valores_extra:
+                    atributos.setdefault(etiqueta, {}).update(valores_extra)
+            for rr, *_ in filas:
+                for c in extra:
+                    usadas.add((rr, c))
+            for c in extra:
+                usadas.add((r, c))
+
         for rr, *_ in filas:
             for c in range(lc, max(pcols) + 1):
                 usadas.add((rr, c))
@@ -258,6 +289,7 @@ def _tablas_horizontales(G, filas_titulo, usadas):
             "fila": r, "periodos": periodos, "filas": [(e, v) for _, e, v in filas],
             "entidad": entidad, "eje": eje, "filas_son_entidades": filas_son_entidades,
             "totales_excluidos": total_excluido, "porcentaje": con_porcentaje,
+            "atributos": atributos,
             "fin": filas[-1][0],
         })
     return tablas
@@ -676,7 +708,7 @@ def leer_informe(raw: pd.DataFrame, hoja: str, anio_por_defecto: Optional[int] =
             dimension = _dimension_por_titulo(titulo) or dimension
         return secciones.setdefault((titulo, dimension), {
             "titulo": titulo, "registros": [], "dimension": dimension, "eje": None,
-            "tablas": 0, "resumen": {}, "totales": 0})
+            "tablas": 0, "resumen": {}, "totales": 0, "atributos": {}})
 
     for t in agrupados:
         s = seccion_para(t["fila"], _dimension(t["eje"], t["etiquetas"]))
@@ -691,6 +723,8 @@ def leer_informe(raw: pd.DataFrame, hoja: str, anio_por_defecto: Optional[int] =
         s = seccion_para(t["fila"], _dimension(eje_t, etiquetas_t))
         s["tablas"] += 1
         s["totales"] += t["totales_excluidos"]
+        for etiqueta, valores in (t.get("atributos") or {}).items():
+            s["atributos"].setdefault(etiqueta, {}).update(valores)
         if _norm(t["eje"]) in _EJES and t["eje"]:
             s["eje"] = s["eje"] or t["eje"]
         if t["filas_son_entidades"]:
@@ -811,7 +845,26 @@ def _tabla_ordenada(s, anio_por_defecto) -> Optional[pd.DataFrame]:
         serie = pd.to_numeric(tabla[col], errors="coerce")
         if _PORCENTAJE_RE.search(str(col)) and _parece_proporcion(serie):
             tabla[col] = (serie * 100).round(2)
-    columnas = ([dimension] if dimension in tabla.columns else []) + [eje] + medidas
+    # Las demás columnas de etiqueta de la tabla original (ver los
+    # "atributos" en _tablas_horizontales): vuelven como columnas, a la
+    # izquierda de la dimensión, que es donde estaban en el Excel. Sin esto,
+    # el mismo archivo salía con menos columnas en .xlsx que en .csv.
+    extras = []
+    atributos = s.get("atributos") or {}
+    if atributos and dimension in tabla.columns:
+        nombres = list(dict.fromkeys(k for valores in atributos.values() for k in valores))
+        for nombre in nombres:
+            # Un atributo no puede pisar a la dimensión ni a una medida que ya
+            # se llame igual: en ese caso manda lo que ya estaba en la tabla.
+            if nombre in tabla.columns:
+                continue
+            tabla[nombre] = tabla[dimension].map(lambda e, n=nombre: atributos.get(e, {}).get(n))
+            if tabla[nombre].notna().any():
+                extras.append(nombre)
+            else:
+                tabla = tabla.drop(columns=[nombre])
+
+    columnas = extras + ([dimension] if dimension in tabla.columns else []) + [eje] + medidas
     orden_filas = [c for c in [dimension, eje] if c in tabla.columns]
     return tabla[columnas].sort_values(orden_filas, kind="stable").reset_index(drop=True)
 

@@ -33,8 +33,13 @@ import pandas as pd
 # Coincidencia EXACTA (toda la celda, no una palabra suelta dentro de un
 # nombre) — así "Total Play" (un cliente real) o "Totalizadores S.A." nunca
 # se confunden con una fila de agregado.
+# El plural va como grupo —`total(?:es)?`, no `totales?`— porque con la
+# segunda forma el `?` afecta solo a la "s" y la "e" queda OBLIGATORIA: la
+# expresión aceptaba "totales" y "totale", pero NO "Total" ni "Subtotal", que
+# son justo las dos etiquetas más comunes de todas. Esas filas se colaban
+# como un registro más y toda suma del panel salía al doble.
 _TOTAL_EXACT_RE = re.compile(
-    r"^(total\s*general|gran\s*total|grand\s*total|totales?|sub\s*-?\s*totales?)$",
+    r"^(total\s*general|gran\s*total|grand\s*total|total(?:es)?|sub\s*-?\s*total(?:es)?)$",
     re.I,
 )
 # Coincidencia de PREFIJO ("Total Norte", "Total Región X" — el subtotal por
@@ -48,6 +53,22 @@ def _cell_text(v) -> str:
     if pd.isna(v):
         return ""
     return re.sub(r"\s+", " ", str(v)).strip()
+
+
+def es_total(texto) -> bool:
+    """¿Esta etiqueta nombra un agregado ("Total", "Subtotales", "Gran total")?
+
+    Fuente única para las dos rutas de carga. `core/informe.py` tenía su
+    propia lista literal y las dos no decían lo mismo: aquella no reconocía
+    "Sub total", "Sub-total" ni "Subtotales", así que esas filas entraban
+    como un registro más en las hojas tipo informe y la suma salía inflada,
+    mientras el mismo archivo por la otra ruta sí las excluía. Dos reglas
+    para la misma pregunta terminan siempre así.
+
+    Coincidencia EXACTA de toda la etiqueta: el caso "empieza por Total"
+    ("Total Norte") pide una condición extra y lo resuelve `total_row_mask`.
+    """
+    return bool(_TOTAL_EXACT_RE.match(_cell_text(texto)))
 
 
 def _xlsx_merged_ranges_by_sheet(data: bytes) -> dict:
@@ -272,6 +293,114 @@ def total_row_mask(df: pd.DataFrame, label_cols) -> pd.Series:
     return df.apply(_row_is_total, axis=1)
 
 
+def total_columns(df: pd.DataFrame) -> list:
+    """Las columnas de Total/Subtotal: el equivalente en vertical de las
+    filas que quita `total_row_mask`.
+
+    Una dinámica con "Mostrar totales" activado escribe una columna extra al
+    final con la suma de la fila. Si se deja, toda suma del panel cuenta cada
+    valor dos veces —una en su mes y otra dentro del Total— y el archivo
+    reporta exactamente el doble de lo real.
+
+    Solo coincidencia EXACTA del nombre ("Total", "Total general",
+    "Subtotal"…), nunca por prefijo: una columna puede llamarse legítimamente
+    "Total Play" (un cliente) o "Total Hogares" (una medida real), y
+    borrarlas sería perder datos, no limpiar un agregado. El mismo criterio
+    conservador que usa `total_row_mask` para su parte exacta.
+    """
+    return [c for c in df.columns if _TOTAL_EXACT_RE.match(_cell_text(c))]
+
+
+def _nombre_libre(base: str, usados) -> str:
+    """`base` si no está tomado; si no, "base_2", "base_3"… — el mismo
+    criterio de `core/loader._make_unique_columns`."""
+    usados = {_cell_text(c) for c in usados}
+    if base not in usados:
+        return base
+    i = 2
+    while f"{base}_{i}" in usados:
+        i += 1
+    return f"{base}_{i}"
+
+
+def unpivot_period_columns(df: pd.DataFrame, period_cols, year_hint=None,
+                           eje: str = "Mes", medida: str = "Valor"):
+    """Despivota: los meses que están COMO COLUMNAS vuelven a ser filas.
+
+    Es el paso que convierte
+
+        Región | Ciudad | ene-26 | feb-26        Región | Ciudad | Mes     | Valor
+        Norte  | Bogotá |   10   |   20     →    Norte  | Bogotá | ene-26  |  10
+                                                 Norte  | Bogotá | feb-26  |  20
+
+    y con él la tabla queda con el MISMO esquema que una tabla plana normal:
+    columnas de etiqueta + UNA columna de fecha + UNA columna de medida. Ese
+    esquema es el que el resto del panel sabe analizar — con los meses como
+    columnas no hay ninguna fecha que graficar, y el detector semántico ni
+    siquiera las cuenta como métricas (a propósito: doce columnas de mes no
+    son doce indicadores distintos), así que una dinámica ancha llegaba al
+    dashboard sin métricas y sin evolución posible.
+
+    Los nombres de las dos columnas nuevas son los mismos que usa
+    `core/informe.py` al aplanar esta forma desde una hoja de Excel ("Mes" y
+    "Valor"), para que el mismo archivo dé el mismo resultado venga como
+    .xlsx o como .csv.
+
+    No se toca nada si la forma no es inequívoca: hacen falta 2+ columnas de
+    periodo y que su contenido sea mayoritariamente numérico (si trae texto
+    no es una medida y despivotarla produciría basura). Las columnas que no
+    son periodo se conservan tal cual, repetidas en cada fila nueva, que es
+    lo que hace cualquier melt.
+
+    Devuelve (df, log). Los valores NO se convierten a número aquí a
+    propósito: `core/cleaner.py` corre después y es quien sabe leer "1.234,5"
+    según la configuración regional; forzarlos ahora los perdería.
+    """
+    period_cols = [c for c in (period_cols or []) if c in df.columns]
+    if df.empty or len(period_cols) < 2:
+        return df, []
+    numerico = sum(
+        pd.to_numeric(df[c], errors="coerce").notna().mean() >= 0.6 for c in period_cols
+    )
+    if numerico < len(period_cols) * 0.75:
+        return df, []
+
+    from .dates import MONTH_ABBR_ES
+    from .informe import periodo_de
+
+    etiquetas = {}
+    for c in period_cols:
+        periodo = periodo_de(c) or periodo_de(_cell_text(c))
+        if not periodo:
+            return df, []
+        anio, mes = periodo
+        anio = anio or year_hint
+        # Sin año por ningún lado no se inventa uno: el mes queda como texto,
+        # igual que en core/informe.py.
+        etiquetas[c] = pd.Timestamp(year=int(anio), month=int(mes), day=1) if anio else MONTH_ABBR_ES[mes]
+
+    id_vars = [c for c in df.columns if c not in period_cols]
+    # Si la tabla YA trae una columna llamada "Mes" o "Valor" (otra cosa, no
+    # el periodo que estamos creando), reusar ese nombre no es una colisión
+    # cosmética: pandas lanza ValueError y el archivo entero deja de cargar.
+    # Se le busca un nombre libre con el mismo criterio que
+    # loader._make_unique_columns ("Mes_2", "Mes_3"…).
+    eje, medida = _nombre_libre(eje, id_vars), _nombre_libre(medida, id_vars)
+    largo = df.melt(id_vars=id_vars, value_vars=period_cols, var_name=eje, value_name=medida)
+    largo[eje] = largo[eje].map(etiquetas)
+    # Una fila sin valor en un mes no es un registro: en una dinámica esa
+    # celda está vacía porque ese mes no tuvo nada, no porque falte el dato.
+    largo = largo[largo[medida].notna() & (largo[medida].astype(str).str.strip() != "")]
+    orden = [c for c in id_vars if c in largo.columns] + [eje]
+    largo = largo.sort_values(orden, kind="stable").reset_index(drop=True)
+    log = [
+        f"{len(period_cols)} columnas de mes ({', '.join(str(c) for c in period_cols[:3])}"
+        f"{'…' if len(period_cols) > 3 else ''}) convertidas en filas: la tabla queda con una "
+        f"columna «{eje}» y una columna «{medida}», como una tabla normal."
+    ]
+    return largo, log
+
+
 def staircase_fill(df: pd.DataFrame, columns) -> int:
     """Relleno hacia abajo (ffill), pero solo dentro de columnas que ya se
     confirmó que son de etiqueta/agrupación de una dinámica (ver el gateo en
@@ -294,7 +423,155 @@ def staircase_fill(df: pd.DataFrame, columns) -> int:
     return filled
 
 
-def flatten_pivot_grid(raw: pd.DataFrame, header_score_fn, norm_header_fn, make_unique_fn):
+def _max_run(mask: pd.Series) -> int:
+    """La racha más larga de True seguidos. Vectorizado (agrupando por el
+    acumulado de los False) para no recorrer fila por fila: esto corre sobre
+    la tabla completa, que puede traer cientos de miles de filas."""
+    if mask is None or not len(mask) or not bool(mask.any()):
+        return 0
+    return int(mask.groupby((~mask).cumsum()).sum().max())
+
+
+def _is_blank(series: pd.Series) -> pd.Series:
+    """True donde la celda no tiene contenido real: NaN o texto vacío. Un
+    CSV exportado desde una dinámica trae lo segundo (la celda existe, viene
+    con ""), un Excel trae lo primero — para el análisis son lo mismo."""
+    return series.isna() | (series.astype(str).str.strip().isin(["", "nan", "None"]))
+
+
+def period_like_columns(columns) -> list:
+    """(Señal b) Columnas cuyo NOMBRE es un mes, un año o una fecha.
+
+    En una tabla ordenada el periodo es un VALOR dentro de una columna
+    ("Mes"); si el periodo es el NOMBRE de la columna ("ene-26", "2025",
+    "2026-01"), esos periodos fueron pivoteados a columnas — la firma de una
+    dinámica ancha. Se exige más de una para que un nombre de columna que por
+    casualidad parezca un mes no arrastre a toda la tabla.
+
+    Reutiliza `informe.periodo_de` (el mismo parser de meses que usa el
+    lector de informes: entiende "ene-26", "Oct", "2026-01", Timestamp) en
+    vez de una segunda lista de meses que se desincronice con aquella.
+    """
+    from .informe import periodo_de  # import local: rompe cualquier riesgo de ciclo
+
+    out = []
+    for c in columns:
+        texto = _cell_text(c)
+        if not texto:
+            continue
+        try:
+            if periodo_de(c) is not None or periodo_de(texto) is not None:
+                out.append(c)
+                continue
+        except Exception:
+            pass
+        # Un año suelto como encabezado ("2024", "2025") no lo cubre
+        # periodo_de (no nombra un mes) y es igual de buena señal.
+        m = re.fullmatch(r"(?:a[ñn]o\s*)?(\d{4})", texto, re.I)
+        if m and 1990 <= int(m.group(1)) <= 2100:
+            out.append(c)
+    return out
+
+
+def staircase_columns(df: pd.DataFrame, label_cols) -> list:
+    """(Señal a) Columnas de etiqueta con huecos "en escalera".
+
+    Es la huella que deja el layout Compacto/Esquema de una dinámica (y una
+    celda combinada exportada a CSV): la etiqueta del grupo aparece UNA vez,
+    en su primera fila, y las demás filas del grupo llegan vacías.
+
+    El problema de detectarlo es distinguirlo de un dato realmente ausente
+    (una "Ciudad" que nadie llenó). Se piden cuatro condiciones a la vez, y
+    las dos últimas son las que evitan el falso positivo:
+
+    1. La columna tiene huecos, pero no está vacía.
+    2. La primera fila NO es un hueco: una escalera siempre empieza por el
+       nombre del grupo; un dato ausente puede faltar desde la primera fila.
+    3. Hay al menos una racha de 2+ huecos seguidos ("consecutivos"): un
+       grupo agrupa varias filas. Huecos sueltos y dispersos son ausencias.
+    4. A su DERECHA hay otra columna de etiqueta prácticamente llena: la
+       escalera existe porque un nivel de detalle se repite bajo un nivel de
+       grupo. Una columna de ausencias reales no tiene por qué traer detrás
+       una columna completa, y —sobre todo— la columna de ausencias suele ir
+       DESPUÉS de la que identifica la fila, no antes.
+    """
+    label_cols = [c for c in label_cols if c in df.columns]
+    if len(label_cols) < 2 or df.empty:
+        return []
+    blanks = {c: _is_blank(df[c]) for c in label_cols}
+    ratios = {c: float(blanks[c].mean()) for c in label_cols}
+    out = []
+    for i, c in enumerate(label_cols[:-1]):
+        hueco = blanks[c]
+        if not bool(hueco.any()) or bool(hueco.all()):
+            continue
+        if bool(hueco.iloc[0]):
+            continue
+        if _max_run(hueco) < 2:
+            continue
+        if not any(ratios[r] <= 0.10 and ratios[r] < ratios[c] for r in label_cols[i + 1:]):
+            continue
+        out.append(c)
+    return out
+
+
+def detect_pivot_signals(df: pd.DataFrame, header_rows: int = 1, total_rows: int = 0,
+                         label_cols=None) -> dict:
+    """¿Esta tabla venía de una dinámica, o es una tabla plana de verdad?
+
+    Se responde ANTES de tocar los datos, mirando las cuatro señales que deja
+    una dinámica al aterrizar en una cuadrícula:
+
+    a. `staircase_columns` — etiquetas heredadas (celdas combinadas o layout
+       Compacto/Esquema).
+    b. `period_like_columns` — meses/años/fechas como NOMBRES de columna.
+    c. `total_rows` — filas de subtotal/total general mezcladas con los datos
+       (las cuenta `total_row_mask`, que corre justo antes).
+    d. `header_rows > 1` — más de una fila de encabezado antes de los datos
+       (las detecta y combina `flatten_pivot_grid`).
+
+    Las celdas combinadas reales del .xlsx no entran aquí porque se resuelven
+    antes y en otro nivel (`merged_ranges_by_sheet` + `fill_merged_cells`, en
+    core/loader.py): cuando esta función corre, esas celdas ya tienen su
+    valor y lo que queda es la señal (a).
+
+    Devuelve las señales encontradas y, en `motivos`, cómo decirlo en
+    español para el log de la pestaña Calidad — nunca decide sola: quien
+    llama sigue eligiendo qué hacer con cada señal.
+    """
+    if df is None or df.empty:
+        return {"staircase_columns": [], "period_columns": [], "total_rows": 0,
+                "header_rows": header_rows, "es_dinamica": False, "motivos": []}
+    if label_cols is None:
+        label_cols = [
+            c for c in df.columns
+            if pd.to_numeric(df[c], errors="coerce").notna().mean() < 0.5
+        ][:6]
+    escalera = staircase_columns(df, label_cols)
+    periodos = period_like_columns(df.columns)
+    motivos = []
+    if header_rows > 1:
+        motivos.append(f"encabezado de {header_rows} filas")
+    if total_rows:
+        motivos.append(f"{total_rows} fila(s) de subtotal/total")
+    if len(periodos) >= 2:
+        muestra = ", ".join(str(c) for c in periodos[:3])
+        motivos.append(f"{len(periodos)} columnas con nombre de periodo ({muestra}…)")
+    if escalera:
+        motivos.append("etiquetas heredadas de la fila de arriba en: "
+                       + ", ".join(str(c) for c in escalera))
+    return {
+        "staircase_columns": escalera,
+        "period_columns": periodos,
+        "total_rows": int(total_rows),
+        "header_rows": int(header_rows),
+        "es_dinamica": bool(motivos),
+        "motivos": motivos,
+    }
+
+
+def flatten_pivot_grid(raw: pd.DataFrame, header_score_fn, norm_header_fn, make_unique_fn,
+                       year_hint=None):
     """Punto de entrada único, usado por core/loader.py en vez del antiguo
     "una sola fila de encabezado, listo". Devuelve (data_df, log) — log es
     una lista de mensajes en español, listos para sumarse al log de
@@ -304,6 +581,11 @@ def flatten_pivot_grid(raw: pd.DataFrame, header_score_fn, norm_header_fn, make_
     loader.py (_header_score, _norm_header, _make_unique_columns) — se
     reciben por parámetro en vez de importarlas para no crear un ciclo de
     imports entre los dos módulos.
+
+    year_hint: el año deducido del nombre del archivo y de la hoja, para los
+    meses que llegan como nombre de columna sin año ("Oct" en vez de
+    "oct-26"). Sin él esos meses se quedan como texto en vez de fecha; es el
+    mismo dato que core/loader.py ya le pasa a core/informe.py.
     """
     log: list[str] = []
     if raw.empty:
@@ -433,11 +715,27 @@ def flatten_pivot_grid(raw: pd.DataFrame, header_score_fn, norm_header_fn, make_
         )
         data_df = data_df.loc[~mask].reset_index(drop=True)
 
+    # ── ¿Dinámica o tabla plana? ──
+    # Se pregunta explícitamente antes de tocar nada (ver detect_pivot_signals:
+    # etiquetas en escalera, meses/años como nombres de columna, filas de
+    # total, encabezado de varias filas).
+    señales = detect_pivot_signals(data_df, header_rows=len(header_rows),
+                                   total_rows=n_total_rows, label_cols=label_cols)
+
     # ── Etiquetas de fila heredadas (layout Compacto/Esquema) ──
-    # Gateado a propósito: solo se activa si YA hay otra señal de que esto
-    # es una dinámica (encabezado multi-fila o alguna fila de total
-    # detectada). Sin esa señal, una columna de texto con huecos se deja
-    # tal cual — puede ser dato real ausente, no una etiqueta heredada.
+    # Gateado a propósito: una columna de texto con huecos, por sí sola, puede
+    # ser dato real ausente y no una etiqueta heredada. Hay dos puertas:
+    #
+    # 1. Señal FUERTE ya conocida (encabezado multi-fila o filas de total):
+    #    se mantiene exactamente la regla de siempre —laxa a propósito, porque
+    #    con esa señal la tabla ya se sabe dinámica y conviene rellenar todo lo
+    #    que parezca etiqueta.
+    # 2. Sin esa señal: antes no se rellenaba NADA, y ahí caía el caso más
+    #    común de todos —una dinámica exportada a CSV, con un solo encabezado y
+    #    sin totales, que llegaba con la mitad de la columna de grupo vacía.
+    #    Ahora se rellena, pero solo las columnas que pasan el test estricto de
+    #    escalera (staircase_columns), que es el que sabe distinguirla de un
+    #    dato ausente.
     if pivot_signal:
         candidate_cols = []
         for c in label_cols[:4]:
@@ -445,13 +743,40 @@ def flatten_pivot_grid(raw: pd.DataFrame, header_score_fn, norm_header_fn, make_
             blank_ratio = s.isna().mean()
             if 0.03 <= blank_ratio <= 0.85 and pd.notna(s.iloc[0] if len(s) else None):
                 candidate_cols.append(c)
+    elif señales["es_dinamica"]:
+        candidate_cols = señales["staircase_columns"]
         if candidate_cols:
-            n_filled = staircase_fill(data_df, candidate_cols)
-            if n_filled:
-                cols_txt = ", ".join(str(c) for c in candidate_cols)
-                log.append(
-                    f"{n_filled} celda(s) de categoría heredadas de la fila de arriba "
-                    f"(típico de tablas dinámicas), rellenadas en: {cols_txt}."
-                )
+            log.append("Se leyó como tabla dinámica por: " + "; ".join(señales["motivos"]) + ".")
+    else:
+        candidate_cols = []
+
+    if candidate_cols:
+        n_filled = staircase_fill(data_df, candidate_cols)
+        if n_filled:
+            cols_txt = ", ".join(str(c) for c in candidate_cols)
+            log.append(
+                f"{n_filled} celda(s) de categoría heredadas de la fila de arriba "
+                f"(típico de tablas dinámicas), rellenadas en: {cols_txt}."
+            )
+
+    # ── Columnas de Total y despivotado ──
+    # Solo cuando la tabla se reconoció como dinámica: sobre una tabla plana
+    # nada de esto aplica (no tiene columnas de mes que devolver a filas), y
+    # el propio `unpivot_period_columns` vuelve a comprobarlo antes de tocar
+    # nada. El orden importa: primero se quita el Total —si no, se despivota
+    # también y aparece como un "mes" más—, y el relleno de etiquetas ya pasó
+    # arriba, porque al despivotar cada etiqueta se copia en sus filas nuevas
+    # y un hueco sin rellenar se multiplicaría por cada mes.
+    if señales["es_dinamica"]:
+        cols_total = total_columns(data_df)
+        if cols_total and len(data_df.columns) > len(cols_total):
+            data_df = data_df.drop(columns=cols_total)
+            log.append(
+                f"{len(cols_total)} columna(s) de total ({', '.join(str(c) for c in cols_total)}) "
+                "excluida(s): repiten la suma de su propia fila."
+            )
+        data_df, log_melt = unpivot_period_columns(
+            data_df, señales["period_columns"], year_hint=year_hint)
+        log += log_melt
 
     return data_df, log
