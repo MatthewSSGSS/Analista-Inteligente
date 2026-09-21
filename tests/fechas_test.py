@@ -115,13 +115,22 @@ def un_registro_nocturno_no_salta_de_dia():
           r.dt.day.iloc[1] == 15)
 
 
-def todo_queda_en_hora_de_colombia():
+def todo_queda_en_el_dia_colombiano_y_sin_hora():
+    """Dos cosas a la vez: el día es el colombiano, y la hora se borra.
+
+    La hora se quita a propósito —no se usa en ningún cálculo ni vista del
+    panel— y quitarla es lo que impide que el error de zonas mezcladas
+    vuelva por cualquier camino: sin hora no hay zona que reconciliar.
+    Pero se borra DESPUÉS de convertir: los tres valores de abajo son el
+    mismo instante, y en Colombia ese instante cae el día 15.
+    """
     with _pandas_estricto():
         r = a_datetime(pd.Series(["2026-02-16 04:30:00+00:00",   # UTC
                                   "2026-02-15 23:30:00-05:00",   # ya colombiana
                                   "2026-02-16 06:30:00+02:00"]))  # otra zona
-    check("tres desfases distintos dan el mismo instante en hora de Colombia",
-          r.dt.strftime("%Y-%m-%d %H:%M").tolist() == ["2026-02-15 23:30"] * 3)
+    check("tres desfases distintos caen en el mismo día colombiano",
+          r.dt.strftime("%Y-%m-%d").tolist() == ["2026-02-15"] * 3)
+    check("y ninguno conserva la hora", bool((r.dt.time.astype(str) == "00:00:00").all()))
 
 
 def las_fechas_sin_zona_no_se_mueven():
@@ -130,18 +139,21 @@ def las_fechas_sin_zona_no_se_mueven():
     retrocedería cinco horas y se iría al día anterior."""
     with _pandas_estricto():
         for etiqueta, valores, esperado in [
-            ("solo fecha", ["2026-01-15", "2026-02-20"], ["2026-01-15 00:00", "2026-02-20 00:00"]),
-            ("fecha y hora", ["2026-01-15 08:30:00"], ["2026-01-15 08:30"]),
-            ("formato español", ["15/01/2026"], ["2026-01-15 00:00"]),
+            ("solo fecha", ["2026-01-15", "2026-02-20"], ["2026-01-15", "2026-02-20"]),
+            ("fecha y hora", ["2026-01-15 08:30:00"], ["2026-01-15"]),
+            ("formato español", ["15/01/2026"], ["2026-01-15"]),
+            ("español con hora", ["20/02/2026 09:00"], ["2026-02-20"]),
         ]:
             r = a_datetime(pd.Series(valores))
-            check(f"«{etiqueta}» se queda donde está", r.dt.strftime("%Y-%m-%d %H:%M").tolist() == esperado)
+            check(f"«{etiqueta}» se queda en su día", r.dt.strftime("%Y-%m-%d").tolist() == esperado)
 
-    # Y en una columna MIXTA, cada fila se trata según lo que ella misma dice.
+    # Y en una columna MIXTA, cada fila se trata según lo que ella misma dice:
+    # la de UTC se corrige a su día colombiano (el 15, no el 16) y la que no
+    # trae zona se queda en el suyo.
     with _pandas_estricto():
         r = a_datetime(pd.Series(["2026-02-16 04:30:00+00:00", "2026-02-20 09:00:00", None]))
-    check("en una columna mixta, la de UTC se convierte y la ingenua no se toca",
-          r.dt.strftime("%Y-%m-%d %H:%M").tolist()[:2] == ["2026-02-15 23:30", "2026-02-20 09:00"])
+    check("en una columna mixta, la de UTC se corrige y la ingenua no se toca",
+          r.dt.strftime("%Y-%m-%d").tolist()[:2] == ["2026-02-15", "2026-02-20"])
     check("y los vacíos siguen vacíos", bool(r.isna().iloc[2]))
 
 
@@ -269,7 +281,7 @@ if __name__ == "__main__":
     la_simulacion_reproduce_el_error()
     fechas_mezcladas_se_leen_sin_tumbar_nada()
     un_registro_nocturno_no_salta_de_dia()
-    todo_queda_en_hora_de_colombia()
+    todo_queda_en_el_dia_colombiano_y_sin_hora()
     las_fechas_sin_zona_no_se_mueven()
     columnas_con_nombre_duplicado_tambien_se_normalizan()
     la_clasificacion_semantica_aguanta_los_formatos_raros()

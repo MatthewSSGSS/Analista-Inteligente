@@ -197,11 +197,40 @@ _TZ_SUFFIX_RE = TZ_SUFFIX_RE  # alias interno histórico
 # tiene exactamente la forma de un desfase de dos dígitos, así que toda fecha
 # normal se habría dado por "con zona" y se habría corrido cinco horas al día
 # anterior. Una zona horaria solo aparece detrás de una hora.
+# La HORA al final de un valor de fecha, con su zona horaria si la trae:
+# " 10:30", "T10:30:00", " 10:30:00.123+00:00", " 23:30 -05", " 10:00 UTC".
+# Se usa para borrarla del texto antes de interpretarlo — ver `sin_hora`.
+HORA_EN_TEXTO_RE = re.compile(
+    r"[T\s]+\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d+)?\s*"
+    r"(?:Z|[+-]\d{2}(?::?\d{2})?|(?:UTC|GMT)(?:[+-]\d{1,2}(?::?\d{2})?)?)?\s*$",
+    re.I,
+)
+
 TZ_EN_TEXTO_RE = re.compile(
     r"\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\s*"
     r"(?:Z|[+-]\d{2}(?::?\d{2})?|(?:UTC|GMT)(?:[+-]\d{1,2}(?::?\d{2})?)?)\s*$",
     re.I,
 )
+
+
+def sin_hora(texto):
+    """Borra la hora (y con ella la zona horaria) de una columna de TEXTO.
+
+    Es la forma más simple de que el error "Mixed timezones detected" no
+    pueda volver a ocurrir: pandas solo se queja de zonas cuando hay una
+    hora a la que referirlas. Sin hora en el texto, no hay zona; sin zona,
+    no hay nada que reconciliar.
+
+    Se aplica al texto ANTES de interpretarlo, que es el único momento en
+    que sirve — una vez que pandas intenta construir la columna, ya es
+    tarde. Si el valor no lleva hora, se devuelve igual.
+    """
+    if texto is None:
+        return texto
+    try:
+        return texto.str.replace(HORA_EN_TEXTO_RE, "", regex=True).str.strip()
+    except AttributeError:
+        return texto
 
 
 def a_datetime(series, **kwargs):
@@ -278,11 +307,18 @@ def a_datetime(series, **kwargs):
     # mueve nada. Un valor CON desfase sí se pasa a la hora de Colombia.
     como_esta = fechas.dt.tz_localize(None)
     if not bool(con_zona.any()):
-        return como_esta
+        return como_esta.dt.normalize()
     en_colombia = fechas.dt.tz_convert(_zona_colombia()).dt.tz_localize(None)
     # `where` combina las dos columnas —ambas del mismo tipo y ya sin zona—
     # sin asignar nada por trozos.
-    return en_colombia.where(con_zona, como_esta)
+    #
+    # `normalize()` al final deja la fecha a medianoche: la hora se borra, que
+    # es lo que se quiere (no se usa en ningún cálculo ni vista del panel), y
+    # así ninguna etapa posterior puede volver a encontrarse una hora con
+    # zona. Se hace DESPUÉS de convertir, no antes: "2026-02-16 04:30 UTC" es
+    # la noche del 15 en Colombia, y recortar primero lo habría dejado en el
+    # 16 — un día que aquí todavía no había empezado.
+    return en_colombia.where(con_zona, como_esta).dt.normalize()
 
 
 # Colombia no aplica horario de verano desde 1993, así que su hora es
@@ -399,13 +435,26 @@ def detect_date(s, name):
                 return date_only(result), yyyymm.notna().mean(), "yyyymm_period"
 
     text = x.astype(str).str.strip()
-    # Se recorta el sufijo de zona horaria ANTES de convertir. Si se dejara,
-    # una columna con desfases distintos entre filas ("+00:00" en unas,
-    # "-05:00" en otras) hace que pandas se niegue a construir la columna y
-    # corte la carga del archivo entero ("Mixed timezones detected"). Al
-    # quitarlo, cada valor se lee con su hora local tal como está escrita —
-    # que es la que después date_only() reduce a solo la fecha.
-    text = text.str.replace(_TZ_SUFFIX_RE, "", regex=True)
+    # Se borra la HORA COMPLETA del texto antes de convertir, no solo el
+    # sufijo de zona.
+    #
+    # Antes se recortaba únicamente la zona, con un patrón que reconocía
+    # "+00:00" y "Z" pero no "-05", " UTC" ni "GMT-5". Con cualquiera de
+    # esos, el desfase sobrevivía al recorte y pandas se negaba a construir
+    # la columna: "Mixed timezones detected", y el archivo entero no se
+    # podía abrir. Ampliar el patrón era la trampa en la que ya se cayó dos
+    # veces —siempre faltaba un formato—, así que ahora se quita la hora
+    # entera: sin hora no puede haber zona, y el error deja de ser posible
+    # por construcción.
+    #
+    # No se pierde nada: en estos informes la hora no se usa en ningún
+    # cálculo ni se muestra en ninguna vista (lo único que lleva hora son
+    # los sellos de "generado el ..."), y esta función termina pasando por
+    # `date_only()`, que de todos modos reduce el valor a solo la fecha.
+    # La corrección de zona a hora de Colombia ya ocurrió antes, en
+    # `core/cleaner.normalize_timezones`, que es el primer paso de la
+    # limpieza.
+    text = sin_hora(text)
     iso_ratio = text.str.match(ISO_DATE_RE).mean() if len(text) else 0
     # Si la mayoría de los valores ya vienen en formato ISO (típico tras
     # convertir una columna datetime a texto en el pipeline de limpieza),
