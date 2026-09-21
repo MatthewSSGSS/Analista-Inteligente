@@ -1,5 +1,7 @@
 import re
 import unicodedata
+from datetime import timedelta, timezone
+
 import pandas as pd
 
 DATE_NAME = re.compile(
@@ -194,53 +196,103 @@ def a_datetime(series, **kwargs):
     a la pantalla y el archivo entero no se podía abrir.
 
     Es la única puerta por la que este proyecto convierte texto a fecha, así
-    que la reconciliación se hace aquí una sola vez, en tres pasos:
+    que la reconciliación se hace aquí una sola vez: **todo queda en hora de
+    Colombia**, que es la de quien lee estos informes. Con eso, una misma
+    columna deja de tener varias horas a la vez y las cifras por mes dejan de
+    depender de en qué zona estaba el sistema que exportó cada fila.
 
-    1. Si ya es una columna de fechas, no se toca.
-    2. Si es texto, se le quita el sufijo de zona ANTES de parsear
-       (`TZ_SUFFIX_RE`). Así no hay nada que reconciliar y —lo importante—
-       se conserva la fecha tal como está escrita en el archivo: convertir a
-       UTC movería la hora y un registro de las "23:30 -05:00" saltaría al
-       día siguiente, que para quien lee el informe es sencillamente un
-       error. Es el mismo criterio que ya usaban `detect_date` y
-       `core/semantic_engine`.
-    3. Si aun así pandas se queja (un formato raro que no cubre el paso 2),
-       se reconcilia en UTC y se quita la zona, que es la salida que pide el
-       propio mensaje de pandas. Antes de eso, el archivo no abría.
+    Se distinguen dos situaciones, y la diferencia es lo que evita el peor
+    error posible aquí:
 
-    Devuelve siempre fechas SIN zona horaria: el resto del panel compara y
-    agrupa con fechas ingenuas, y mezclar los dos tipos vuelve a romper más
-    adelante ("Cannot compare tz-naive and tz-aware").
+    - **El valor TRAE desfase** ("…+00:00", "…-05:00", "…Z"): se reconcilia
+      en UTC —`utc=True` nunca lanza, con desfases mezclados o no— y se pasa
+      a la hora de Colombia. Un registro guardado como "2026-02-16 04:30Z"
+      se reporta, correctamente, como las 23:30 del 15 en Bogotá.
+    - **El valor NO trae desfase** ("2026-01-15", "15/01/2026 08:30"): se
+      deja como está, porque ya viene en hora local. Convertirlo sería el
+      error grave: parsearlo como UTC y pasarlo a Bogotá le restaría cinco
+      horas y mandaría al día anterior TODAS las fechas de TODOS los
+      archivos normales, que son la inmensa mayoría.
+
+    En una columna que mezcla las dos cosas, cada fila se trata según lo que
+    ella misma dice, no según lo que diga el resto de la columna.
+
+    Devuelve siempre fechas SIN zona horaria (ya convertidas): el resto del
+    panel compara y agrupa con fechas ingenuas, y mezclar los dos tipos
+    vuelve a romper más adelante ("Cannot compare tz-naive and tz-aware").
     """
     if series is None:
         return series
     if pd.api.types.is_datetime64_any_dtype(series):
-        # Ya es fecha; solo se le quita la zona si la trae, para cumplir lo
-        # que promete esta función: a la salida, siempre sin zona.
-        return _sin_zona(series)
-    entrada = series
-    if not pd.api.types.is_numeric_dtype(series):
-        try:
-            entrada = series.astype("string").str.strip().str.replace(TZ_SUFFIX_RE, "", regex=True)
-        except (AttributeError, TypeError, ValueError):
-            entrada = series
+        return _a_hora_colombia(series)
+    if pd.api.types.is_numeric_dtype(series):
+        return _a_hora_colombia(pd.to_datetime(series, errors="coerce", **kwargs))
     try:
-        return _sin_zona(pd.to_datetime(entrada, errors="coerce", **kwargs))
-    except (ValueError, TypeError):
-        return _sin_zona(pd.to_datetime(series, errors="coerce", utc=True, **kwargs))
+        texto = series.astype("string").str.strip()
+    except (AttributeError, TypeError, ValueError):
+        return _a_hora_colombia(pd.to_datetime(series, errors="coerce", utc=True, **kwargs))
+
+    con_zona = texto.str.contains(TZ_SUFFIX_RE, regex=True, na=False)
+    if not bool(con_zona.any()):
+        # Ningún valor trae desfase: la columna ya está en hora local y no hay
+        # nada que convertir. Es el caso normal y NO debe tocarse — parsear
+        # esto como UTC y pasarlo a Bogotá restaría 5 horas y mandaría cada
+        # fecha al día anterior.
+        try:
+            return pd.to_datetime(texto, errors="coerce", **kwargs)
+        except (ValueError, TypeError):
+            return _a_hora_colombia(pd.to_datetime(texto, errors="coerce", utc=True, **kwargs))
+
+    salida = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
+    # Con desfase: se reconcilian en UTC (`utc=True` nunca lanza, con desfases
+    # mezclados o no) y se pasan a la hora de Colombia.
+    conv = pd.to_datetime(texto[con_zona], errors="coerce", utc=True, **kwargs)
+    salida.loc[con_zona] = _a_hora_colombia(conv)
+    # Sin desfase dentro de una columna que sí los trae: el archivo no dice a
+    # qué zona pertenecen, así que se toman como ya escritas en hora local.
+    # Es la única lectura que no inventa un desplazamiento.
+    sin_zona = ~con_zona
+    if bool(sin_zona.any()):
+        try:
+            salida.loc[sin_zona] = pd.to_datetime(texto[sin_zona], errors="coerce", **kwargs)
+        except (ValueError, TypeError):
+            salida.loc[sin_zona] = _a_hora_colombia(
+                pd.to_datetime(texto[sin_zona], errors="coerce", utc=True, **kwargs))
+    return salida
 
 
-def _sin_zona(fechas):
-    """Quita la zona horaria conservando el reloj de pared (`tz_localize(None)`
-    mantiene la hora que dice el archivo, no el instante absoluto). Mezclar
-    fechas con zona y sin zona rompe cualquier comparación posterior con un
-    "Cannot compare tz-naive and tz-aware", así que a la salida no queda
-    ninguna con zona."""
-    tz = getattr(getattr(fechas, "dt", None), "tz", None)
-    if tz is not None:
-        return fechas.dt.tz_localize(None)
+# Colombia no aplica horario de verano desde 1993, así que su hora es
+# siempre UTC-5. Se usa el nombre de la zona cuando el sistema tiene la base
+# de datos de zonas horarias, y si no, el desfase fijo — que para Colombia da
+# exactamente el mismo resultado y no depende de que el servidor traiga
+# `tzdata` instalado.
+ZONA_COLOMBIA = "America/Bogota"
+_DESFASE_COLOMBIA = timezone(timedelta(hours=-5))
+
+
+def _zona_colombia():
+    try:
+        pd.Timestamp("2026-01-01", tz="UTC").tz_convert(ZONA_COLOMBIA)
+        return ZONA_COLOMBIA
+    except Exception:
+        return _DESFASE_COLOMBIA
+
+
+def _a_hora_colombia(fechas):
+    """Pasa las fechas CON zona a la hora de Colombia y les quita la zona.
+
+    Lo que no trae zona se devuelve intacto: ya está en hora local y
+    convertirlo restaría 5 horas a fechas que nadie pidió mover.
+
+    Se quita la zona al final porque el resto del panel compara y agrupa con
+    fechas ingenuas; mezclar los dos tipos rompe con "Cannot compare tz-naive
+    and tz-aware". Después de convertir, la hora que queda ES la colombiana.
+    """
+    serie_tz = getattr(getattr(fechas, "dt", None), "tz", None)
+    if serie_tz is not None:
+        return fechas.dt.tz_convert(_zona_colombia()).dt.tz_localize(None)
     if getattr(fechas, "tzinfo", None) is not None:  # un Timestamp suelto
-        return fechas.tz_localize(None)
+        return fechas.tz_convert(_zona_colombia()).tz_localize(None)
     return fechas
 
 
@@ -248,17 +300,14 @@ def date_only(series):
     """Deja solo la FECHA: sin hora y sin zona horaria.
 
     Decisión de negocio (pedida explícitamente): en estos informes la hora
-    no aporta y sí estorba. Quitarla además elimina de raíz el error
-    "Mixed timezones detected" que tumbaba la carga: ese error aparece
-    cuando una misma columna trae filas con desfases distintos
-    ("10:00+00:00" junto a "14:30-05:00") y pandas no sabe a qué zona
-    referirlas. Sin hora, no hay nada que reconciliar.
+    no aporta y sí estorba, así que se reduce a la fecha.
 
-    Se conserva la fecha TAL COMO ESTÁ ESCRITA en el archivo, sin convertir
-    a UTC. Es a propósito: convertir movería la hora y, en un registro de
-    la noche ("20/06 23:30 -05:00"), lo empujaría al día siguiente. Para
-    quien lee el informe, ese movimiento es un error — el hecho ocurrió el
-    20, y así debe reportarse.
+    El día que queda es el COLOMBIANO: `a_datetime` ya pasó a esa zona todo
+    lo que traía desfase antes de llegar aquí (ver allá el porqué y el caso
+    que no debe convertirse). El orden importa —convertir primero, recortar
+    después—: un registro guardado como "2026-02-16 04:30Z" es de la noche
+    del 15 en Colombia, y recortar antes de convertir lo habría reportado el
+    16, un día que en Bogotá todavía no había empezado.
     """
     if series is None:
         return series
