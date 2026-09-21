@@ -34,9 +34,47 @@ def is_configured() -> bool:
         return False
 
 
+def normalizar_url(url: str) -> str:
+    """Deja la cadena de conexión como SQLAlchemy la espera.
+
+    El esquema (lo que va antes de "://") es sensible a mayúsculas y tiene
+    que ser exactamente `postgresql`. Al copiar la cadena desde el panel de
+    Supabase es facilísimo traerse "PostgreSQL://…" —así, con mayúsculas, es
+    como aparece rotulado el proveedor— y entonces SQLAlchemy busca un
+    conector que se llame "PostgreSQL", no lo encuentra y el usuario ve
+    "Can't load plugin: sqlalchemy.dialects:PostgreSQL", que no dice en
+    ningún lado que lo único que sobra son tres mayúsculas.
+
+    También se acepta `postgres://` (la forma antigua, la que todavía
+    entregan Heroku y algunos tutoriales): SQLAlchemy la quitó en la
+    versión 1.4 y falla igual.
+    """
+    url = (url or "").strip().strip('"').strip("'")
+    if "://" not in url:
+        return url
+    esquema, resto = url.split("://", 1)
+    esquema = esquema.lower()
+    if esquema in {"postgres", "postgresql"}:
+        esquema = "postgresql"
+    return f"{esquema}://{resto}"
+
+
 @st.cache_resource(show_spinner=False)
 def _get_engine() -> Engine:
-    url = st.secrets["DATABASE_URL"]
+    url = normalizar_url(st.secrets["DATABASE_URL"])
+    if not url:
+        raise ValueError(
+            "DATABASE_URL está vacío en los Secrets. Debe ser la cadena de conexión "
+            "de la base, con esta forma: "
+            "postgresql://usuario:contraseña@servidor:5432/nombre_de_la_base"
+        )
+    if not url.startswith("postgresql://"):
+        esquema = url.split("://", 1)[0] if "://" in url else url[:20]
+        raise ValueError(
+            f"DATABASE_URL no parece una conexión de PostgreSQL: empieza por «{esquema}». "
+            "Revisa el valor en los Secrets; tiene que empezar por «postgresql://» "
+            "(por ejemplo: postgresql://usuario:contraseña@servidor:5432/postgres)."
+        )
     return create_engine(url, pool_pre_ping=True, pool_recycle=300)
 
 

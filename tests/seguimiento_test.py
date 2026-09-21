@@ -161,6 +161,33 @@ def convergencia_del_esquema_que_va_a_la_base():
     check("y el mismo contenido persona × periodo × valor", clave(largo_plano) == clave(largo_dinamico))
 
 
+# ── La cadena de conexión a la base compartida. El esquema (lo de antes de
+# "://") es sensible a mayúsculas, y copiándolo del panel de Supabase es
+# facilísimo traerse "PostgreSQL://…" —así es como aparece rotulado el
+# proveedor—. SQLAlchemy entonces busca un conector llamado "PostgreSQL", no
+# lo encuentra, y el usuario ve "Can't load plugin:
+# sqlalchemy.dialects:PostgreSQL", que no dice en ningún lado que lo único
+# que sobra son tres mayúsculas. ──
+def url_de_conexion_se_normaliza():
+    from sqlalchemy import create_engine
+
+    from core.db_engine import normalizar_url
+
+    equivalentes = [
+        "PostgreSQL://postgres:clave@db.abc.supabase.co:5432/postgres",  # como lo rotula Supabase
+        "POSTGRESQL://postgres:clave@db.abc.supabase.co:5432/postgres",
+        "postgres://postgres:clave@db.abc.supabase.co:5432/postgres",    # forma antigua (Heroku)
+        '  "postgresql://postgres:clave@db.abc.supabase.co:5432/postgres"  ',  # con comillas y espacios
+    ]
+    esperada = "postgresql://postgres:clave@db.abc.supabase.co:5432/postgres"
+    for url in equivalentes:
+        check(f"«{url.strip()[:18]}…» queda como SQLAlchemy la espera", normalizar_url(url) == esperada)
+    check("y SQLAlchemy la acepta sin el error de 'Can't load plugin'",
+          create_engine(normalizar_url(equivalentes[0])) is not None)
+    check("un driver explícito no se toca",
+          normalizar_url("postgresql+psycopg2://u:c@h:5432/d") == "postgresql+psycopg2://u:c@h:5432/d")
+
+
 if __name__ == "__main__":
     plana_con_id_y_fecha()
     sin_id_con_columna_asesor()
@@ -169,4 +196,5 @@ if __name__ == "__main__":
     plana_con_fecha_propia_no_se_reinterpreta()
     merge_no_duplica_al_resubir()
     convergencia_del_esquema_que_va_a_la_base()
+    url_de_conexion_se_normaliza()
     print("\nSeguimiento test completado sin errores.")
