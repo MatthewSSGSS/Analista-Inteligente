@@ -197,6 +197,12 @@ _TZ_SUFFIX_RE = TZ_SUFFIX_RE  # alias interno histórico
 # tiene exactamente la forma de un desfase de dos dígitos, así que toda fecha
 # normal se habría dado por "con zona" y se habría corrido cinco horas al día
 # anterior. Una zona horaria solo aparece detrás de una hora.
+# La FECHA dentro de un valor de texto, en las dos formas que existen:
+# año primero ("2026-01-15", "2026/1/5") o día primero ("15/01/2026",
+# "15-1-26"). Se busca en cualquier posición, no solo al principio, para
+# cubrir valores como "Fecha: 2026-01-15". Ver `solo_fecha`.
+FECHA_EN_TEXTO_RE = re.compile(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})")
+
 # La HORA al final de un valor de fecha, con su zona horaria si la trae:
 # " 10:30", "T10:30:00", " 10:30:00.123+00:00", " 23:30 -05", " 10:00 UTC".
 # Se usa para borrarla del texto antes de interpretarlo — ver `sin_hora`.
@@ -211,6 +217,60 @@ TZ_EN_TEXTO_RE = re.compile(
     r"(?:Z|[+-]\d{2}(?::?\d{2})?|(?:UTC|GMT)(?:[+-]\d{1,2}(?::?\d{2})?)?)\s*$",
     re.I,
 )
+
+
+def _parse_seguro(texto, **kwargs):
+    """Interpreta texto como fecha SIN que pandas pueda quejarse de zonas.
+
+    Dos garantías, y las dos hacen falta:
+
+    - `utc=True`: es la única forma documentada de que `to_datetime` no
+      lance "Mixed timezones detected". Funciona con desfases distintos en
+      cada fila, con mezcla de valores con y sin desfase, y con formatos que
+      ningún patrón previó. No hay input que lo rompa.
+    - `tz_localize(None)` después, SIN convertir: devuelve la hora tal como
+      estaba escrita. No se convierte aquí porque a esta altura los valores
+      ya vienen en hora de Colombia —lo hizo `core/cleaner.normalize_timezones`,
+      primer paso de la limpieza— y volver a convertir los correría otras
+      cinco horas.
+
+    Se usa en `detect_date`, que es donde el error tumbó la carga cuatro
+    veces seguidas, cada vez por una llamada distinta que se había quedado
+    sin `utc=True`.
+    """
+    fechas = pd.to_datetime(texto, errors="coerce", utc=True, format="mixed", **kwargs)
+    tz = getattr(getattr(fechas, "dt", None), "tz", None)
+    return fechas.dt.tz_localize(None) if tz is not None else fechas
+
+
+def solo_fecha(texto):
+    """Se queda con la FECHA de cada valor y descarta todo lo que venga
+    detrás: hora, zona horaria, lo que sea.
+
+    Es el enfoque contrario a `sin_hora`, y la diferencia importa. Quitar la
+    hora obliga a reconocer TODAS las formas en que un archivo puede
+    escribirla al final del valor ("+00:00", "Z", "-05", " UTC", "GMT-5",
+    "+00:00:00", nombres de zona...). Ese camino falló cuatro veces
+    seguidas: siempre aparecía un formato más que el patrón no cubría, el
+    desfase sobrevivía y pandas tumbaba la carga del archivo entero con
+    "Mixed timezones detected".
+
+    Quedarse con la fecha solo obliga a reconocer la FECHA, que tiene dos
+    formas y son conocidas. Lo que haya después da igual: se descarta sin
+    mirarlo. Por eso esta versión no depende de acertar con el formato del
+    final, que es justo lo que no se podía garantizar.
+
+    Un valor donde no se reconozca ninguna fecha se devuelve intacto, para
+    que el resto del detector lo intente con sus propias reglas (nombres de
+    mes, seriales de Excel...).
+    """
+    if texto is None:
+        return texto
+    try:
+        extraida = texto.str.extract(FECHA_EN_TEXTO_RE, expand=False)
+    except (AttributeError, TypeError, ValueError):
+        return texto
+    return extraida.where(extraida.notna(), texto)
 
 
 def sin_hora(texto):
@@ -454,7 +514,7 @@ def detect_date(s, name):
     # La corrección de zona a hora de Colombia ya ocurrió antes, en
     # `core/cleaner.normalize_timezones`, que es el primer paso de la
     # limpieza.
-    text = sin_hora(text)
+    text = solo_fecha(sin_hora(text))
     iso_ratio = text.str.match(ISO_DATE_RE).mean() if len(text) else 0
     # Si la mayoría de los valores ya vienen en formato ISO (típico tras
     # convertir una columna datetime a texto en el pipeline de limpieza),
@@ -476,11 +536,11 @@ def detect_date(s, name):
         # se parece al resto (encabezados de sección, registros viejos con
         # otro formato), y decidir con solo el arranque sería frágil.
         probe = text.iloc[:: max(1, len(text) // 1000)]
-        probe_rate = pd.to_datetime(probe, errors="coerce", format="mixed", dayfirst=use_dayfirst).notna().mean()
+        probe_rate = _parse_seguro(probe, dayfirst=use_dayfirst).notna().mean()
         if probe_rate < 0.5:
             return None, float(probe_rate), None
 
-    parsed = pd.to_datetime(text, errors="coerce", format="mixed", dayfirst=use_dayfirst)
+    parsed = _parse_seguro(text, dayfirst=use_dayfirst)
     rate = parsed.notna().mean()
     if rate >= 0.90:
         years = parsed.dropna().dt.year

@@ -247,6 +247,46 @@ def el_resultado_es_siempre_una_columna_de_fechas():
                   str(r.dtype) == "datetime64[ns]")
 
 
+FORMATOS_DE_ZONA = {
+    "ISO con +00:00 / -05:00": ["2026-01-15 10:00:00+00:00", "2026-02-15 23:30:00-05:00", "2026-03-15 08:00:00+02:00"],
+    "con T y Z": ["2026-01-15T10:00:00Z", "2026-02-15T23:30:00-05:00", "2026-03-15T08:00:00+02:00"],
+    "-05 de dos dígitos": ["2026-01-15 10:00:00-05", "2026-02-15 10:00:00+00:00", "2026-03-15 10:00:00-05"],
+    "UTC / GMT-5 escritos": ["2026-01-15 10:00:00 UTC", "2026-02-15 10:00:00 GMT-5", "2026-03-15 10:00:00 UTC"],
+    "desfase con segundos": ["2026-01-15 10:00:00+00:00:00", "2026-02-15 10:00:00-05:00:00", "2026-03-15 10:00:00+00:00:00"],
+    "nombre de zona": ["2026-01-15 10:00:00 America/Bogota", "2026-02-15 10:00:00 UTC", "2026-03-15 10:00:00 EST"],
+    "milisegundos": ["2026-01-15 10:00:00.123+00:00", "2026-02-15 23:30:00.456-05:00", "2026-03-15 08:00:00.7Z"],
+    "con y sin zona": ["2026-01-15 10:00:00+00:00", "2026-02-15 09:00:00", "2026-03-15"],
+    "español con zona": ["15/01/2026 14:30:00-05:00", "20/02/2026 09:00:00+00:00", "25/03/2026 18:00:00Z"],
+    "con prefijo": ["Fecha: 2026-01-15 10:00Z", "Fecha: 2026-02-15 10:00-05:00", "Fecha: 2026-03-15 10:00Z"],
+}
+
+
+def cualquier_forma_de_escribir_la_zona_abre_el_archivo():
+    """La batería que faltaba: el archivo COMPLETO, con la zona escrita de
+    todas las formas que se han visto.
+
+    Este error tumbó la carga cuatro veces seguidas. Cada arreglo cubría el
+    formato de esa vez y fallaba con el siguiente, porque todos intentaban
+    RECONOCER el final del valor ("+00:00", "Z", "-05", " UTC", "GMT-5",
+    "+00:00:00", "America/Bogota"…). La solución que sí cierra el caso hace
+    lo contrario: se queda con la FECHA (`solo_fecha`) y descarta todo lo
+    que venga detrás sin mirarlo, y además interpreta siempre con
+    `utc=True`, que es lo único que pandas garantiza que no lanza.
+
+    Por eso aquí se prueban formatos deliberadamente absurdos: lo que se
+    está verificando es que da igual cuál llegue.
+    """
+    with _pandas_estricto():
+        for etiqueta, valores in FORMATOS_DE_ZONA.items():
+            filas = [["Fecha", "Ciudad", "V"]]
+            filas += [[v, c, i] for i, (v, c) in enumerate(zip(valores, ["B", "C", "M"]))]
+            item = load_workbook(_upload_xlsx(f"tz.xlsx", filas))["sheets"]["Hoja1"]
+            fechas = item["profile"]["schema"].get("dates")
+            check(f"«{etiqueta}» abre y se reconoce como fecha", fechas == ["Fecha"])
+            check(f"«{etiqueta}» sin zona y sin hora",
+                  str(item["processed"]["Fecha"].dtype) == "datetime64[ns]")
+
+
 def columnas_ya_fechadas_y_casos_raros():
     with _pandas_estricto():
         check("una columna ya con zona única sale sin zona",
@@ -287,6 +327,7 @@ if __name__ == "__main__":
     la_clasificacion_semantica_aguanta_los_formatos_raros()
     una_columna_con_formatos_distintos_no_pierde_filas()
     el_resultado_es_siempre_una_columna_de_fechas()
+    cualquier_forma_de_escribir_la_zona_abre_el_archivo()
     columnas_ya_fechadas_y_casos_raros()
     el_archivo_completo_carga_y_se_puede_filtrar()
     print("\nFechas test completado sin errores.")
