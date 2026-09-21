@@ -18,6 +18,7 @@ from difflib import SequenceMatcher
 
 import numpy as np
 import pandas as pd
+from core.dates import a_datetime
 
 from core.universal_analysis import ADDITIVE, semantic_map, choose_metric
 from visualization.charts import metric_candidates, dimension_candidates, _label
@@ -170,7 +171,7 @@ def _detect_filters(question_norm: str, df: pd.DataFrame, schema: dict, dims: li
 def _detect_period(question_norm: str, df: pd.DataFrame, date_col: str | None):
     if not date_col or date_col not in df.columns:
         return None
-    s = pd.to_datetime(df[date_col], errors="coerce")
+    s = a_datetime(df[date_col])
     years = sorted({int(y) for y in s.dropna().dt.year.unique()})
     found_year = None
     for y in years:
@@ -294,12 +295,12 @@ def answer_question(df: pd.DataFrame, schema: dict, question: str) -> dict:
         work = work[work[col].astype(str).isin(values)]
         applied_filters.append(f"{_label(schema, col)} = {', '.join(values)}")
     if period and date_col:
-        s = pd.to_datetime(work[date_col], errors="coerce")
+        s = a_datetime(work[date_col])
         if period.get("year"):
             work = work[s.dt.year == period["year"]]
             applied_filters.append(f"Año = {period['year']}")
         if period.get("month"):
-            work = work[pd.to_datetime(work[date_col], errors="coerce").dt.month == period["month"]]
+            work = work[a_datetime(work[date_col]).dt.month == period["month"]]
             applied_filters.append(f"Mes = {[k for k,v in MONTHS_ES.items() if v==period['month']][0].capitalize()}")
 
     if work.empty:
@@ -342,7 +343,7 @@ def answer_question(df: pd.DataFrame, schema: dict, question: str) -> dict:
         if not date_col:
             return {"status": "ambiguo", "answer": "No hay ninguna columna de fecha en este archivo, así que no puedo mostrar una evolución en el tiempo.", "detail": detail, "chart_spec": None, "table": None}
         tmp = work[[date_col, metric]].copy()
-        tmp[date_col] = pd.to_datetime(tmp[date_col], errors="coerce")
+        tmp[date_col] = a_datetime(tmp[date_col])
         tmp[metric] = pd.to_numeric(tmp[metric], errors="coerce")
         tmp = tmp.dropna()
         if tmp.empty:

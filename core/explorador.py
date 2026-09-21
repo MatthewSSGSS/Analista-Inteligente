@@ -31,6 +31,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+from .dates import a_datetime
 
 from .cuadro_comparativo import _limpiar_grupo, opciones_de_comparacion
 from .diagnostics import ADITIVAS, _fmt, _lista, _mes, _periodo_parcial, _semantica
@@ -99,7 +100,7 @@ def metricas(df: pd.DataFrame, schema: dict) -> list[str]:
 
 def columna_fecha(df: pd.DataFrame, schema: dict) -> Optional[str]:
     for d in schema.get("dates", []):
-        if d in df.columns and pd.to_datetime(df[d], errors="coerce").notna().any():
+        if d in df.columns and a_datetime(df[d]).notna().any():
             return d
     return None
 
@@ -154,7 +155,7 @@ def _agregar(agrupado, calculo: str):
 
 
 def _periodizar(fechas: pd.Series, grano: str) -> pd.Series:
-    f = pd.to_datetime(fechas, errors="coerce")
+    f = a_datetime(fechas)
     if grano == "Día":
         return f.dt.floor("D")
     if grano == "Semana":

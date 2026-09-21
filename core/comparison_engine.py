@@ -3,7 +3,7 @@ No presupone nombres de columnas: utiliza el esquema semántico detectado por el
 """
 from __future__ import annotations
 from .numeric import numeric_series, safe_sum, safe_mean
-from .dates import format_month_year
+from .dates import format_month_year, a_datetime
 
 import re
 import unicodedata
@@ -103,7 +103,7 @@ def _period_label(filename: str, df: pd.DataFrame, schema: dict) -> str:
     # Prefer date range when the file contains dates.
     dates = [c for c in schema.get("dates", []) if c in df.columns]
     if dates:
-        s = pd.to_datetime(df[dates[0]], errors="coerce").dropna()
+        s = a_datetime(df[dates[0]]).dropna()
         if not s.empty:
             lo, hi = s.min(), s.max()
             if lo.to_period("M") == hi.to_period("M"):
@@ -302,7 +302,7 @@ def _chronological_or_original_order(prepared: list[dict]) -> list[dict]:
         if not dates:
             all_dated = False
             break
-        vals = pd.to_datetime(item["df"][dates[0]], errors="coerce").dropna()
+        vals = a_datetime(item["df"][dates[0]]).dropna()
         if vals.empty:
             all_dated = False
             break

@@ -15,6 +15,7 @@ flujo manual de exportar/subir el Excel consolidado).
 from __future__ import annotations
 
 import pandas as pd
+from core.dates import a_datetime
 import streamlit as st
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -111,7 +112,7 @@ def load_from_db() -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=CONSOLIDATED_COLUMNS)
     df = df.rename(columns=_FROM_DB)
-    df["period"] = pd.to_datetime(df["period"], errors="coerce")
+    df["period"] = a_datetime(df["period"])
     for c in CONSOLIDATED_COLUMNS:
         if c not in df.columns:
             df[c] = None
@@ -126,7 +127,7 @@ def save_to_db(long_df: pd.DataFrame) -> None:
     engine = _get_engine()
     ensure_schema()
     out = long_df.rename(columns=_TO_DB).copy()
-    out["period"] = pd.to_datetime(out["period"], errors="coerce")
+    out["period"] = a_datetime(out["period"])
     with engine.begin() as conn:
         conn.execute(text(f"DELETE FROM {TABLE_NAME}"))
         out.to_sql(TABLE_NAME, conn, if_exists="append", index=False)

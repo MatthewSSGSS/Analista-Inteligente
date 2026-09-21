@@ -24,6 +24,7 @@ from __future__ import annotations
 import re
 
 import pandas as pd
+from .dates import a_datetime
 import streamlit as st
 
 # Opción que representa las celdas vacías en las listas de valores. Sin ella,
@@ -80,7 +81,7 @@ def mascara_regla(serie: pd.Series, regla: dict) -> pd.Series:
             mascara = mascara | numeros.isna()
         return mascara
     if op == "date_between":
-        fechas = pd.to_datetime(serie, errors="coerce")
+        fechas = a_datetime(serie)
         inicio, fin = (list(valor or []) + [None, None])[:2]
         mascara = fechas.notna()
         if inicio is not None:

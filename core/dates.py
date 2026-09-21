@@ -184,6 +184,66 @@ TZ_SUFFIX_RE = re.compile(r"\s*(?:Z|[+-]\d{2}:?\d{2})$", re.I)
 _TZ_SUFFIX_RE = TZ_SUFFIX_RE  # alias interno histórico
 
 
+def a_datetime(series, **kwargs):
+    """`pd.to_datetime` que NUNCA tumba la carga por zonas horarias.
+
+    Desde pandas 2.2 en adelante, una columna que mezcla desfases —una fila
+    "10:00+00:00" y otra "14:30-05:00", lo normal en un export de un sistema
+    que guarda la hora local de cada registro— hace que `to_datetime` lance
+    "Mixed timezones detected. Pass utc=True…". El mensaje llegaba tal cual
+    a la pantalla y el archivo entero no se podía abrir.
+
+    Es la única puerta por la que este proyecto convierte texto a fecha, así
+    que la reconciliación se hace aquí una sola vez, en tres pasos:
+
+    1. Si ya es una columna de fechas, no se toca.
+    2. Si es texto, se le quita el sufijo de zona ANTES de parsear
+       (`TZ_SUFFIX_RE`). Así no hay nada que reconciliar y —lo importante—
+       se conserva la fecha tal como está escrita en el archivo: convertir a
+       UTC movería la hora y un registro de las "23:30 -05:00" saltaría al
+       día siguiente, que para quien lee el informe es sencillamente un
+       error. Es el mismo criterio que ya usaban `detect_date` y
+       `core/semantic_engine`.
+    3. Si aun así pandas se queja (un formato raro que no cubre el paso 2),
+       se reconcilia en UTC y se quita la zona, que es la salida que pide el
+       propio mensaje de pandas. Antes de eso, el archivo no abría.
+
+    Devuelve siempre fechas SIN zona horaria: el resto del panel compara y
+    agrupa con fechas ingenuas, y mezclar los dos tipos vuelve a romper más
+    adelante ("Cannot compare tz-naive and tz-aware").
+    """
+    if series is None:
+        return series
+    if pd.api.types.is_datetime64_any_dtype(series):
+        # Ya es fecha; solo se le quita la zona si la trae, para cumplir lo
+        # que promete esta función: a la salida, siempre sin zona.
+        return _sin_zona(series)
+    entrada = series
+    if not pd.api.types.is_numeric_dtype(series):
+        try:
+            entrada = series.astype("string").str.strip().str.replace(TZ_SUFFIX_RE, "", regex=True)
+        except (AttributeError, TypeError, ValueError):
+            entrada = series
+    try:
+        return _sin_zona(pd.to_datetime(entrada, errors="coerce", **kwargs))
+    except (ValueError, TypeError):
+        return _sin_zona(pd.to_datetime(series, errors="coerce", utc=True, **kwargs))
+
+
+def _sin_zona(fechas):
+    """Quita la zona horaria conservando el reloj de pared (`tz_localize(None)`
+    mantiene la hora que dice el archivo, no el instante absoluto). Mezclar
+    fechas con zona y sin zona rompe cualquier comparación posterior con un
+    "Cannot compare tz-naive and tz-aware", así que a la salida no queda
+    ninguna con zona."""
+    tz = getattr(getattr(fechas, "dt", None), "tz", None)
+    if tz is not None:
+        return fechas.dt.tz_localize(None)
+    if getattr(fechas, "tzinfo", None) is not None:  # un Timestamp suelto
+        return fechas.tz_localize(None)
+    return fechas
+
+
 def date_only(series):
     """Deja solo la FECHA: sin hora y sin zona horaria.
 
@@ -202,7 +262,7 @@ def date_only(series):
     """
     if series is None:
         return series
-    out = pd.to_datetime(series, errors="coerce")
+    out = a_datetime(series)
     # Una columna con zona horaria única: se le quita la zona conservando la
     # hora local (tz_localize(None) mantiene el reloj de pared, no el
     # instante), y después se normaliza a medianoche.

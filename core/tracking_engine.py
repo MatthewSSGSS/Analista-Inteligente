@@ -17,7 +17,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from core.dates import extract_year_hint
+from core.dates import extract_year_hint, a_datetime
 from core.loader import load_workbook
 
 SUPERVISOR_RE = re.compile(r"(supervisor|jefe|l[ií]der|responsable|encargad[oa]|team\s*lead|coordinador)", re.I)
@@ -303,7 +303,7 @@ def read_consolidated(uploaded) -> pd.DataFrame:
             "archivo que esta misma herramienta te entregó para descargar."
         )
     df = df[CONSOLIDATED_COLUMNS].copy()
-    df["period"] = pd.to_datetime(df["period"], errors="coerce")
+    df["period"] = a_datetime(df["period"])
     df["person_key"] = _clean_id_series(df["person_key"])
     df["person_id"] = _clean_id_series(df["person_id"])
     return df
@@ -440,7 +440,7 @@ def project_metric(timeline: pd.DataFrame, target_date) -> dict:
     # "period" ya llega parseado desde sources_to_long/merge_long, pero se
     # vuelve a forzar con errors="coerce" (igual que el resto del proyecto)
     # para no romper la proyección si alguna vez llega un valor sucio.
-    periods = pd.to_datetime(d["period"], errors="coerce")
+    periods = a_datetime(d["period"])
     t0 = periods.min()
     x = (periods - t0).dt.days.to_numpy(dtype=float)
     y = d["_num"].to_numpy(dtype=float)
