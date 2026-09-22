@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from ui.labels import clean_display_text
 from visualization.charts import (
-    trend, ranking, donut, histogram, rangos, scatter, correlation, geo_summary_map, comparison, period_compare_bar,
+    trend, ranking, donut, histogram, rangos, cascada, scatter, correlation, geo_summary_map, comparison, period_compare_bar,
     metric_candidates, dimension_candidates, _label, wide_month_chart, _base
 )
 from core.executive import UMBRAL_CAMBIO
@@ -439,7 +439,25 @@ def _why_changed(df, dashboard):
         title = f'{change.get("metric_label")} {direction} <strong>{abs(pct):.1f}%</strong>'
     st.markdown(f'<div class="why-card"><div class="why-title">{title}</div><div class="why-subtitle">{change.get("period_before")} → {change.get("period_after")}</div></div>',unsafe_allow_html=True)
     factors=change.get("factors",[])
-    if factors:
+    # La cascada enseña de dónde salió el cambio: se parte del valor
+    # anterior, se suman y restan los segmentos que más movieron la aguja y
+    # se llega al actual. Las tarjetas de abajo decían lo mismo pero
+    # sueltas, y obligaban a sumar de cabeza para saber si esos segmentos
+    # explicaban la caída o si había algo compensándola.
+    fig_cascada = cascada(change)
+    if fig_cascada is not None:
+        dim = _label(dashboard.get("schema", {}), change.get("dimension")) if change.get("dimension") else "segmento"
+        _chart_card(
+            "De dónde salió el cambio",
+            f"Del valor anterior al actual, paso a paso, por {dim.lower()}",
+            fig_cascada,
+            insight=("Las barras verdes empujan hacia arriba y las rojas hacia abajo; "
+                     "«Resto» agrupa todo lo que no está entre los mayores movimientos."),
+            key="cascada_cambio",
+        )
+    elif factors:
+        # Sin cascada (métricas de promedio o porcentaje, donde los segmentos
+        # no suman el total) las tarjetas siguen siendo la explicación.
         cols=st.columns(min(3,len(factors)))
         for i,f in enumerate(factors[:3]):
             tone="positive" if f["delta"]>=0 else "negative"

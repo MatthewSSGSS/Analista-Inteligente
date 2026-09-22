@@ -1027,6 +1027,75 @@ def rangos(df, schema, metric=None):
     return fig
 
 
+def cascada(change, max_factores: int = 5):
+    """De dónde salió la subida o la caída, paso a paso.
+
+    Toma `dashboard["change_analysis"]` (lo calcula
+    `core/executive.explain_change`) y lo dibuja como cascada: se parte del
+    valor del periodo anterior, se van sumando y restando los segmentos que
+    más movieron la aguja, y se llega al valor actual.
+
+    Por qué esta forma y no las tarjetas de texto que había: las tarjetas
+    dicen "R4 bajó 851" una al lado de otra, y quien lee tiene que sumar
+    mentalmente para saber si eso explica la caída o si había algo que la
+    compensaba. La cascada lo enseña: se ve de una vez quién empuja hacia
+    abajo, quién hacia arriba y cuánto queda sin explicar.
+
+    **Solo se dibuja cuando los segmentos SUMAN el total** (`additive`), es
+    decir en métricas como ingresos o unidades. En un promedio o un
+    porcentaje, la media de las partes no es la media del todo: una cascada
+    ahí estaría afirmando una aritmética que no se cumple, así que se
+    devuelve None y la vista muestra su lectura en texto.
+    """
+    if not change or not change.get("additive") or not change.get("factors"):
+        return None
+    antes, despues = float(change.get("before", 0)), float(change.get("after", 0))
+    factores = sorted(change["factors"], key=lambda f: abs(f.get("delta", 0)), reverse=True)[:max_factores]
+    if not factores:
+        return None
+
+    etiquetas = [str(change.get("period_before") or "Antes")[:7]]
+    medidas = ["absolute"]
+    valores = [antes]
+    for f in factores:
+        etiquetas.append(str(f.get("label", "—"))[:22])
+        medidas.append("relative")
+        valores.append(float(f.get("delta", 0)))
+
+    # Lo que no explican los segmentos mostrados: el resto de los segmentos,
+    # los que no tienen categoría, los que se compensan entre sí. Sin esta
+    # barra la cascada no cerraría en el valor real y el gráfico estaría
+    # mintiendo por omisión.
+    resto = float(change.get("delta", 0)) - sum(float(f.get("delta", 0)) for f in factores)
+    if abs(resto) > abs(float(change.get("delta", 0)) or 1) * 0.005:
+        etiquetas.append("Resto")
+        medidas.append("relative")
+        valores.append(resto)
+
+    etiquetas.append(str(change.get("period_after") or "Ahora")[:7])
+    medidas.append("total")
+    valores.append(despues)
+
+    fig = go.Figure(go.Waterfall(
+        orientation="v", measure=medidas, x=etiquetas, y=valores,
+        text=[_compact_number(v) for v in valores],
+        textposition="outside", cliponaxis=False,
+        connector=dict(line=dict(color="rgba(120,130,150,.45)", width=1)),
+        increasing=dict(marker=dict(color=GREEN)),
+        decreasing=dict(marker=dict(color=PRIMARY)),
+        totals=dict(marker=dict(color="#64748B")),
+        hovertemplate="<b>%{x}</b><br>%{y:,.0f}<extra></extra>",
+    ))
+    fig.update_layout(showlegend=False, xaxis_title=None,
+                      yaxis_title=change.get("metric_label") or None, bargap=.30)
+    fig.update_yaxes(tickformat="~s")
+    fig = _base(fig, 360, show_xgrid=False)
+    # Hover por barra: "x unified" agruparía barras distintas con el mismo
+    # valor, que en una cascada es justo lo que confunde.
+    fig.update_layout(hovermode="closest", uniformtext=dict(minsize=1, mode="show"))
+    return fig
+
+
 def scatter(df, schema, x_metric=None, y_metric=None):
     metrics = metric_candidates(df, schema)
     if len(metrics) < 2:

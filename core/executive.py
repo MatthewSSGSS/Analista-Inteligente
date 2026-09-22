@@ -191,4 +191,10 @@ def explain_change(df, schema, metric=None):
             for idx,row in joined.iterrows(): factors.append({'dimension':dim,'label':str(idx),'delta':float(row['delta'])})
         if factors: break
     factors=sorted(factors,key=lambda z:abs(z['delta']),reverse=True)[:5]
-    return {'metric':metric,'metric_label':_label(schema,metric),'before':float(total0),'after':float(total1),'delta':delta,'pct':pct,'period_before':str(p0)[:10],'period_after':str(p1)[:10],'factors':factors}
+    # `additive` y `dimension` salen fuera porque quien dibuje esto necesita
+    # saber si los cambios por segmento SUMAN el cambio total. En una
+    # métrica que se suma (ingresos, unidades) sí: la cascada cierra exacta.
+    # En un promedio o un porcentaje NO —la media de las medias no es la
+    # media— y presentarlo como una suma sería afirmar algo falso.
+    dimension = factors[0]['dimension'] if factors else None
+    return {'metric':metric,'metric_label':_label(schema,metric),'before':float(total0),'after':float(total1),'delta':delta,'pct':pct,'period_before':str(p0)[:10],'period_after':str(p1)[:10],'factors':factors,'additive':bool(additive),'dimension':dimension}

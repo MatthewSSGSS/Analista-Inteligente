@@ -23,6 +23,7 @@ from visualization.charts import (
     grouped_trend,
     histogram,
     rangos,
+    cascada,
     metric_candidates,
     multi_trend,
     period_compare_bar,
@@ -210,6 +211,21 @@ def _build_charts(df: pd.DataFrame, schema: dict, dashboard: dict, include_geo: 
             fig = histogram(df, schema, primary, 24)
         if fig is not None:
             charts.append((title, subtitle, fig))
+
+    # La cascada del cambio: de dónde salió la subida o la caída, paso a
+    # paso. Va justo después de los gráficos del motor porque es la que
+    # responde el "¿por qué?" que deja abierto el titular del informe. Se
+    # dibuja sola solo cuando los segmentos suman el total (ver
+    # visualization/charts.cascada); si no, devuelve None y no aparece.
+    fig_cascada = cascada(dashboard.get("change_analysis"))
+    if fig_cascada is not None:
+        cambio = dashboard.get("change_analysis") or {}
+        charts.append((
+            "De dónde salió el cambio",
+            f"De {cambio.get('period_before','')} a {cambio.get('period_after','')}, "
+            "segmento por segmento",
+            fig_cascada,
+        ))
 
     # Add a second ranking/trend by another dimension where possible.
     if primary and len(dims) >= 2:
