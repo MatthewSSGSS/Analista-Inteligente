@@ -653,7 +653,12 @@ def ranking(df, schema, metric=None, dimension=None, top_n=10, agg="Suma"):
     fig = go.Figure(go.Bar(
         x=x[m], y=x[c], orientation="h", marker=dict(color=colors, line=dict(width=0)),
         text=[_compact_number(v) for v in x[m]], textposition="outside", cliponaxis=False,
-        hovertemplate="<b>%{y}</b><br>" + _label(schema, m) + ": <b>%{x:" + fmt + "}</b><extra></extra>",
+        # Qué columna y qué valor representa cada barra, para que al hacer
+        # clic se puedan mostrar sus registros sin adivinarlo del rótulo
+        # (que puede venir acortado). Ver ui/components/charts.chart_card.
+        customdata=[[c, str(v)] for v in x[c]],
+        hovertemplate="<b>%{y}</b><br>" + _label(schema, m) + ": <b>%{x:" + fmt
+                      + "}</b><br><i>Clic para ver los registros</i><extra></extra>",
     ))
     fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title=None, bargap=.26, uniformtext_minsize=9, uniformtext_mode="hide")
     fig.update_xaxes(tickformat="~s")
@@ -893,7 +898,9 @@ def _rangos_de_cumplimiento(serie):
               (80, 100, "Entre 80% y 99%", AMBER),
               (100, 120, "Cumplió: 100% a 119%", GREEN),
               (120, float("inf"), "Superó: 120% o más", "#0F7A4E")]
-    return [(etiqueta, color, int(((serie >= bajo) & (serie < alto)).sum()))
+    # Cada grupo lleva sus límites además de su cuenta: son los que necesita
+    # el clic para filtrar los registros de esa barra.
+    return [(etiqueta, color, int(((serie >= bajo) & (serie < alto)).sum()), bajo, alto)
             for bajo, alto, etiqueta, color in cortes]
 
 
@@ -920,7 +927,11 @@ def _rangos_por_tamano(serie):
         ultimo = i == len(unicos) - 2
         dentro = (serie >= bajo) & ((serie <= alto) if ultimo else (serie < alto))
         etiqueta = f"{nombres[i] if i < len(nombres) else 'Grupo'}: {_fmt_num(bajo)} a {_fmt_num(alto)}"
-        grupos.append((etiqueta, colores[i % len(colores)], int(dentro.sum())))
+        # El último grupo incluye su límite superior; los demás no. Se guarda
+        # esa diferencia para que el clic seleccione exactamente las mismas
+        # filas que contó la barra.
+        grupos.append((etiqueta, colores[i % len(colores)], int(dentro.sum()),
+                       bajo, alto if not ultimo else float("inf")))
     return grupos
 
 
@@ -979,11 +990,21 @@ def rangos(df, schema, metric=None):
     valores = [g[2] for g in grupos]
     textos = [f"<b>{v:,}</b>  ({v/total*100:.0f}%)" for v in valores]
 
+    # `customdata` lleva los límites de cada grupo (y el nombre de la métrica)
+    # para que, al hacer clic en una barra, se sepa exactamente qué registros
+    # mostrar sin tener que volver a deducirlo del rótulo. Ver
+    # `ui/components/charts.chart_card(detalle=...)`.
+    # Se incluye el rótulo EXACTO de la barra para que el detalle se titule
+    # igual que lo que la persona acaba de leer: si la barra dice «Entre 80%
+    # y 99%» y el detalle dijera «entre 80 y 100», la cifra deja de dar
+    # confianza aunque sea la misma.
+    datos_clic = [[m, g[3], g[4], g[0]] for g in grupos]
     fig = go.Figure(go.Bar(
         x=valores, y=etiquetas, orientation="h",
         marker=dict(color=colores, line=dict(width=0)),
         text=textos, textposition="outside", cliponaxis=False,
-        hovertemplate="<b>%{y}</b><br>%{x:,} registros<extra></extra>",
+        customdata=datos_clic,
+        hovertemplate="<b>%{y}</b><br>%{x:,} registros<br><i>Clic para ver cuáles son</i><extra></extra>",
     ))
     # El orden de los grupos es el que tiene sentido leer (de peor a mejor, o
     # de menor a mayor), no el de sus cantidades: aquí no se compite por

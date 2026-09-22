@@ -130,6 +130,58 @@ def la_explicacion_dice_cuantos_llegan_a_la_meta():
           "mitad de los registros" in texto2)
 
 
+# ── Clic en una barra → los registros que hay detrás. Lo que se verifica
+# aquí no es que se abra una tabla, sino que esa tabla traiga EXACTAMENTE
+# los mismos registros que contó la barra: si el gráfico dice 67 y la lista
+# muestra 65, la cifra deja de servir para decidir. ──
+def el_clic_en_una_barra_trae_sus_registros():
+    import numpy as np
+    from ui.dashboard import _detalle_de_grafico
+    from visualization.charts import ranking
+
+    np.random.seed(11)
+    df = pd.DataFrame({
+        "Asesor": [f"A{i:03d}" for i in range(300)],
+        "Region": np.random.choice(["R1", "R2", "R3", "R4", "R5"], 300),
+        "Cumplimiento": np.clip(np.random.normal(95, 22, 300), 30, 190).round(0),
+    })
+    esquema = _esquema("Cumplimiento", "percentage", ["Region", "Asesor"])
+
+    fig = rangos(df, esquema, "Cumplimiento")
+    resolver = _detalle_de_grafico(df, esquema, "rangos")
+    check("el gráfico de rangos ofrece detalle al hacer clic", resolver is not None)
+    for rotulo, cuenta, custom in zip(fig.data[0].y, fig.data[0].x, fig.data[0].customdata):
+        titulo, tabla = resolver(list(custom))
+        check(f"«{rotulo}»: la lista trae los mismos {cuenta} registros que la barra",
+              len(tabla) == cuenta)
+        check(f"«{rotulo}»: el detalle se titula igual que la barra", str(rotulo) in titulo)
+
+    fig2 = ranking(df, esquema, "Cumplimiento", "Region", 5)
+    resolver2 = _detalle_de_grafico(df, esquema, "ranking")
+    check("el ranking también ofrece detalle", resolver2 is not None)
+    for custom in fig2.data[0].customdata:
+        _, tabla = resolver2(list(custom))
+        real = int((df["Region"].astype(str) == str(custom[1])).sum())
+        check(f"la barra «{custom[1]}» trae sus {real} registros", len(tabla) == real)
+
+    # Un gráfico sin detalle con sentido no debe inventarse uno.
+    check("una evolución temporal no ofrece detalle por clic",
+          _detalle_de_grafico(df, esquema, "line") is None)
+
+
+def un_clic_con_datos_raros_no_truena():
+    """El detalle nunca puede tumbar el gráfico: si algo no cuadra, se queda
+    sin detalle y la cifra sigue a la vista."""
+    from ui.dashboard import _detalle_de_grafico
+
+    df = pd.DataFrame({"Cumplimiento": [50, 100, 150]})
+    resolver = _detalle_de_grafico(df, _esquema("Cumplimiento", "percentage"), "rangos")
+    for etiqueta, entrada in [("vacío", []), ("incompleto", ["Cumplimiento"]),
+                              ("columna que no existe", ["NoExiste", 0, 10]), ("nulo", None)]:
+        check(f"clic con datos {etiqueta}: devuelve None en vez de tronar",
+              resolver(entrada) is None)
+
+
 if __name__ == "__main__":
     un_cumplimiento_se_parte_por_la_meta()
     el_cien_por_ciento_cuenta_como_cumplido()
@@ -138,4 +190,6 @@ if __name__ == "__main__":
     casos_sin_datos_no_truenan()
     el_analisis_automatico_pide_este_grafico()
     la_explicacion_dice_cuantos_llegan_a_la_meta()
+    el_clic_en_una_barra_trae_sus_registros()
+    un_clic_con_datos_raros_no_truena()
     print("\nRangos test completado sin errores.")

@@ -152,8 +152,49 @@ def _drilldown_panel(df,schema,metric,dimension):
     st.dataframe(table.rename(columns={drill_dim:_label(schema,drill_dim)}),use_container_width=True,hide_index=True)
 
 
-def _chart_card(title, subtitle, fig, empty="No hay datos suficientes para este análisis.", insight=None, explain=None, key=None):
-    _shared_chart_card(title, subtitle, fig, empty=empty, insight=insight, explain=explain, key=key)
+def _chart_card(title, subtitle, fig, empty="No hay datos suficientes para este análisis.", insight=None, explain=None, key=None, detalle=None):
+    _shared_chart_card(title, subtitle, fig, empty=empty, insight=insight, explain=explain, key=key, detalle=detalle)
+
+
+def _detalle_de_grafico(df, schema, kind):
+    """Qué registros hay detrás de la barra en la que se hizo clic.
+
+    Devuelve la función que `chart_card` llamará con los `customdata` de la
+    barra, o None si ese tipo de gráfico no tiene un detalle con sentido
+    (una línea de evolución o un donut no responden "quiénes son" de una
+    forma única).
+
+    Vive aquí y no en el módulo de gráficos a propósito: el gráfico sabe qué
+    dibujó, pero solo la vista tiene el DataFrame con el que se construyó.
+    """
+    if kind == "rangos":
+        def detalle(custom):
+            # customdata = [métrica, límite inferior, límite superior]
+            if not custom or len(custom) < 3:
+                return None
+            metrica, bajo, alto = custom[0], float(custom[1]), float(custom[2])
+            if metrica not in df.columns:
+                return None
+            valores = pd.to_numeric(df[metrica], errors="coerce")
+            dentro = (valores >= bajo) & (valores < alto)
+            rotulo = custom[3] if len(custom) > 3 else None
+            etiqueta = f"{_label(schema, metrica)} · {rotulo}" if rotulo else _label(schema, metrica)
+            return etiqueta, df.loc[dentro.fillna(False)]
+        return detalle
+
+    if kind == "ranking":
+        def detalle(custom):
+            # customdata = [columna, valor de la categoría]
+            if not custom or len(custom) < 2:
+                return None
+            columna, valor = custom[0], custom[1]
+            if columna not in df.columns:
+                return None
+            coincide = df[columna].astype(str) == str(valor)
+            return f"{_label(schema, columna)}: {valor}", df.loc[coincide]
+        return detalle
+
+    return None
 
 
 def _fmt(v):
@@ -616,7 +657,8 @@ def _primary_analysis_section(df, schema, controls, m, d, available_dates):
                 "histogram":f"Distribución de {_label(schema,m).lower()}",
                 "scatter":"Relación entre dos indicadores",
             }.get(selected_kind,"Lectura visual de los datos")
-            _chart_card("Visualización principal",subtitle,fig,"No hay datos suficientes para este gráfico.",_chart_insight(df,schema,m,d),key=f"primary_visual_{selected_kind}")
+            _chart_card("Visualización principal",subtitle,fig,"No hay datos suficientes para este gráfico.",_chart_insight(df,schema,m,d),
+                        key=f"primary_visual_{selected_kind}",detalle=_detalle_de_grafico(df,schema,selected_kind))
 
             # La «Comparación individual» que vivía aquí (elegir una dimensión,
             # hasta 6 elementos y 9 tipos de gráfico, con la ficha de persona
@@ -697,7 +739,8 @@ def _diagnostic_and_smart_charts_section(df, schema, controls, m, d, available_d
             st.markdown('<div class="section-intro compact"><div><span class="eyebrow">GRÁFICOS INTELIGENTES</span><h2>Las preguntas que este Excel sí puede responder</h2></div></div>',unsafe_allow_html=True)
             cols=st.columns(2)
             for i,(title,q,fig,kind) in enumerate(rendered[:4]):
-                with cols[i%2]: _chart_card(title,q,fig,key=f"smart_chart_{kind}_{i}")
+                with cols[i%2]: _chart_card(title,q,fig,key=f"smart_chart_{kind}_{i}",
+                                            detalle=_detalle_de_grafico(df,schema,kind))
 
 
 def _geo_section(df, schema, m):
