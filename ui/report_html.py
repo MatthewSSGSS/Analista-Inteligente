@@ -22,6 +22,7 @@ from visualization.charts import (
     geo_summary_map,
     grouped_trend,
     histogram,
+    rangos,
     metric_candidates,
     multi_trend,
     period_compare_bar,
@@ -203,6 +204,8 @@ def _build_charts(df: pd.DataFrame, schema: dict, dashboard: dict, include_geo: 
             fig = donut(df, schema, primary, dims[0], 7)
         elif kind == "scatter" and len(metrics) >= 2:
             fig = scatter(df, schema, metrics[0], metrics[1])
+        elif kind == "rangos":
+            fig = rangos(df, schema, primary)
         elif kind == "histogram":
             fig = histogram(df, schema, primary, 24)
         if fig is not None:

@@ -4,7 +4,7 @@ import streamlit as st
 from core.universal_analysis import dynamic_kpis, smart_chart_questions, period_series
 from core.tracking_engine import project_metric
 from core.dates import format_month_year
-from visualization.charts import trend, ranking, period_compare_bar, donut, histogram, scatter, metric_candidates, dimension_candidates, _label
+from visualization.charts import trend, ranking, period_compare_bar, donut, histogram, rangos, scatter, metric_candidates, dimension_candidates, _label
 from ui.labels import clean_display_text
 from ui.dashboard import _fmt, _chart_insight, _display_kpi_value, _kpi_style
 from ui.components.cards import kpi_card, insight_card, executive_headline, executive_signals
@@ -66,6 +66,7 @@ def render_executive(df, schema, dashboard):
                 elif kind=="ranking" and d: fig=ranking(df,schema,m,d,8,"Automático")
                 elif kind=="period_compare" and d: fig=period_compare_bar(df,schema,m,d,"Mes","Automático",8)
                 elif kind=="donut" and d: fig=donut(df,schema,m,d,8)
+                elif kind=="rangos": fig=rangos(df,schema,m)
                 elif kind=="histogram": fig=histogram(df,schema,m)
                 else: continue
                 if fig is not None:

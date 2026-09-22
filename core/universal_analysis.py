@@ -185,6 +185,10 @@ def smart_chart_questions(df, schema, metric, dimension=None):
     if dates and dimension and metric: specs.append(("Cambio por segmento","¿Quién explica la subida o caída?","period_compare"))
     if dimension and metric: specs.append(("Contribución","¿Quién aporta más al resultado?","ranking"))
     if dimension and metric: specs.append(("Participación","¿Cómo se reparte el total?","donut"))
-    if metric: specs.append(("Distribución","¿Hay valores concentrados o dispersos?","histogram"))
+    # "¿Hay valores concentrados o dispersos?" describía la FORMA de la
+    # distribución, que es una pregunta de analista. La que se hace en una
+    # reunión es cuántos casos caen en cada grupo y si eso está bien; ver
+    # visualization/charts.rangos.
+    if metric: specs.append(("Cómo se reparten","¿Cuántos casos hay en cada rango?","rangos"))
     if len(metrics)>=2: specs.append(("Relación","¿Qué variables se mueven juntas?","scatter"))
     return specs

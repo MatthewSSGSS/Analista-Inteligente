@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from ui.labels import clean_display_text
 from visualization.charts import (
-    trend, ranking, donut, histogram, scatter, correlation, geo_summary_map, comparison, period_compare_bar,
+    trend, ranking, donut, histogram, rangos, scatter, correlation, geo_summary_map, comparison, period_compare_bar,
     metric_candidates, dimension_candidates, _label, wide_month_chart, _base
 )
 from core.executive import UMBRAL_CAMBIO
@@ -205,7 +205,7 @@ def _available_chart_types(df, schema, metric, dimension, has_date):
     if metric and dimension:
         options += [("Barras por categoría", "ranking"), ("Barras: anterior vs actual", "period_compare"), ("Dona", "donut")]
     if metric and not has_date and not dimension:
-        options += [("Histograma", "histogram")]
+        options += [("Cómo se reparten", "rangos"), ("Histograma", "histogram")]
     metrics=metric_candidates(df,schema)
     if len(metrics)>=2:
         options.append(("Dispersión", "scatter"))
@@ -232,6 +232,8 @@ def _render_selected_chart(df, schema, controls, chart_kind):
         return period_compare_bar(df,schema,m,d,controls["grain"],controls["agg"],controls["top_n"])
     if chart_kind=="donut":
         return donut(df,schema,m,d,controls["top_n"])
+    if chart_kind=="rangos":
+        return rangos(df,schema,m)
     if chart_kind=="histogram":
         return histogram(df,schema,m)
     if chart_kind=="scatter":
@@ -610,6 +612,7 @@ def _primary_analysis_section(df, schema, controls, m, d, available_dates):
                 "ranking":f"Comparación por {_label(schema,d).lower() if d else 'categoría'}",
                 "period_compare":f"Dos periodos en una misma barra · {_label(schema,m)}",
                 "donut":f"Participación por {_label(schema,d).lower() if d else 'categoría'}",
+                "rangos":f"Cómo se reparten los valores de {_label(schema,m).lower()}",
                 "histogram":f"Distribución de {_label(schema,m).lower()}",
                 "scatter":"Relación entre dos indicadores",
             }.get(selected_kind,"Lectura visual de los datos")
@@ -684,6 +687,7 @@ def _diagnostic_and_smart_charts_section(df, schema, controls, m, d, available_d
             elif kind=="period_compare" and d: fig=period_compare_bar(df,schema,m,d,controls["grain"],controls["agg"],controls["top_n"])
             elif kind=="ranking" and d: fig=ranking(df,schema,m,d,controls["top_n"],controls["agg"])
             elif kind=="donut" and d: fig=donut(df,schema,m,d,controls["top_n"])
+            elif kind=="rangos": fig=rangos(df,schema,m)
             elif kind=="histogram": fig=histogram(df,schema,m)
             elif kind=="scatter":
                 mm=metric_candidates(df,schema); fig=scatter(df,schema,mm[0],mm[1]) if len(mm)>=2 else None

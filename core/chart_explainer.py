@@ -61,6 +61,27 @@ def explain_chart(df, schema, kind, metric=None, dimension=None, grain="Mes"):
         else: gap_txt=""
         return f"{leader} lidera {mlabel} con {_num(lv)}, equivalente al {share:.1f}% del total.{gap_txt}"
 
+    if kind == "rangos" and metric:
+        # La lectura que se espera de este gráfico es "cuántos hay a cada
+        # lado", no la forma de la curva. Cuando la métrica es un
+        # cumplimiento, el lado que importa es la meta; si no, se dice dónde
+        # está la mitad de los registros.
+        from visualization.charts import _es_cumplimiento
+        limpia = pd.to_numeric(s, errors="coerce").dropna()
+        if limpia.empty:
+            return None
+        if _es_cumplimiento(schema, metric, limpia):
+            cumplen = float((limpia >= 100).mean()) * 100
+            lejos = float((limpia < 80).mean()) * 100
+            frase = f"{cumplen:.0f} de cada 100 registros llegan al 100% de {mlabel.lower()}."
+            if lejos >= 5:
+                frase += f" {lejos:.0f}% se queda por debajo del 80%, que es donde está el problema."
+            return frase
+        mitad = safe_median(limpia)
+        return (f"La mitad de los registros está por debajo de {_num(mitad)} de {mlabel.lower()} "
+                f"y la otra mitad por encima. El rango completo va de {_num(safe_min(limpia))} "
+                f"a {_num(safe_max(limpia))}.")
+
     if kind == "histogram" and metric:
         return f"La mediana de {mlabel} es {_num(safe_median(s))} y el promedio es {_num(safe_mean(s))}. El rango observado va de {_num(safe_min(s))} a {_num(safe_max(s))}."
 

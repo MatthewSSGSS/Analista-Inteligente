@@ -1,3 +1,4 @@
+import re
 import pandas as pd
 from core.numeric import numeric_series
 from core.dates import format_month_year
@@ -861,6 +862,148 @@ def histogram(df, schema, metric=None, bins=24):
     )
     fig.update_layout(showlegend=False, xaxis_title=_label(schema, m), yaxis_title="Registros", bargap=.10, uniformtext_minsize=9, uniformtext_mode="hide")
     return _base(fig, 350, show_xgrid=False)
+
+
+_CUMPLIMIENTO_RE = re.compile(r"cumpl|%|porc|avance|logro|meta", re.I)
+
+
+def _es_cumplimiento(schema, columna, serie) -> bool:
+    """¿Esta métrica es un cumplimiento, donde 100 significa "llegó"?
+
+    Se exige que lo diga el nombre o el tipo semántico Y que los valores lo
+    respalden: una columna llamada "% Participación" con valores de 0 a 5 no
+    es un cumplimiento contra meta, y partirla en "menos de 80 / 100 o más"
+    no diría nada. Con la mediana cerca de 100 y el grueso de los datos en
+    un rango razonable, sí lo es.
+    """
+    if not (_CUMPLIMIENTO_RE.search(str(columna)) or _concept_for(schema, columna) == "percentage"):
+        return False
+    s = serie.dropna()
+    if len(s) < 5:
+        return False
+    mediana = float(s.median())
+    return 40 <= mediana <= 250 and float(((s >= 0) & (s <= 400)).mean()) >= 0.9
+
+
+def _rangos_de_cumplimiento(serie):
+    """Los cuatro grupos con los que se habla de un cumplimiento en una
+    reunión: quién no llegó, quién se quedó cerca, quién cumplió y quién se
+    pasó. El corte en 100 no es estadístico, es la meta."""
+    cortes = [(-float("inf"), 80, "Por debajo de 80%", RED),
+              (80, 100, "Entre 80% y 99%", AMBER),
+              (100, 120, "Cumplió: 100% a 119%", GREEN),
+              (120, float("inf"), "Superó: 120% o más", "#0F7A4E")]
+    return [(etiqueta, color, int(((serie >= bajo) & (serie < alto)).sum()))
+            for bajo, alto, etiqueta, color in cortes]
+
+
+def _rangos_por_tamano(serie):
+    """Cuatro grupos de igual número de registros (cuartiles), etiquetados
+    con sus cifras reales.
+
+    Se usan cuartiles y no anchos iguales porque con anchos iguales un solo
+    valor extremo deja tres grupos vacíos y uno con todo — que es justo lo
+    que hacía ilegible el histograma. Con cuartiles, cada grupo tiene
+    aproximadamente la misma cantidad de registros y lo que se compara es el
+    RANGO de cada uno, que es la información útil.
+    """
+    cortes = [float(serie.quantile(q)) for q in (0, .25, .5, .75, 1)]
+    # Valores muy repetidos pueden dar cortes iguales: se quitan los
+    # duplicados para no dibujar grupos imposibles ("de 5 a 5").
+    unicos = sorted(set(round(c, 6) for c in cortes))
+    if len(unicos) < 3:
+        return None
+    nombres = ["Los más bajos", "Bajos-medios", "Medios-altos", "Los más altos"]
+    grupos, colores = [], [PRIMARY, "#EE5A72", "#F28FA0", "#F8C4CD"]
+    for i in range(len(unicos) - 1):
+        bajo, alto = unicos[i], unicos[i + 1]
+        ultimo = i == len(unicos) - 2
+        dentro = (serie >= bajo) & ((serie <= alto) if ultimo else (serie < alto))
+        etiqueta = f"{nombres[i] if i < len(nombres) else 'Grupo'}: {_fmt_num(bajo)} a {_fmt_num(alto)}"
+        grupos.append((etiqueta, colores[i % len(colores)], int(dentro.sum())))
+    return grupos
+
+
+def _fmt_num(v) -> str:
+    v = float(v)
+    a = abs(v)
+    if a >= 1_000_000:
+        return f"{v/1_000_000:.1f}M"
+    if a >= 1_000:
+        return f"{v/1_000:.1f}K"
+    if a >= 10 or float(v).is_integer():
+        return f"{v:,.0f}"
+    return f"{v:,.1f}"
+
+
+def rangos(df, schema, metric=None):
+    """Cuántos registros hay en cada rango, en barras con nombre.
+
+    Reemplaza al histograma en el análisis automático. El histograma es
+    correcto pero no se entiende sin saber leerlo: pide interpretar una
+    forma ("¿está sesgada a la derecha?") y sus intervalos los elige el
+    algoritmo, así que salen cosas como "100 - 109" que no significan nada
+    para quien dirige. La pregunta real en una reunión no es qué forma tiene
+    la distribución, sino CUÁNTOS hay en cada grupo y si eso está bien.
+
+    Por eso aquí cada barra es un grupo con nombre en español, su cantidad y
+    su porcentaje del total, y el color dice si el grupo es bueno o malo
+    cuando eso se puede saber. Se lee sin explicación previa.
+
+    Dos formas de agrupar, según lo que sea la métrica:
+
+    - Un cumplimiento (donde 100 es la meta): los grupos son los de la
+      conversación real — no llegó / cerca / cumplió / superó.
+    - Cualquier otra métrica: cuatro grupos de igual número de registros,
+      etiquetados con sus cifras reales ("Los más bajos: 0 a 1.2K").
+    """
+    metrics = metric_candidates(df, schema)
+    if not metrics:
+        return None
+    m = metric or metrics[0]
+    serie = numeric_series(df[m]).dropna()
+    if serie.empty or serie.nunique() < 2:
+        return None
+
+    es_cumplimiento = _es_cumplimiento(schema, m, serie)
+    grupos = _rangos_de_cumplimiento(serie) if es_cumplimiento else _rangos_por_tamano(serie)
+    if not grupos:
+        return None
+    grupos = [g for g in grupos if g[2] > 0]
+    if len(grupos) < 2:
+        return None
+
+    total = int(sum(g[2] for g in grupos))
+    etiquetas = [g[0] for g in grupos]
+    colores = [g[1] for g in grupos]
+    valores = [g[2] for g in grupos]
+    textos = [f"<b>{v:,}</b>  ({v/total*100:.0f}%)" for v in valores]
+
+    fig = go.Figure(go.Bar(
+        x=valores, y=etiquetas, orientation="h",
+        marker=dict(color=colores, line=dict(width=0)),
+        text=textos, textposition="outside", cliponaxis=False,
+        hovertemplate="<b>%{y}</b><br>%{x:,} registros<extra></extra>",
+    ))
+    # El orden de los grupos es el que tiene sentido leer (de peor a mejor, o
+    # de menor a mayor), no el de sus cantidades: aquí no se compite por
+    # tamaño, se describe una escala. Plotly dibuja la primera categoría
+    # abajo, así que se invierte para que se lea de arriba hacia abajo.
+    fig.update_yaxes(categoryorder="array", categoryarray=etiquetas[::-1])
+    fig.update_layout(
+        showlegend=False, bargap=.35,
+        xaxis_title="Cantidad de registros", yaxis_title=None,
+        margin=dict(l=8, r=64, t=8, b=8),
+    )
+    fig.update_xaxes(range=[0, max(valores) * 1.18])
+    fig = _base(fig, 330, show_xgrid=True)
+    # `_base` deja el hover en "x unified" y un tamaño mínimo de texto que
+    # esconde etiquetas: las dos cosas están pensadas para barras verticales
+    # y series temporales. En barras horizontales, "x unified" agrupa por
+    # cantidad (junta grupos que casualmente tengan el mismo número) y el
+    # mínimo oculta justo la cifra que se quiere leer.
+    fig.update_layout(hovermode="closest", uniformtext=dict(minsize=1, mode="show"))
+    return fig
 
 
 def scatter(df, schema, x_metric=None, y_metric=None):
