@@ -169,8 +169,17 @@ with st.sidebar:
     # de una línea con el nombre del archivo, en vez de ocupar ese espacio
     # siempre. Sigue expandido por defecto mientras no haya ningún archivo.
     _wb_before = st.session_state.workbook
+    # El nombre se recorta en la CABECERA del desplegable: los archivos
+    # reales se llaman "INFORMACION PARA DASH BOARD NUEVO EJECUTIVO DE CALLE
+    # SEPTIEMBRE 2026.xlsx" y ahí se partía en tres renglones, empujando
+    # todo el menú hacia abajo. El nombre completo sigue disponible: en la
+    # tarjeta de abajo (recortado con puntos suspensivos) y en el tooltip.
+    _nombre_corto = ""
+    if _wb_before:
+        _n = str(_wb_before["filename"])
+        _nombre_corto = _n if len(_n) <= 26 else _n[:24].rstrip() + "…"
     with st.expander(
-        f'📄 {_wb_before["filename"]}' if _wb_before else "📤 Cargar Excel / CSV",
+        f'📄 {_nombre_corto}' if _wb_before else "📤 Cargar Excel / CSV",
         expanded=(_wb_before is None),
     ):
         upload=st.file_uploader("Cargar Excel / CSV",type=["xlsx","xls","xlsb","xlsm","csv"], key="single_upload", label_visibility="collapsed")
@@ -213,7 +222,8 @@ with st.sidebar:
         # sueltos al final del menú ("archivo.xlsx · 0.52 MB" y "25 registros
         # · 5 columnas"), lejos del selector de hoja al que pertenecen.
         st.markdown(
-            f'<div class="sidebar-file"><span class="sidebar-file-name">{wb["filename"]}</span>'
+            f'<div class="sidebar-file" title="{_html.escape(str(wb["filename"]))}">'
+            f'<span class="sidebar-file-name">{_html.escape(str(wb["filename"]))}</span>'
             f'<span class="sidebar-file-meta">{len(df):,} registros · {len(df.columns)} columnas · {wb["size_mb"]:.1f} MB</span></div>',
             unsafe_allow_html=True,
         )

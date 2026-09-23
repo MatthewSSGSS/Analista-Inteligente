@@ -350,33 +350,46 @@ p,span,div,li,label{color:var(--text)}
    Dark Mode and off-white in Light Mode — same tokens, values swapped in
    _sidebar_vars() so this block never needs to know which mode is active.
 
-   Ancho: antes no tenía ninguna regla propia, así que usaba el ancho por
-   defecto/redimensionable de Streamlit (bastante más ancho de lo que su
-   contenido — un logo, dos botones de tema, un dropdown, filtros — de
-   verdad necesita). 270px alcanza para que el rango de fechas
-   ("2025/01/01 – 2025/06/30") y el nombre del archivo sigan leyéndose sin
-   verse forzados, dejando el resto de la pantalla para el contenido
-   principal. Todo el contenido sigue siendo el mismo — nada se quitó ni
-   se reordenó, solo el ancho del panel que lo contiene. Con !important
-   porque Streamlit redimensiona el sidebar con su propio estilo inline;
-   esto también fija el ancho, así que el tirador para arrastrarlo y
-   cambiarlo a mano deja de tener efecto. */
-/* 300px y no 270: con 270 los rótulos de los botones («Cambiar a Análisis
-   Práctico») se partían en dos líneas y cada control quedaba apretado
-   contra el borde. 30px más caben sin robarle ancho real al análisis. */
-section[data-testid="stSidebar"]{width:300px!important;min-width:300px!important;max-width:300px!important;background:var(--sidebar-bg)!important;border-right:1px solid var(--sidebar-line)!important}
-section[data-testid="stSidebar"]>div{width:300px!important}
-section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-top:.75rem!important}
+   Ancho: ver el bloque de abajo. Hubo una versión con el ancho clavado a
+   270px con !important; se revirtió porque ese candado anulaba el tirador
+   de redimensionado de Streamlit y dejaba a quien usa la app sin poder
+   ensanchar el menú cuando un nombre de archivo o un filtro no cabían. */
+/* ANCHO AJUSTABLE POR EL USUARIO.
+   Antes estaba clavado con `width/min-width/max-width: 270px !important`, y
+   ese candado es justo lo que impedía arrastrar el borde: Streamlit trae su
+   propio tirador de redimensionado, pero el !important le ganaba siempre.
+   Aquí solo se fijan los LÍMITES (mínimo legible, máximo razonable) y el
+   ancho inicial; entre esos dos valores manda quien usa la app, y Streamlit
+   recuerda el ancho elegido durante la sesión.
+   El mínimo es 260px porque por debajo los selectores de fecha y los chips
+   de los filtros se parten; el máximo evita que el menú se coma la mitad
+   de la pantalla de un portátil. */
+section[data-testid="stSidebar"]{
+  min-width:260px!important;max-width:620px!important;
+  background:var(--sidebar-bg)!important;border-right:1px solid var(--sidebar-line)!important}
+section[data-testid="stSidebar"]>div{min-width:260px}
+/* Ancho de partida, sin !important para no bloquear el arrastre. */
+section[data-testid="stSidebar"]:not([style*="width"]){width:310px}
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{
+  padding-top:1rem!important;padding-left:1rem!important;padding-right:1rem!important;padding-bottom:1.5rem!important}
+/* El tirador de redimensionado, visible al acercarse: sin una pista, nadie
+   descubre que el menú se puede ensanchar. */
+section[data-testid="stSidebar"] [data-testid="stSidebarResizeHandle"]:hover{
+  background:var(--blue)!important;opacity:.55}
 /* ===== Compactación pedida ("controles de app profesional, no tarjetas
    gigantes"): el sidebar heredaba el mismo padding/gap generoso pensado
-   para el contenido principal (tarjetas de KPI, gráficos). Un rail de
-   270px con puros controles (radios, selects, botones, filtros) no
-   necesita ese mismo aire — se reduce el padding del contenedor y el gap
-   entre widgets consecutivos (antes 1rem/.5rem, pensado para separar
-   bloques grandes) para que cada control quede a una distancia ajustada
-   del siguiente, sin perder legibilidad. */
+   para el contenido principal (tarjetas de KPI, gráficos). Un rail
+   estrecho con puros controles (radios, selects, botones, filtros) no
+   necesita ese mismo aire — se reduce el padding del contenedor respecto
+   al del contenido principal. El gap entre widgets, en cambio, se subió
+   después: ver la nota de abajo, se había apretado de más. */
 section[data-testid="stSidebar"] .block-container{padding:.8rem .85rem .9rem}
-section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.35rem}
+/* Aire entre controles. Estaba en .35rem —unos 5px— y ahí nace la
+   sensación de que "todo está pegado": el rótulo de un campo casi
+   tocaba el control de arriba, así que no se veía a cuál pertenecía.
+   .7rem separa lo suficiente para que cada rótulo se lea junto a SU
+   control, sin estirar el menú a lo largo. */
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.7rem}
 section[data-testid="stSidebar"] *{color:var(--sidebar-text)}
 section[data-testid="stSidebar"] h1,section[data-testid="stSidebar"] h2,section[data-testid="stSidebar"] h3{color:var(--sidebar-text-strong)!important;font-family:'Sora','Inter',sans-serif;letter-spacing:-.01em}
 section[data-testid="stSidebar"] .stCaption,section[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{color:var(--sidebar-muted)!important;font-size:11.5px!important;line-height:1.4!important}
@@ -386,8 +399,8 @@ section[data-testid="stSidebar"] hr{border-color:var(--sidebar-line);margin:.5re
    en un rail angosto se siente sobredimensionado. Un control de ~32px es
    el estándar de barras laterales de apps de escritorio (VS Code, Notion)
    y sigue siendo perfectamente clickeable. */
-section[data-testid="stSidebar"] .stButton>button{min-height:32px!important;padding:0 12px!important;font-size:12.5px!important;border-radius:9px!important}
-section[data-testid="stSidebar"] [data-testid="stExpander"] summary{padding:8px 10px!important;font-size:12.5px!important;min-height:0!important}
+section[data-testid="stSidebar"] .stButton>button{min-height:36px!important;padding:0 12px!important;font-size:12.5px!important;border-radius:9px!important;white-space:nowrap!important}
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary{padding:10px 12px!important;font-size:12.5px!important;min-height:0!important;line-height:1.4!important}
 section[data-testid="stSidebar"] [data-testid="stExpander"] summary svg{width:16px;height:16px}
 section[data-testid="stSidebar"] [data-testid="stExpanderDetails"]{padding:8px 10px 4px!important}
 /* El chevron nativo de colapsar/expandir el sidebar entero (arriba del
@@ -457,29 +470,52 @@ section[data-testid="stSidebar"] .mode-confidence{color:var(--sidebar-muted)!imp
 .sidebar-logo-mark{width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 28px}
 .sidebar-logo-text{font-size:13px;font-weight:800;font-family:'Sora','Inter',sans-serif;color:var(--sidebar-text-strong);line-height:1.15}
 .sidebar-logo-text small{display:block;font-size:10px;font-weight:600;font-family:'Inter',sans-serif;color:var(--sidebar-muted)}
-/* Rótulo de un control suelto ("Periodo", "Métrica"): tiene que leerse
-   como una etiqueta de campo, no como un título. Por eso va en minúscula
-   con mayúscula inicial y sin espaciado de letras — en MAYÚSCULAS todas
-   competían con los encabezados de sección y el menú parecía una lista de
-   veinte títulos del mismo rango. */
-.sidebar-section-label{font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;color:var(--sidebar-muted)!important;margin:10px 0 3px}
-/* Encabezado de BLOQUE: solo hay tres en todo el menú (Datos, Filtros y el
-   pie), así que puede permitirse el separador superior sin saturar. */
-.sidebar-group-header{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--sidebar-muted)!important;
-  margin:16px 0 6px;padding-top:12px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
-.sidebar-group-header:first-of-type{border-top:none;padding-top:0;margin-top:2px}
-/* Pie del menú: todo lo que casi nunca se toca (tema, sesión, versión,
-   ajustes). Se separa del resto y baja de contraste para que el ojo no lo
-   confunda con los controles de trabajo. */
-.sidebar-foot{height:1px;margin:20px 0 12px;background:var(--sidebar-line)}
-.sidebar-foot-line{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--sidebar-muted);padding:2px 2px 6px}
-.sidebar-foot-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:0 0 6px}
-/* Resumen del archivo activo: una sola línea, no tres captions sueltos. */
-.sidebar-file{display:flex;flex-direction:column;gap:1px;padding:7px 9px;margin:2px 0 4px;
-  background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:9px}
-.sidebar-file-name{font-size:11.5px;font-weight:700;color:var(--sidebar-text-strong);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sidebar-file-meta{font-size:10.5px;color:var(--sidebar-muted)}
+/* IMPORTANTE — por qué estas reglas van prefijadas con el selector del
+   sidebar y con !important en cada propiedad:
+   una clase suelta (.sidebar-section-label = especificidad 0,1,0) pierde
+   contra cualquier regla del tema que apunte al sidebar por atributo
+   (section[data-testid="stSidebar"] ... = 0,1,1 o más), y hay varias. El
+   resultado era que los rótulos seguían saliendo en MAYÚSCULAS y la
+   tarjeta del archivo sin su caja, aunque el CSS estuviera escrito. Con el
+   prefijo y el !important, estas reglas no dependen de ganar esa pelea. */
+
+/* Rótulo de un control ("Hoja activa", "Periodo"): es una etiqueta de
+   campo, no un título. En MAYÚSCULAS competía con los encabezados de
+   bloque y el menú parecía una lista de veinte títulos del mismo rango. */
+section[data-testid="stSidebar"] .sidebar-section-label{
+  font-size:11.5px!important;font-weight:650!important;letter-spacing:0!important;
+  text-transform:none!important;line-height:1.35!important;
+  color:var(--sidebar-muted)!important;margin:14px 0 5px!important;padding:0!important}
+
+/* Encabezado de BLOQUE: solo hay dos en todo el menú (Datos y Filtros),
+   así que puede permitirse el separador superior sin saturar. */
+section[data-testid="stSidebar"] .sidebar-group-header{
+  font-size:10px!important;font-weight:800!important;letter-spacing:.11em!important;
+  text-transform:uppercase!important;line-height:1.3!important;
+  color:var(--sidebar-muted)!important;
+  margin:22px 0 8px!important;padding:14px 0 0!important;
+  border-top:1px solid var(--sidebar-line);font-family:var(--font-display)}
+section[data-testid="stSidebar"] .sidebar-group-header:first-of-type{
+  border-top:none;padding-top:0!important;margin-top:4px!important}
+
+/* Separador del pie: todo lo que casi nunca se toca queda por debajo. */
+.sidebar-foot{height:1px;margin:26px 0 14px;background:var(--sidebar-line)}
+
+/* Resumen del archivo activo. Las dos líneas se declaran como bloque y con
+   su propia altura de línea: sin eso quedaban pegadas una a otra y el
+   nombre del archivo se derramaba sobre la siguiente ("…2026.xlsx25
+   registros · 5 columnas"). El nombre se recorta con puntos suspensivos en
+   vez de envolverse: un nombre largo llegaba a ocupar cuatro renglones. */
+section[data-testid="stSidebar"] .sidebar-file{
+  display:block!important;padding:10px 11px!important;margin:6px 0 10px!important;
+  background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:10px}
+section[data-testid="stSidebar"] .sidebar-file-name{
+  display:block!important;font-size:11.5px!important;font-weight:700!important;
+  line-height:1.45!important;color:var(--sidebar-text-strong)!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+section[data-testid="stSidebar"] .sidebar-file-meta{
+  display:block!important;font-size:10.5px!important;line-height:1.5!important;
+  margin-top:3px!important;color:var(--sidebar-muted)!important}
 /* Fila de sesión (avatar + nombre): antes era una tarjeta propia (fondo +
    borde + radio, mismo lenguaje que .sidebar-logo) con el botón "Salir"
    apilado debajo a todo el ancho — dos elementos de altura completa solo
@@ -490,15 +526,27 @@ section[data-testid="stSidebar"] .mode-confidence{color:var(--sidebar-muted)!imp
    arriba, así que la sección entera ocupa una fracción de la altura de
    antes sin perder ningún dato visible (nombre completo sigue con
    ellipsis si no cabe, avatar sigue con el mismo degradado de marca). */
-.sidebar-account{display:flex;align-items:center;gap:8px;padding:4px 2px;margin:0 0 2px}
-.sidebar-account-avatar{width:24px;height:24px;border-radius:50%;flex:0 0 24px;
+/* Las dos líneas (rótulo + nombre) se encimaban: `line-height:1.2` sobre
+   un contenedor flex sin alto propio, con dos tamaños de fuente distintos,
+   dejaba el nombre montado sobre el rótulo. Ahora cada línea declara su
+   propia altura y el bloque respira. */
+section[data-testid="stSidebar"] .sidebar-account{
+  display:flex!important;align-items:center;gap:10px;padding:8px 2px 6px;margin:2px 0 6px}
+section[data-testid="stSidebar"] .sidebar-account-avatar{
+  width:26px;height:26px;border-radius:50%;flex:0 0 26px;
   background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);
   box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);
-  display:flex;align-items:center;justify-content:center;font-size:12px}
-.sidebar-account-info{display:flex;flex-direction:column;min-width:0;line-height:1.2}
-.sidebar-account-label{font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--sidebar-muted)}
-.sidebar-account-name{font-size:12.5px;font-weight:700;color:var(--sidebar-text-strong);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  display:flex;align-items:center;justify-content:center;font-size:13px}
+section[data-testid="stSidebar"] .sidebar-account-info{
+  display:flex!important;flex-direction:column!important;min-width:0;gap:2px}
+section[data-testid="stSidebar"] .sidebar-account-label{
+  display:block!important;font-size:9.5px!important;font-weight:800!important;
+  letter-spacing:.07em!important;text-transform:uppercase!important;
+  line-height:1.4!important;color:var(--sidebar-muted)!important}
+section[data-testid="stSidebar"] .sidebar-account-name{
+  display:block!important;font-size:12.5px!important;font-weight:700!important;
+  line-height:1.4!important;color:var(--sidebar-text-strong)!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
 /* View-mode selector styled as a dark nav pill row, matching the sidebar */
 section[data-testid="stSidebar"] div[role="radiogroup"]{background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:9px;padding:3px;gap:2px}
 section[data-testid="stSidebar"] div[role="radiogroup"] label{border-radius:6px;padding:5px 8px}
