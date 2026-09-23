@@ -361,8 +361,12 @@ p,span,div,li,label{color:var(--text)}
    porque Streamlit redimensiona el sidebar con su propio estilo inline;
    esto también fija el ancho, así que el tirador para arrastrarlo y
    cambiarlo a mano deja de tener efecto. */
-section[data-testid="stSidebar"]{width:270px!important;min-width:270px!important;max-width:270px!important;background:var(--sidebar-bg)!important;border-right:1px solid var(--sidebar-line)!important}
-section[data-testid="stSidebar"]>div{width:270px!important}
+/* 300px y no 270: con 270 los rótulos de los botones («Cambiar a Análisis
+   Práctico») se partían en dos líneas y cada control quedaba apretado
+   contra el borde. 30px más caben sin robarle ancho real al análisis. */
+section[data-testid="stSidebar"]{width:300px!important;min-width:300px!important;max-width:300px!important;background:var(--sidebar-bg)!important;border-right:1px solid var(--sidebar-line)!important}
+section[data-testid="stSidebar"]>div{width:300px!important}
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-top:.75rem!important}
 /* ===== Compactación pedida ("controles de app profesional, no tarjetas
    gigantes"): el sidebar heredaba el mismo padding/gap generoso pensado
    para el contenido principal (tarjetas de KPI, gráficos). Un rail de
@@ -453,10 +457,29 @@ section[data-testid="stSidebar"] .mode-confidence{color:var(--sidebar-muted)!imp
 .sidebar-logo-mark{width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#ff4d4d,#e4002b 55%,#a80e1f 100%);box-shadow:inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 28px}
 .sidebar-logo-text{font-size:13px;font-weight:800;font-family:'Sora','Inter',sans-serif;color:var(--sidebar-text-strong);line-height:1.15}
 .sidebar-logo-text small{display:block;font-size:10px;font-weight:600;font-family:'Inter',sans-serif;color:var(--sidebar-muted)}
-.sidebar-section-label{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--sidebar-muted)!important;margin:6px 0 3px}
-.sidebar-group-header{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--sidebar-text-strong)!important;
-  margin:8px 0 4px;padding-top:7px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
+/* Rótulo de un control suelto ("Periodo", "Métrica"): tiene que leerse
+   como una etiqueta de campo, no como un título. Por eso va en minúscula
+   con mayúscula inicial y sin espaciado de letras — en MAYÚSCULAS todas
+   competían con los encabezados de sección y el menú parecía una lista de
+   veinte títulos del mismo rango. */
+.sidebar-section-label{font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;color:var(--sidebar-muted)!important;margin:10px 0 3px}
+/* Encabezado de BLOQUE: solo hay tres en todo el menú (Datos, Filtros y el
+   pie), así que puede permitirse el separador superior sin saturar. */
+.sidebar-group-header{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--sidebar-muted)!important;
+  margin:16px 0 6px;padding-top:12px;border-top:1px solid var(--sidebar-line);font-family:'Sora','Inter',sans-serif}
 .sidebar-group-header:first-of-type{border-top:none;padding-top:0;margin-top:2px}
+/* Pie del menú: todo lo que casi nunca se toca (tema, sesión, versión,
+   ajustes). Se separa del resto y baja de contraste para que el ojo no lo
+   confunda con los controles de trabajo. */
+.sidebar-foot{height:1px;margin:20px 0 12px;background:var(--sidebar-line)}
+.sidebar-foot-line{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--sidebar-muted);padding:2px 2px 6px}
+.sidebar-foot-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:0 0 6px}
+/* Resumen del archivo activo: una sola línea, no tres captions sueltos. */
+.sidebar-file{display:flex;flex-direction:column;gap:1px;padding:7px 9px;margin:2px 0 4px;
+  background:var(--sidebar-panel);border:1px solid var(--sidebar-line);border-radius:9px}
+.sidebar-file-name{font-size:11.5px;font-weight:700;color:var(--sidebar-text-strong);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-file-meta{font-size:10.5px;color:var(--sidebar-muted)}
 /* Fila de sesión (avatar + nombre): antes era una tarjeta propia (fondo +
    borde + radio, mismo lenguaje que .sidebar-logo) con el botón "Salir"
    apilado debajo a todo el ancho — dos elementos de altura completa solo

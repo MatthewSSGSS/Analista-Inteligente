@@ -138,41 +138,28 @@ if st.session_state.analysis_mode == "territorial":
 hero("📊 Panel Analítico Universal", "De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.", band=True)
 
 with st.sidebar:
+    # ── Estructura del menú ───────────────────────────────────────────────
+    # Tres bloques y nada más: DATOS (qué estoy viendo), FILTROS (qué recorte
+    # miro) y un pie con todo lo que casi nunca se toca.
+    #
+    # Antes había veintiún elementos permanentes, todos con el mismo peso
+    # visual: el selector de tema, la tarjeta de sesión, el modo detectado al
+    # 93% y la versión del código ocupaban tanto espacio —y tanto contraste—
+    # como la hoja activa o el periodo, que son los que se usan a diario.
+    # Todo lo secundario baja al pie, plegado.
     st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
-    theme_choice = st.radio(
-        "Tema", ["☀️ Claro", "🌙 Oscuro"], horizontal=True, label_visibility="collapsed",
-        index=0 if st.session_state.theme_mode == "light" else 1, key="theme_mode_radio",
-    )
-    new_theme = "light" if theme_choice == "☀️ Claro" else "dark"
-    if new_theme != st.session_state.theme_mode:
-        st.session_state.theme_mode = new_theme
-        st.rerun()
-    if st.session_state.get("auth_user"):
-        u = st.session_state.auth_user
-        name = u.get("display_name") or u.get("username") or "Invitado"
-        # Antes iba en 2 columnas (nombre + botón "Salir" lado a lado): con
-        # el sidebar ya fijo en 270px, la columna del botón quedaba
-        # demasiado angosta y "Salir" se veía cortado a una sola letra.
-        # Ahora es una tarjetita propia (mismo lenguaje visual que
-        # .sidebar-logo: círculo + texto) con el botón debajo, a todo el
-        # ancho — nunca le falta espacio al texto, sea cual sea el nombre.
-        st.markdown(
-            f'<div class="sidebar-account">'
-            f'<div class="sidebar-account-avatar">👤</div>'
-            f'<div class="sidebar-account-info"><span class="sidebar-account-label">Sesión activa</span>'
-            f'<span class="sidebar-account-name">{name}</span></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("🚪 Salir", key="logout_btn", use_container_width=True):
-            auth_engine.logout()
-            st.rerun()
 
-    st.markdown('<p class="sidebar-group-header">ARCHIVO</p>', unsafe_allow_html=True)
-    if st.button("⚡ Cambiar a Análisis Práctico", use_container_width=True, key="switch_to_practico"):
+    st.markdown('<p class="sidebar-group-header">Datos</p>', unsafe_allow_html=True)
+    # Los dos modos, uno al lado del otro y con el nombre solo. Antes eran
+    # dos botones a todo el ancho que decían "Cambiar a Análisis Práctico" y
+    # se partían en dos líneas cada uno: cuatro renglones para dos acciones.
+    _modo_a, _modo_b = st.columns(2)
+    if _modo_a.button("⚡ Práctico", use_container_width=True, key="switch_to_practico",
+                      help="Análisis Práctico: resumen rápido y preguntas en lenguaje natural."):
         st.session_state.analysis_mode = "practico"
         st.rerun()
-    if st.button("🗺️ Cambiar a Análisis Territorial", use_container_width=True, key="switch_to_territorial"):
+    if _modo_b.button("🗺️ Territorial", use_container_width=True, key="switch_to_territorial",
+                      help="Análisis Territorial: el mismo archivo leído por zonas."):
         st.session_state.analysis_mode = "territorial"
         st.rerun()
     # Una vez hay un archivo cargado, subir uno nuevo pasa a ser la acción
@@ -214,7 +201,7 @@ with st.sidebar:
 
     wb=st.session_state.workbook
     if wb:
-        st.markdown('<p class="sidebar-section-label" style="margin-top:6px;">Hoja activa</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sidebar-section-label">Hoja activa</p>', unsafe_allow_html=True)
         sheet=st.selectbox("Hoja",list(wb["sheets"]), label_visibility="collapsed")
         item=wb["sheets"][sheet]
         st.session_state.active_sheet = sheet
@@ -222,7 +209,16 @@ with st.sidebar:
         schema=item["profile"]["schema"]
         mode_info=detect_dataset_mode(df, schema)
 
-        st.markdown('<p class="sidebar-group-header">VISTA</p>', unsafe_allow_html=True)
+        # Qué archivo y qué tamaño, en UNA línea. Antes eran dos `st.caption`
+        # sueltos al final del menú ("archivo.xlsx · 0.52 MB" y "25 registros
+        # · 5 columnas"), lejos del selector de hoja al que pertenecen.
+        st.markdown(
+            f'<div class="sidebar-file"><span class="sidebar-file-name">{wb["filename"]}</span>'
+            f'<span class="sidebar-file-meta">{len(df):,} registros · {len(df.columns)} columnas · {wb["size_mb"]:.1f} MB</span></div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown('<p class="sidebar-section-label">Nivel de detalle</p>', unsafe_allow_html=True)
         st.session_state.view_mode = st.radio(
             "Nivel de detalle",
             ["Ejecutivo", "Analista"],
@@ -232,8 +228,7 @@ with st.sidebar:
             label_visibility="collapsed",
         )
 
-        st.markdown('<p class="sidebar-group-header">FILTROS</p>', unsafe_allow_html=True)
-        st.caption("Selecciona una persona o usa los filtros de contexto. Todo el dashboard se actualiza con la selección.")
+        st.markdown('<p class="sidebar-group-header">Filtros</p>', unsafe_allow_html=True)
 
         # ── Búsqueda principal de persona ────────────────────────────────
         # Si el archivo tiene Nombre + Apellidos, el usuario trabaja con una
@@ -328,30 +323,60 @@ with st.sidebar:
                     if str(k).startswith("filter_") or str(k).startswith("person_filter_") or str(k).startswith("period_filter_"):
                         st.session_state.pop(k, None)
                 st.rerun()
-            st.caption(f"{active_count} filtro(s) activo(s)")
             # Qué recorte está activo, en palabras: con filtros en cualquier
-            # columna, un contador solo no alcanza para saber qué se dejó fuera.
+            # columna, un contador solo no alcanza para saber qué se dejó
+            # fuera. El contador suelto ("1 filtro(s) activo(s)") sí sobraba:
+            # las líneas de abajo ya se ven y se cuentan solas.
             for _linea in [describir_regla(c, r) for c, r in st.session_state.filters.items()
                            if not str(c).startswith("__")][:8]:
                 if _linea:
                     st.caption("· " + _linea)
-        st.markdown(f'<div class="mode-banner"><span class="mode-banner-label">MODO DETECTADO</span><br><b>{mode_info["label"]}</b> <span class="mode-confidence">{mode_info["confidence"]*100:.0f}%</span></div>', unsafe_allow_html=True)
 
+    # ── Pie: lo que casi nunca se toca ────────────────────────────────────
+    # Tema, sesión, versión, asistente y herramientas. Todo esto estaba
+    # repartido por el menú y con el mismo peso visual que los controles de
+    # trabajo; aquí abajo sigue estando a un clic, sin competir por la
+    # atención con la hoja activa o el periodo.
+    # Streamlit renderiza cada elemento en su propio contenedor, así que un
+    # <div> abierto aquí NO envolvería los expanders de abajo: sería un
+    # contenedor falso. Se usa entonces como lo que de verdad puede ser —una
+    # línea separadora con su espacio— y la jerarquía la da el orden.
+    st.markdown('<div class="sidebar-foot"></div>', unsafe_allow_html=True)
+    if wb:
         with st.expander("🤖 Asistente IA", expanded=False):
             st.caption("Opcional: conecta una API key para habilitar conversación y análisis asistido.")
             st.session_state.assistant_api_key = st.text_input("OpenAI API key", value=st.session_state.get("assistant_api_key", ""), type="password", key="sidebar_assistant_key")
             st.session_state.assistant_model = st.text_input("Modelo", value=st.session_state.get("assistant_model", "gpt-5.5"), key="sidebar_assistant_model")
-        st.divider()
-        st.caption(f"{wb['filename']} · {wb['size_mb']:.2f} MB")
-        st.caption(f"{len(df):,} registros · {len(df.columns)} columnas")
 
-
-    # Versión desplegada. Va al final del menú, discreta, pero siempre
-    # visible: cuando un cambio "no aparece", esto responde en un vistazo si
-    # la app está corriendo el código nuevo o uno anterior — que fue
-    # justamente lo que costó varias idas y vueltas averiguar.
-    st.markdown('<p class="sidebar-group-header">VERSIÓN</p>', unsafe_allow_html=True)
-    st.caption(f"Código en ejecución: {etiqueta_version()}")
+    with st.expander("⚙️ Ajustes", expanded=False):
+        theme_choice = st.radio(
+            "Tema", ["☀️ Claro", "🌙 Oscuro"], horizontal=True,
+            index=0 if st.session_state.theme_mode == "light" else 1, key="theme_mode_radio",
+        )
+        new_theme = "light" if theme_choice == "☀️ Claro" else "dark"
+        if new_theme != st.session_state.theme_mode:
+            st.session_state.theme_mode = new_theme
+            st.rerun()
+        if st.session_state.get("auth_user"):
+            u = st.session_state.auth_user
+            name = u.get("display_name") or u.get("username") or "Invitado"
+            st.markdown(
+                f'<div class="sidebar-account"><div class="sidebar-account-avatar">👤</div>'
+                f'<div class="sidebar-account-info"><span class="sidebar-account-label">Sesión activa</span>'
+                f'<span class="sidebar-account-name">{name}</span></div></div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("🚪 Salir", key="logout_btn", use_container_width=True):
+                auth_engine.logout()
+                st.rerun()
+        # El tipo de datos detectado explica por qué aparecen unas pestañas y
+        # no otras. Es una explicación, no un control: vivía como un recuadro
+        # rojo a media altura del menú, compitiendo con los filtros.
+        if wb:
+            st.caption(f"Tipo de datos detectado: **{mode_info['label']}** ({mode_info['confidence']*100:.0f}% de confianza)")
+        # Versión desplegada: cuando un cambio "no aparece", responde en un
+        # vistazo si la app corre el código nuevo o uno anterior.
+        st.caption(f"Código en ejecución: {etiqueta_version()}")
 
     with st.expander("🧰 Herramientas avanzadas", expanded=False):
         st.markdown('<p class="sidebar-section-label" style="margin-top:0;">⚖️ Comparar periodos o archivos</p>', unsafe_allow_html=True)
@@ -434,6 +459,7 @@ with st.sidebar:
             st.success(f"Seguimiento listo · {td['person_key'].nunique()} funcionarios · {td['source_file'].nunique()} archivos")
         if st.session_state.tracking_error:
             st.error(f"No pudimos procesar el seguimiento: {st.session_state.tracking_error}")
+
 if not st.session_state.workbook:
     if st.session_state.comparison_result:
         render_comparison(st.session_state.comparison_result)
