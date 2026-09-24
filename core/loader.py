@@ -7,6 +7,7 @@ from .relationships import detect_relationships
 from .pivot_flatten import merged_ranges_by_sheet, fill_merged_cells, flatten_pivot_grid
 from .informe import leer_informe, graficos_e_imagenes, titulo_principal, titulos as titulos_de
 from .informe_bloques import leer_bloques
+from .hojas_ocultas import hojas_ocultas
 from .dates import extract_year_hint
 from .imagen_ocr import imagenes_del_libro
 
@@ -180,6 +181,11 @@ def load_workbook(uploaded):
     titulos: dict = {}
     avisos: list = []
     sin_ceros: set = set()  # tablas de informe: una celda vacía es "sin reportar", no cero
+    # De qué hoja de Excel salió cada tabla del panel: una hoja tipo informe
+    # produce varias ("Dash · por Canal"), así que el nombre ya no basta para
+    # saber si lo que se muestra venía de una hoja oculta.
+    origen: dict = {}
+    ocultas_excel: set = set()
     if name.endswith(".csv"):
         # Un CSV ilegible (vacío, binario, con otra codificación) sale de
         # pandas con un error en inglés y en su jerga —"No columns to parse
@@ -205,6 +211,9 @@ def load_workbook(uploaded):
         # Celdas combinadas de TODO el archivo, en una sola pasada (no una
         # por hoja — ver el porqué en pivot_flatten.merged_ranges_by_sheet).
         merges_by_sheet = merged_ranges_by_sheet(data, filename)
+        # Qué hojas escondió quien armó el archivo: las de trabajo (bases sin
+        # depurar, copias, tablas de apoyo) no son lo que se quiere analizar.
+        ocultas_excel = hojas_ocultas(data, filename)
         raw, grids = {}, {}
         for sheet in book.sheet_names:
             grid, n_merged = _grid(data, sheet, merges_by_sheet.get(sheet), engine)
@@ -234,10 +243,12 @@ def load_workbook(uploaded):
                         continue
                     nombre = _nombre_unico(t["nombre"], raw)
                     raw[nombre] = (t["datos"], t["log"])
+                    origen[nombre] = sheet
                     if not t.get("faltantes_son_cero", True):
                         sin_ceros.add(nombre)
                     titulos[nombre] = t["titulo"]
                 continue
+            origen[sheet] = sheet
             if grid.empty:
                 raw[sheet] = (grid, [])
                 continue
@@ -256,6 +267,7 @@ def load_workbook(uploaded):
                 for grafico in contenido["graficos"]:
                     titulo = grafico["titulo"] or f"Gráfico de {hoja}"
                     nombre = _nombre_unico(f"Gráfico · {titulo}", raw)
+                    origen[nombre] = hoja
                     raw[nombre] = (grafico["datos"], [f"Datos leídos del gráfico «{titulo}» de la hoja «{hoja}»: "
                                                       "Excel guarda una copia de los números de cada gráfico."])
                     titulos[nombre] = titulo
@@ -360,6 +372,22 @@ def load_workbook(uploaded):
             "Tienen contenido, pero no con forma de tabla (texto suelto o muy pocas celdas), "
             "así que quedaron fuera del análisis. El resto del archivo sí se leyó."
         )
+    # Las hojas que Excel esconde se cargan igual, pero no se muestran hasta
+    # que se piden: son las de trabajo de quien armó el archivo. Sin esto, un
+    # archivo de dos pestañas visibles salía con ocho en el selector y el panel
+    # abría en una hoja de apoyo en vez de en la base. Ver core/hojas_ocultas.py.
+    _ocultas = {n for n in sheets if origen.get(n, n) in ocultas_excel}
+    # Si esconderlas dejara el panel sin nada que analizar, no se esconden: la
+    # única hoja visible pudo ser una portada de texto que se descartó antes.
+    if len(_ocultas) == len(sheets):
+        _ocultas = set()
+    if _ocultas:
+        cuales = ", ".join(f"«{n}»" for n in sorted(_ocultas)[:4])
+        avisos.append(
+            f"{len(_ocultas)} hoja(s) de este archivo están ocultas en Excel ({cuales}"
+            f"{' y otras' if len(_ocultas) > 4 else ''}): suelen ser hojas de trabajo, así que no "
+            "se muestran. Actívalas en «Ver también las hojas ocultas», en el menú lateral."
+        )
     relationships = detect_relationships(sheets)
     for sheet in sheets:
         sheets[sheet]["profile"]["relationships"] = relationships.get(sheet, [])
@@ -371,6 +399,7 @@ def load_workbook(uploaded):
         "size_mb": len(data) / 1024 / 1024,
         "processed_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "sheets": sheets,
+        "ocultas": _ocultas,
         "relationships": relationships,
         "avisos": avisos,
         "imagenes": imagenes,

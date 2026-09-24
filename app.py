@@ -211,7 +211,19 @@ with st.sidebar:
     wb=st.session_state.workbook
     if wb:
         st.markdown('<p class="sidebar-section-label">Hoja activa</p>', unsafe_allow_html=True)
-        sheet=st.selectbox("Hoja",list(wb["sheets"]), label_visibility="collapsed")
+        # Las hojas ocultas en Excel quedan fuera del selector salvo que se
+        # pidan: son las de trabajo de quien armó el archivo (bases sin
+        # depurar, copias, tablas de apoyo) y hacían que el panel abriera en
+        # una de ellas. Se cargan igual, así que el interruptor es inmediato.
+        _ocultas = wb.get("ocultas") or set()
+        _visibles = [h for h in wb["sheets"] if h not in _ocultas] or list(wb["sheets"])
+        _ver_ocultas = False
+        if _ocultas and len(_visibles) < len(wb["sheets"]):
+            _ver_ocultas = st.checkbox(f"Ver también las hojas ocultas ({len(_ocultas)})",
+                                       key="ver_hojas_ocultas")
+        _opciones = list(wb["sheets"]) if _ver_ocultas else _visibles
+        sheet=st.selectbox("Hoja", _opciones, label_visibility="collapsed",
+                           format_func=lambda h: f"{h} (oculta)" if h in _ocultas else h)
         item=wb["sheets"][sheet]
         st.session_state.active_sheet = sheet
         df=item["processed"]
