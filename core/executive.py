@@ -38,6 +38,8 @@ def primary_metric(df, schema):
     metrics=[c for c in metrics if c in df.columns]
     if schema.get('metrica_preferida') in metrics:
         return schema['metrica_preferida']  # la que eligió el usuario manda
+    if schema.get('metrica_sugerida') in metrics:
+        return schema['metrica_sugerida']  # la que trae meta propia (core/profile)
     return sorted(metrics,key=lambda c: priority.index(sem.get(c)) if sem.get(c) in priority else 99)[0] if metrics else None
 
 

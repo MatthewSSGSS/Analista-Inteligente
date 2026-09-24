@@ -24,8 +24,12 @@ def build_dashboard(df, profile):
     semantic_cols = schema.get("semantic", {}).get("columns", [])
     rank = {x["column"]: priority.index(x["semantic_type"]) if x["semantic_type"] in priority else 99 for x in semantic_cols}
     metrics = sorted(metrics, key=lambda c: rank.get(c, 99))
-    # La métrica elegida en el menú manda sobre la que el motor elegiría solo.
-    primary=schema.get("metrica_preferida") if schema.get("metrica_preferida") in metrics else (metrics[0] if metrics else None)
+    # La métrica elegida en el menú manda sobre la que el motor elegiría solo;
+    # y la que trae meta propia (core/profile) manda sobre el orden semántico:
+    # comparar contra la meta dice más que el tipo de la columna.
+    primary=(schema.get("metrica_preferida") if schema.get("metrica_preferida") in metrics
+             else schema.get("metrica_sugerida") if schema.get("metrica_sugerida") in metrics
+             else (metrics[0] if metrics else None))
 
     anomalies=detect(df,schema)
     insights=generate(df,schema,anomalies)

@@ -128,6 +128,14 @@ def columna_meta(df, schema, metric=None):
       "Altas Eje", no de "ALTAS"; una meta sin más nombre ("Presupuesto")
       vale para cualquiera;
     - que la escala tenga sentido: una meta mil veces el resultado no es su meta.
+
+    La meta NO tiene que venir en la mayoría de las filas. Antes se exigía que
+    estuviera en la mitad, y eso dejaba fuera el caso más común de una base
+    exportada: el presupuesto se fija una vez por punto y producto, mientras lo
+    ejecutado se registra todos los días, así que la meta ocupa una fracción de
+    las filas (en el archivo real, el 14,7 %) aunque esté completa para cada
+    grupo que se compara. Se pide presencia real —no una celda suelta— y que la
+    escala cuadre; quien compara exige además que haya meta en 2+ grupos.
     """
     fechas, ids = set(schema.get("dates", [])), set(schema.get("ids", []))
     palabras_metrica = _palabras(metric) if metric is not None else set()
@@ -139,7 +147,7 @@ def columna_meta(df, schema, metric=None):
         if not META_RE.search(str(c)):
             continue
         valores = pd.to_numeric(df[c], errors="coerce")
-        if not (valores.notna().sum() >= len(df) * 0.5 and float(valores.sum()) > 0):
+        if not (valores.notna().sum() >= max(3, len(df) * 0.02) and float(valores.sum()) > 0):
             continue
         resto = {p for p in _palabras(c) if not META_RE.search(p)} - _CONECTORES_META
         if metric is not None:
