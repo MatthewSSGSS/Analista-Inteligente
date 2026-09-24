@@ -69,6 +69,11 @@ def _tablero():
     ws.row_dimensions[3].hidden = True
     for letra in ("G", "H", "I", "J"):          # el grupo Power
         ws.column_dimensions[letra].hidden = True
+    # La otra forma de esconder una columna: estrecharla hasta que no se vea.
+    ws.cell(4, 15, "Sobra")
+    for k in range(len(CANALES)):
+        ws.cell(5 + k, 15, 999)
+    ws.column_dimensions["O"].width = 0.14
 
     datos = wb.create_sheet("Datos")
     for j, nombre in enumerate(["Ciudad", "Ventas", "Costo"]):
@@ -86,7 +91,9 @@ def test_se_leen_del_archivo_las_filas_y_columnas_ocultas():
     mapa = filas_y_columnas_ocultas(datos, "tablero.xlsx")
     filas, columnas = mapa["Dash"]
     check("las filas ocultas salen contando desde 0", filas == {1, 2})
-    check("y las columnas del grupo escondido también", columnas == {6, 7, 8, 9})
+    check("y las columnas del grupo escondido también", {6, 7, 8, 9} <= columnas)
+    check("una columna estrechada hasta no verse cuenta como oculta, aunque Excel no la marque",
+          14 in columnas)
     check("la hoja de datos trae su fila oculta aparte", mapa["Datos"][0] == {3})
     check("un formato que no lo dice (CSV) no rompe nada", filas_y_columnas_ocultas(b"a,b\n1,2\n", "x.csv") == {})
     check("un archivo dañado tampoco", filas_y_columnas_ocultas(b"no soy excel", "roto.xlsx") == {})
@@ -114,6 +121,7 @@ def test_el_tablero_se_lee_sin_su_andamiaje():
     check("ninguna columna genérica", not any(str(c).startswith(("Unnamed", "Columna")) for c in df.columns))
     check("el grupo oculto queda fuera: 2 grupos × 4 medidas, no 3",
           len([c for c in df.columns if c != "Canal"]) == 8)
+    check("y la columna estrechada hasta no verse tampoco entra", "Sobra" not in df.columns)
     cav = df.set_index("Canal").loc["CAV"]
     check("y las cifras son las que se ven en Excel", cav.iloc[0] == 3111 and cav.iloc[1] == 2155)
     check("se deja dicho en el registro de carga",

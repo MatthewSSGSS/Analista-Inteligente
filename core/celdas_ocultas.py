@@ -35,6 +35,14 @@ _PKG = "http://schemas.openxmlformats.org/package/2006/relationships"
 _BRT_ROW_HDR = 0        # cabecera de fila: trae el bit "alto cero" = oculta
 _BRT_COL_INFO = 60      # ancho y estado de un rango de columnas
 
+# Una columna más angosta que un carácter no muestra nada, aunque Excel no la
+# marque como oculta: es la otra forma de esconder una columna, estrecharla
+# hasta que desaparezca. En el informe real la columna B quedó en 0,14
+# caracteres (36 de los 256 por carácter que usa el formato binario) y traía
+# un «Act» de más que salía como una columna repetida en el análisis.
+_ANCHO_INVISIBLE = 1.0          # en caracteres (.xlsx)
+_ANCHO_INVISIBLE_BIN = 256      # lo mismo en .xlsb: 1/256 de carácter por unidad
+
 
 def _partes_xlsx(z) -> dict:
     """{nombre de hoja: ruta de su XML}."""
@@ -67,7 +75,12 @@ def _xlsx(data: bytes) -> dict:
                  if r.get("hidden") in ("1", "true") and (r.get("r") or "").isdigit()}
         columnas = set()
         for col in hoja.iter(f"{{{_S}}}col"):
-            if col.get("hidden") in ("1", "true"):
+            try:
+                ancho = float(col.get("width")) if col.get("width") else None
+            except ValueError:
+                ancho = None
+            invisible = ancho is not None and ancho < _ANCHO_INVISIBLE and col.get("customWidth") in ("1", "true")
+            if col.get("hidden") in ("1", "true") or invisible:
                 try:
                     columnas.update(range(int(col.get("min")) - 1, int(col.get("max"))))
                 except (TypeError, ValueError):
@@ -88,10 +101,11 @@ def _xlsb(data: bytes) -> dict:
             # Fila: el bit "alto cero" (fDyZero) del byte de banderas.
             if rid == _BRT_ROW_HDR and len(cuerpo) >= 12 and (cuerpo[11] >> 4) & 1:
                 filas.add(struct.unpack("<I", cuerpo[:4])[0])
-            # Rango de columnas: el primer bit de sus banderas.
-            elif rid == _BRT_COL_INFO and len(cuerpo) >= 18 and cuerpo[16] & 1:
-                primera, ultima = struct.unpack("<II", cuerpo[:8])
-                if ultima - primera <= 16384:
+            # Rango de columnas: el primer bit de sus banderas, o un ancho que
+            # no da ni para un carácter (ver _ANCHO_INVISIBLE_BIN).
+            elif rid == _BRT_COL_INFO and len(cuerpo) >= 18:
+                primera, ultima, ancho = struct.unpack("<III", cuerpo[:12])
+                if (cuerpo[16] & 1 or ancho < _ANCHO_INVISIBLE_BIN) and ultima - primera <= 16384:
                     columnas.update(range(primera, ultima + 1))
         if filas or columnas:
             salida[nombre] = (filas, columnas)

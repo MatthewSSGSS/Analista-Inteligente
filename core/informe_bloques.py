@@ -98,8 +98,18 @@ def _grupos_de(G, h, c0, medidas) -> dict:
         fila = [(c, _txt(G[r, c])) for c in range(G.shape[1]) if _txt(G[r, c])]
         if not fila:
             continue  # fila oculta o en blanco
-        if es_total(_txt(G[r, c0])) or any(np.isfinite(_numero(G[r, c])) for c, _ in fila):
-            continue  # la fila Total va entre los grupos y la cabecera
+        # ¿Es la fila de Total, que va entre los grupos y la cabecera? Se mira
+        # SOLO dentro de las columnas de medida, y gana la mayoría. Antes
+        # bastaba UN número en cualquier parte de la fila para descartarla, y
+        # la fila de grupos del informe real trae cifras sueltas a la derecha
+        # (los indicadores 1,15 · 26 · 0,93 del borde): por eso los bloques de
+        # Canal y de Jefe salían sin el nombre de su grupo —«Presupuesto_2» en
+        # vez de «Pospago · Presupuesto»— mientras los de más abajo, sin esas
+        # cifras al lado, sí lo traían.
+        numeros = sum(1 for c in medidas if np.isfinite(_numero(G[r, c])))
+        textos = sum(1 for c in medidas if _es_cabecera_texto(G[r, c]))
+        if es_total(_txt(G[r, c0])) or numeros > textos:
+            continue
         propios = {c: t for c, t in fila if c in medidas and _es_cabecera_texto(t)}
         if len(set(propios.values())) < 2:
             return {}

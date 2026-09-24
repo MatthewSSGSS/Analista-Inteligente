@@ -63,6 +63,10 @@ def _bloque(ws, fila, dimension, entidades, ocultar_fila=False, combinar=True):
         ws.cell(fila, c1, nombre)
         if combinar:  # si no, el rótulo queda solo en su primera celda ("centrar en la selección")
             ws.merge_cells(start_row=fila, start_column=c1, end_row=fila, end_column=c2)
+    # Indicadores sueltos al borde de la fila de grupos, como en el informe
+    # real: no son datos del bloque, pero conviven con los rótulos.
+    for i, v in enumerate((1.15, 26, 0.93)):
+        ws.cell(fila, 21 + i, v)
     ws.cell(fila + 1, 1, "Total")
     for c in range(3, 19):
         ws.cell(fila + 1, c, 1000)  # el Total no debe entrar en los datos
@@ -198,6 +202,42 @@ def test_sin_celdas_combinadas_tambien():
     check("sin nada mezclado entre grupos", not ({"Presupuesto", "Actual"} & set(canal.columns)))
 
 
+def test_la_fila_de_grupos_se_reconoce_aunque_traiga_cifras_al_borde():
+    """La fila de los grupos del informe real lleva indicadores sueltos a la
+    derecha (1,15 · 26 · 0,93). Con la regla vieja —descartar la fila si traía
+    UN número— los bloques de Canal y de Jefe salían sin el nombre de su grupo
+    («Presupuesto_2» en vez de «Pospago · Presupuesto»), mientras los de más
+    abajo, sin esas cifras al lado, sí lo traían."""
+    canal = load_workbook(_Subida("tablero.xlsx", _libro()))["sheets"]["Tablero · por Canal"]["processed"]
+    check("el grupo llega a sus columnas pese a las cifras sueltas de esa fila",
+          {"Prepago · Presupuesto", "Pospago · Presupuesto", "Accesos · Presupuesto Dig"} <= set(canal.columns))
+    check("y no queda ninguna columna numerada por no saber su grupo",
+          not any(str(c).endswith(("_2", "_3", "_4")) for c in canal.columns))
+    check("la fila Total sigue sin colarse como si fuera el grupo",
+          not any("Total" in str(c) for c in canal.columns))
+
+
+def test_una_columna_estrechada_hasta_desaparecer_no_entra():
+    """La otra forma de esconder una columna: dejarla en 0,14 caracteres de
+    ancho sin marcarla como oculta. En el informe real era la columna B, con
+    un «Act» de más que salía como una columna repetida."""
+    from openpyxl.utils import get_column_letter
+
+    wb = _libro()
+    ws = wb["Tablero"]
+    # Se inserta una columna invisible justo antes de las medidas del bloque.
+    ws.insert_cols(2)
+    ws.cell(4, 2, "Act")
+    for k in range(len(CANALES)):
+        ws.cell(5 + k, 2, 999)
+    ws.column_dimensions[get_column_letter(2)].width = 0.14  # openpyxl marca customWidth solo
+    canal = load_workbook(_Subida("tablero.xlsx", wb))["sheets"]["Tablero · por Canal"]["processed"]
+    check("la columna estrechada hasta no verse queda fuera",
+          999 not in set(pd.to_numeric(canal.select_dtypes("number").stack(), errors="coerce").dropna()))
+    check("y no aparece una medida repetida por su culpa",
+          not any(str(c).endswith("_2") for c in canal.columns))
+
+
 def test_una_hoja_normal_no_se_toca():
     normal = load_workbook(_Subida("tablero.xlsx", _libro()))["sheets"]["Normal"]["processed"]
     check("la hoja normal sigue igual", list(normal.columns) == ["Ciudad", "Ventas", "Costo"] and len(normal) == 7)
@@ -215,5 +255,7 @@ if __name__ == "__main__":
     test_se_puede_analizar()
     test_la_metrica_principal_es_la_del_cumplimiento()
     test_sin_celdas_combinadas_tambien()
+    test_la_fila_de_grupos_se_reconoce_aunque_traiga_cifras_al_borde()
+    test_una_columna_estrechada_hasta_desaparecer_no_entra()
     test_una_hoja_normal_no_se_toca()
     print("\nInforme de bloques test completado sin errores.")
