@@ -151,6 +151,55 @@ def columna_meta(df, schema, metric=None):
     return max(candidatas, key=lambda x: x[0])[1] if candidatas else None
 
 
+_PORCENTAJE_NOMBRE_RE = re.compile(r"%|cump|\bcum\b|porc|avance|ratio|tasa", re.I)
+_MAX_COLUMNAS_CUMPLIMIENTO = 80   # tope de columnas numéricas: son tres bucles anidados
+_MAX_FILAS_CUMPLIMIENTO = 5000
+
+
+def medida_de_cumplimiento(df, schema):
+    """(medida, meta, porcentaje) sobre las que el propio archivo calcula su % de cumplimiento.
+
+    En un tablero de ventas con "Ppto | Act | Pry | % Cump", la primera columna
+    numérica es el presupuesto: el panel lo tomaba como la métrica principal y
+    decía "el valor acumulado de presupuesto es 158K". Lo que el negocio mide
+    es la columna con la que se calcula el porcentaje, y eso se comprueba en
+    los datos en vez de adivinarlo por el nombre: se busca la medida X tal que
+    X ÷ meta coincide con la columna de porcentaje en casi todas las filas
+    (en el archivo real, Proyección ÷ Presupuesto y no Actual ÷ Presupuesto).
+
+    Devuelve None si no hay meta, ni porcentaje, ni una medida que los una.
+    Con varios grupos (Prepago, Pospago…) gana el primero del archivo.
+    """
+    columnas = [c for c in (schema.get("semantic", {}).get("metrics") or schema.get("metrics", []))
+                if c in df.columns]
+    if len(columnas) < 3 or len(columnas) > _MAX_COLUMNAS_CUMPLIMIENTO:
+        return None
+    muestra = df[columnas].head(_MAX_FILAS_CUMPLIMIENTO).apply(pd.to_numeric, errors="coerce")
+    porcentajes = [c for c in columnas if _PORCENTAJE_NOMBRE_RE.search(str(c))]
+    metas = [c for c in columnas if META_RE.search(str(c)) and c not in porcentajes
+             and muestra[c].notna().sum() >= 3 and float(muestra[c].sum()) > 0]
+    medidas = [c for c in columnas if c not in porcentajes and c not in metas]
+    if not (porcentajes and metas and medidas):
+        return None
+
+    mejor, mejor_puntaje = None, 0.0
+    for p in porcentajes:
+        for m in metas:
+            for x in medidas:
+                t = muestra[[x, m, p]].dropna()
+                t = t[t[m] > 0]
+                if len(t) < 3:
+                    continue
+                razon = t[x] / t[m]
+                # El porcentaje puede venir como 99 o como 0,99.
+                acierto = max(
+                    float(((razon * esc - t[p]).abs() <= np.maximum(tol, 0.01 * t[p].abs())).mean())
+                    for esc, tol in ((100, 0.6), (1, 0.006)))
+                if acierto >= 0.8 and acierto > mejor_puntaje + 1e-9:
+                    mejor, mejor_puntaje = (x, m, p), acierto
+    return mejor
+
+
 def unidad_interna(df, schema, dimension, metric=None):
     """Qué se cuenta dentro de cada grupo: puntos, asesores, tiendas.
 
@@ -246,12 +295,6 @@ def base_comparativa(df, schema, dimension, metric, additive):
     registros = tabla.groupby("_grupo")["_valor"].size()
     etiqueta_m = _etiqueta(schema, metric)
 
-    # Si cada grupo es una sola fila, no se está agregando nada: ordenar 30
-    # productos por su precio no es una comparación de desempeño, es la
-    # columna ordenada. Llamar "mejor desempeño" a eso sería inventar.
-    if float(registros.median()) < 2:
-        return None
-
     # En días de mora, quejas o devoluciones, el mejor es el que menos tiene.
     # Sin esto el panel coronaba como "mejor desempeño" al cliente con más
     # mora del archivo.
@@ -290,6 +333,14 @@ def base_comparativa(df, schema, dimension, metric, additive):
                            f"no cuánto vendió. Así un grupo pequeño que supera su meta gana a uno grande que no llega a la suya.")
             if armado:
                 return armado
+
+    # Si cada grupo es una sola fila, no se está agregando nada: ordenar 30
+    # productos por su precio no es una comparación de desempeño, es la
+    # columna ordenada. Llamar "mejor desempeño" a eso sería inventar. Con una
+    # meta sí hay comparación (cuánto cumplió cada uno de la suya), y ya se
+    # resolvió arriba: un tablero con una fila por canal o por jefe entra por ahí.
+    if float(registros.median()) < 2:
+        return None
 
     # 2. Por unidad contable dentro del grupo (puntos, asesores).
     if additive:

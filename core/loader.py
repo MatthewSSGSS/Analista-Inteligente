@@ -6,6 +6,7 @@ from .profile import profile_sheet
 from .relationships import detect_relationships
 from .pivot_flatten import merged_ranges_by_sheet, fill_merged_cells, flatten_pivot_grid
 from .informe import leer_informe, graficos_e_imagenes, titulo_principal, titulos as titulos_de
+from .informe_bloques import leer_bloques
 from .dates import extract_year_hint
 from .imagen_ocr import imagenes_del_libro
 
@@ -214,6 +215,10 @@ def load_workbook(uploaded):
             # y sigue exactamente el camino de antes. Ver core/informe.py.
             try:
                 tablas = leer_informe(grid, sheet, extract_year_hint(sheet, filename)) if not grid.empty else []
+                # Sin meses pero con bloques apilados de cabecera doble
+                # (Prepago/Pospago sobre Ppto/Act/Pry): ver core/informe_bloques.py.
+                if not tablas and not grid.empty:
+                    tablas = leer_bloques(grid, sheet)
             except Exception:
                 tablas = []  # un informe raro nunca debe impedir leer la hoja como siempre
             if tablas:
