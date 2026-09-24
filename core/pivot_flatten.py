@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import io
 import re
+import struct
 
 import pandas as pd
 
@@ -158,14 +159,53 @@ def _xls_merged_ranges_by_sheet(data: bytes) -> dict:
         return {}
 
 
+_BRT_MERGE_CELL = 176   # una celda combinada, en el formato binario
+
+
+def _xlsb_merged_ranges_by_sheet(data: bytes) -> dict:
+    """Igual que las anteriores pero para .xlsb, leyendo sus registros binarios.
+
+    pandas (vía pyxlsb) saca los valores pero no las celdas combinadas, así
+    que antes esto devolvía {} y un tablero .xlsb perdía TODOS los rótulos que
+    se apoyan en una combinación: en el archivo real, «Pospago», «Accesos» y
+    «Hogar» viven cada uno en una sola celda combinada sobre sus columnas, y
+    encima esa celda cae en una columna oculta, así que al leer la hoja como
+    se ve desaparecían y las columnas salían «Presupuesto_2», «Presupuesto_3».
+
+    Ojo con el orden: el registro guarda (fila1, fila2, col1, col2) y el resto
+    del proyecto usa (fila1, col1, fila2, col2). Confundirlos no falla, llena
+    la hoja con el valor equivocado.
+    """
+    try:
+        import zipfile
+        from .xlsb import hojas as hojas_del_libro, registros
+
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            out = {}
+            for nombre, _, parte in hojas_del_libro(z):
+                if not parte or parte not in z.namelist():
+                    continue
+                rangos = []
+                for rid, cuerpo in registros(z.read(parte)):
+                    if rid == _BRT_MERGE_CELL and len(cuerpo) >= 16:
+                        r1, r2, c1, c2 = struct.unpack("<IIII", cuerpo[:16])
+                        rangos.append((r1, c1, r2, c2))
+                out[nombre] = rangos
+            return out
+    except Exception:
+        return {}
+
+
 def merged_ranges_by_sheet(data: bytes, filename: str) -> dict:
     """{nombre_de_hoja: [(r1,c1,r2,c2), ...]} para TODO el archivo, en una
     sola pasada — se llama una vez por archivo (ver core/loader.py), nunca
-    por hoja. {} si el formato no expone celdas combinadas (.xlsb) o si algo
-    falla — nunca debe tumbar la carga del archivo."""
+    por hoja. {} si el formato no expone celdas combinadas o si algo falla —
+    nunca debe tumbar la carga del archivo."""
     name = filename.lower()
     if name.endswith((".xlsx", ".xlsm")):
         return _xlsx_merged_ranges_by_sheet(data)
+    if name.endswith(".xlsb"):
+        return _xlsb_merged_ranges_by_sheet(data)
     if name.endswith(".xls"):
         return _xls_merged_ranges_by_sheet(data)
     return {}

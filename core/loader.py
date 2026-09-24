@@ -8,6 +8,7 @@ from .pivot_flatten import merged_ranges_by_sheet, fill_merged_cells, flatten_pi
 from .informe import leer_informe, graficos_e_imagenes, titulo_principal, titulos as titulos_de
 from .informe_bloques import leer_bloques
 from .hojas_ocultas import hojas_ocultas
+from .celdas_ocultas import filas_y_columnas_ocultas, sin_lo_oculto
 from .dates import extract_year_hint
 from .imagen_ocr import imagenes_del_libro
 
@@ -214,20 +215,47 @@ def load_workbook(uploaded):
         # Qué hojas escondió quien armó el archivo: las de trabajo (bases sin
         # depurar, copias, tablas de apoyo) no son lo que se quiere analizar.
         ocultas_excel = hojas_ocultas(data, filename)
+        # Filas y columnas que Excel esconde DENTRO de cada hoja: el andamiaje
+        # de un tablero (ver core/celdas_ocultas.py). Solo se usa en la ruta de
+        # informe/tablero; una hoja de datos se sigue leyendo entera, porque
+        # ahí un filtro activo esconde filas y perderlas sería perder registros.
+        celdas_ocultas = filas_y_columnas_ocultas(data, filename)
         raw, grids = {}, {}
         for sheet in book.sheet_names:
             grid, n_merged = _grid(data, sheet, merges_by_sheet.get(sheet), engine)
+            # `grids` guarda la hoja COMPLETA a propósito: los gráficos del
+            # libro apuntan a sus celdas por dirección real ('Datos'!$B$2), y
+            # las imágenes traen el número de fila donde están pegadas.
             grids[sheet] = grid
+            filas_ocultas, columnas_ocultas = celdas_ocultas.get(sheet, (set(), set()))
+            visible = sin_lo_oculto(grid, filas_ocultas, columnas_ocultas)
             # Una hoja tipo informe (varias tablas, meses en columnas, bloques
             # por región) se reconoce por su forma y se convierte en una tabla
             # por sección, con su título. Una hoja normal devuelve lista vacía
             # y sigue exactamente el camino de antes. Ver core/informe.py.
             try:
-                tablas = leer_informe(grid, sheet, extract_year_hint(sheet, filename)) if not grid.empty else []
-                # Sin meses pero con bloques apilados de cabecera doble
-                # (Prepago/Pospago sobre Ppto/Act/Pry): ver core/informe_bloques.py.
-                if not tablas and not grid.empty:
-                    tablas = leer_bloques(grid, sheet)
+                # Primero sobre lo que se ve. Si así no se reconoce nada, se
+                # reintenta con la hoja completa: hay informes sin nada oculto
+                # y otros donde lo escondido sí era parte de la tabla.
+                tablas = []
+                for cuadricula in ([visible, grid] if visible is not grid else [grid]):
+                    if cuadricula.empty:
+                        continue
+                    tablas = leer_informe(cuadricula, sheet, extract_year_hint(sheet, filename))
+                    # Sin meses pero con bloques apilados de cabecera doble
+                    # (Prepago/Pospago sobre Ppto/Act/Pry): ver core/informe_bloques.py.
+                    if not tablas:
+                        tablas = leer_bloques(cuadricula, sheet)
+                    if tablas:
+                        if cuadricula is visible:
+                            n_f, n_c = len(filas_ocultas), len(columnas_ocultas)
+                            partes = [p for p in (f"{n_f} fila(s)" if n_f else "",
+                                                  f"{n_c} columna(s)" if n_c else "") if p]
+                            tablas[0]["log"] = list(tablas[0].get("log") or []) + [
+                                f"De la hoja «{sheet}» se dejó fuera lo que Excel tiene oculto "
+                                f"({' y '.join(partes)}): es el andamiaje del tablero (rótulos de la "
+                                f"tabla dinámica, grupos que ya no se reportan), no datos."]
+                        break
             except Exception:
                 tablas = []  # un informe raro nunca debe impedir leer la hoja como siempre
             if tablas:

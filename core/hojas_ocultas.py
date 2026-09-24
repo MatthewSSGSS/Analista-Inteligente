@@ -14,10 +14,10 @@ que interesa es justo una de ellas («Compromiso»).
 from __future__ import annotations
 
 import io
-import re
-import struct
 import zipfile
 import xml.etree.ElementTree as ET
+
+from .xlsb import hojas as hojas_del_libro
 
 _S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
@@ -31,43 +31,9 @@ def _xlsx(data: bytes) -> set:
             if (h.get("state") or "visible") != "visible" and h.get("name")}
 
 
-def _registros(b: bytes):
-    """Los registros del formato binario de Excel: (id, contenido)."""
-    i = 0
-    while i < len(b):
-        x = b[i]; i += 1
-        rid = x & 0x7F
-        if x & 0x80:
-            rid |= (b[i] & 0x7F) << 7; i += 1
-        largo = desplazamiento = 0
-        for _ in range(4):
-            y = b[i]; i += 1
-            largo |= (y & 0x7F) << desplazamiento
-            desplazamiento += 7
-            if not y & 0x80:
-                break
-        yield rid, b[i:i + largo]
-        i += largo
-
-
 def _xlsb(data: bytes) -> set:
     z = zipfile.ZipFile(io.BytesIO(data))
-    if "xl/workbook.bin" not in z.namelist():
-        return set()
-    ocultas = set()
-    for rid, cuerpo in _registros(z.read("xl/workbook.bin")):
-        if rid != 156 or len(cuerpo) < 16:   # BrtBundleSh: una hoja del libro
-            continue
-        estado = struct.unpack("<I", cuerpo[0:4])[0]   # 0 visible, 1 oculta, 2 muy oculta
-        largo_rel = struct.unpack("<I", cuerpo[8:12])[0]
-        if largo_rel == 0xFFFFFFFF:
-            largo_rel = 0
-        inicio = 12 + 2 * largo_rel
-        largo_nombre = struct.unpack("<I", cuerpo[inicio:inicio + 4])[0]
-        nombre = cuerpo[inicio + 4:inicio + 4 + 2 * largo_nombre].decode("utf-16le", "ignore")
-        if estado and nombre:
-            ocultas.add(nombre)
-    return ocultas
+    return {nombre for nombre, estado, _ in hojas_del_libro(z) if estado}
 
 
 def _xls(data: bytes) -> set:
