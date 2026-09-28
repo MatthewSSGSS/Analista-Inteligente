@@ -44,13 +44,43 @@ def negritas(texto) -> str:
     return "".join(f"<b>{p}</b>" if i % 2 else p for i, p in enumerate(partes))
 
 
-def seccion(sid: str, titulo: str, bajada: str, cuerpo: str, clase: str = "") -> str:
+def seccion(sid: str, titulo: str, bajada: str, cuerpo: str, clase: str = "",
+            leer: str = "", fuente: str = "") -> str:
     """Una sección numerada. El número lo pone el CSS (contador), así que
-    nunca queda desordenado aunque una sección se descarte por falta de datos."""
+    nunca queda desordenado aunque una sección se descarte por falta de datos.
+
+    Como el informe se proyecta ante gente que no conoce el archivo, cada
+    sección puede decir `leer` (cómo interpretar lo que se ve: qué es cada
+    barra, contra qué se compara) y `fuente` (de qué hoja, columna, periodo
+    y cuántos registros sale). Van en HTML ya armado: quien llama escapa.
+    """
     extra = f" {clase}" if clase else ""
     bajada_html = f"<p>{esc(bajada)}</p>" if bajada else ""
+    leer_html = f'<div class="leer"><b>Cómo leerlo</b><span>{leer}</span></div>' if leer else ""
+    fuente_html = f'<p class="fuente"><b>Fuente</b> {fuente}</p>' if fuente else ""
     return (f'<section class="section{extra}" id="{sid}"><div class="sec-head"><span class="sec-num"></span>'
-            f'<div><h2>{esc(titulo)}</h2>{bajada_html}</div></div>{cuerpo}</section>')
+            f'<div><h2>{esc(titulo)}</h2>{bajada_html}</div></div>{leer_html}{cuerpo}{fuente_html}</section>')
+
+
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+          "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def mes(fecha, corto: bool = False) -> str:
+    """«septiembre de 2026» (o «sep 2026»): los periodos se nombran siempre,
+    nunca «el periodo anterior» a secas."""
+    try:
+        nombre = _MESES[fecha.month - 1]
+        return f"{nombre[:3]} {fecha.year}" if corto else f"{nombre} de {fecha.year}"
+    except Exception:
+        return str(fecha)
+
+
+def fecha_larga(fecha) -> str:
+    try:
+        return f"{fecha.day} de {_MESES[fecha.month - 1]} de {fecha.year}"
+    except Exception:
+        return str(fecha)
 
 
 def desplegable(resumen: str, cuerpo: str, detalle: str = "", sid: str = "", abierto: bool = False) -> str:
@@ -267,6 +297,31 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .callout{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:12px;padding:12px 16px;font-size:13.5px;color:var(--ink);box-shadow:var(--shadow)}
 .callout.pos{border-left-color:var(--pos)}.callout.warn{border-left-color:var(--warn)}.callout.neg{border-left-color:var(--neg)}
 
+/* Cómo leerlo y fuente: el contexto que el público no tiene */
+.leer{display:flex;gap:12px;align-items:baseline;background:var(--line-soft);border-radius:10px;padding:9px 14px;margin:-4px 0 14px;font-size:13px;color:var(--text)}
+.leer b{flex:0 0 auto;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.fuente{margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.5}
+.fuente b{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--soft);margin-right:6px}
+
+/* Sobre este informe */
+.ctx-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.ctx-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.ctx-card h3{margin:0 0 10px;font-size:14px;display:flex;gap:8px;align-items:center}
+.ctx-card dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px}
+.ctx-card dt{color:var(--muted);font-weight:600}
+.ctx-card dd{margin:0;color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.ctx-card p{font-size:13px;line-height:1.55}
+.ctx-card p+p{margin-top:6px}
+.leyenda{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:13px}
+.leyenda li{display:flex;gap:10px;align-items:baseline}
+.leyenda .pill{min-width:112px;text-align:center}
+.agenda{list-style:none;margin:14px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px 18px;counter-reset:ag}
+.agenda li{counter-increment:ag;display:flex;gap:10px;font-size:13px;line-height:1.45;padding:8px 0;border-top:1px solid var(--line)}
+.agenda li:before{content:counter(ag,decimal-leading-zero);font-size:11px;font-weight:800;color:var(--brand);min-width:20px;padding-top:2px}
+.agenda b{display:block;color:var(--ink)}
+.agenda span{color:var(--muted)}
+@media(max-width:860px){.ctx-grid{grid-template-columns:1fr}}
+
 /* Lecturas en viñetas */
 .bullets{margin:12px 0 0;padding:0;list-style:none;display:grid;gap:6px}
 .bullets li{position:relative;padding-left:18px;font-size:13px;line-height:1.5}
@@ -340,6 +395,9 @@ details.more details.more{background:var(--line-soft)}
 .plan-num{font-size:11px;color:var(--soft);font-weight:800}
 .plan h3{font-size:15px;margin:8px 0 4px;line-height:1.3}
 .plan .situacion{font-size:13px;color:var(--text)}
+.plan-lbl{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--soft);margin:10px 0 3px}
+.plan-lbl+.chips{margin-top:0}
+.plan-lbl+.pasos{margin-top:0}
 .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .chip{font-size:11px;background:var(--line-soft);border-radius:99px;padding:2px 9px;color:var(--ink);font-weight:600}
 .pasos{margin:10px 0 0 18px;padding:0}

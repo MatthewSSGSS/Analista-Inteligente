@@ -115,7 +115,7 @@ def _cuadro_con_extremos(df, schema, dimension, metrica):
     return (cuadro or base), cuadro is not None
 
 
-def bloque_cuadro_comparativo(df, schema, metrica, chart_block, numerar) -> str:
+def bloque_cuadro_comparativo(df, schema, metrica, chart_block, numerar, fuente=None) -> str:
     """Cómo va cada uno: gráfico de posiciones y lectura; metodología, gráficos
     secundarios y tabla quedan plegados.
 
@@ -163,17 +163,36 @@ def bloque_cuadro_comparativo(df, schema, metrica, chart_block, numerar) -> str:
 
     aviso = f'<p class="note">{esc_limpio(cuadro["aviso"])}</p>' if cuadro.get("aviso") else ""
     cuerpo = (principal
-              + _lista(cuadro["lectura"])
+              # "Los elegidos" es lenguaje de la app (quien usa el panel elige a
+              # quiénes comparar); en el informe nadie eligió nada.
+              + _lista([str(x).replace("entre los elegidos", "entre los mostrados")
+                        .replace("de los elegidos", "de los mostrados") for x in cuadro["lectura"]])
               + desplegable("Tabla y gráficos de apoyo", "".join(secundarios) + _tabla_html(tabla_cuadro(cuadro)),
                             f"{len(cuadro['filas'])} filas")
               + desplegable("Cómo se calculó", f'<div class="base-grid">{"".join(base_items)}</div>{aviso}'))
+    # Cómo leerlo, dicho para quien no conoce el archivo: qué es cada barra,
+    # contra qué se mide y a quiénes se muestra.
+    if cuadro["base"] == "meta":
+        leer = (f"Cada barra es el cumplimiento de meta de un valor de «{esc(dim)}»: su {esc(etiqueta.lower())} dividido "
+                f"por su meta (columna «{esc(cuadro['meta_col'])}»). 100% es la meta cumplida; verde la cumple, "
+                "amarillo está cerca (90–99%) y rojo por debajo.")
+    else:
+        leer = (f"Cada barra es el {'total' if cuadro['aditiva'] else 'promedio'} de «{esc(etiqueta)}» de un valor de "
+                f"«{esc(dim)}». La línea punteada es el promedio de los {total}: por encima rinde más que el grupo, "
+                "por debajo, menos.")
+    if extremos:
+        leer += (f" Se muestran los {_EXTREMOS} mejores y los {_EXTREMOS} más rezagados; la posición de cada uno "
+                 f"es sobre los {total}.")
+    columnas = f"columna «{esc(etiqueta)}»" + (f" y «{esc(cuadro['meta_col'])}»" if cuadro.get("meta_col") else "")
     return seccion("cuadro-comparativo", f"Cómo va cada {dim}",
-                   "Todos con la misma vara: su meta si el archivo la trae, o el promedio del grupo.", cuerpo)
+                   f"Los {total} valores de «{dim}» medidos con la misma vara: su meta si el archivo la trae, "
+                   "o el promedio del grupo si no.", cuerpo,
+                   leer=leer, fuente=fuente(f"{columnas} por «{esc(dim)}»") if fuente else "")
 
 
 # ── ⚖️ Qué cambió entre los dos últimos periodos ────────────────────────────
 
-def bloque_cambio_periodos(df, schema, metrica, chart_block, numerar) -> str:
+def bloque_cambio_periodos(df, schema, metrica, chart_block, numerar, fuente=None) -> str:
     """Quién sumó y quién restó entre los dos últimos periodos cerrados."""
     import core.explorador as ex
 
@@ -227,8 +246,18 @@ def bloque_cambio_periodos(df, schema, metrica, chart_block, numerar) -> str:
                            subtitulo, figura, numerar()) if figura is not None else "")
               + _lista(r["hallazgos"])
               + desplegable("Ver la tabla completa", _tabla_html(tabla.round(1)), f"{len(tabla)} filas"))
+    leer = (f"Cada barra es la diferencia de «{esc(metrica)}» de un valor de «{esc(dims[0])}» entre "
+            f"{esc(r['etiqueta_a'])} y {esc(r['etiqueta_b'])}. Verde: sumó al total. Rojo: restó. "
+            "Arriba los que más sumaron y abajo los que más restaron.")
+    if fin == -2:
+        leer += (" El último mes con datos todavía está incompleto, por eso se comparan los dos anteriores: "
+                 "así una caída no es solo un mes a medias.")
     return seccion("cambio-periodos", f"Qué cambió entre {r['etiqueta_a']} y {r['etiqueta_b']}",
-                   "El movimiento del total, abierto por quién lo empujó y quién lo frenó.", cuerpo)
+                   f"El total de {metrica} entre los dos últimos meses cerrados, abierto por quién lo empujó "
+                   "y quién lo frenó.", cuerpo,
+                   leer=leer,
+                   fuente=fuente(f"columna «{esc(metrica)}» por «{esc(dims[0])}», meses {esc(r['etiqueta_a'])} "
+                                 f"y {esc(r['etiqueta_b'])}") if fuente else "")
 
 
 # ── 📈 Estrategia por canal ─────────────────────────────────────────────────
@@ -245,7 +274,7 @@ def _cifras(partes, tono: str) -> list[str]:
     return [clean(t) for t, x in partes if x == tono and clean(t)]
 
 
-def _dato_jugada(j: dict) -> str:
+def _dato_jugada(j: dict, anterior: str = "") -> str:
     """El dato clave de la jugada en una línea corta, sin la frase completa.
 
     La frase del motor ("Recuperar lo que Win+ perdió frente a julio de 2026:
@@ -257,7 +286,8 @@ def _dato_jugada(j: dict) -> str:
     info = _cifras(partes, "info")
     pct = [c for c in info if c.endswith("%")]
     if tipo == "Recuperar":
-        return f'Cayó <b class="neg">{esc(malos[1])}</b> frente al periodo anterior' if len(malos) > 1 else "Cayó frente al periodo anterior"
+        frente = f"frente a {esc(anterior)}" if anterior else "frente al periodo anterior"
+        return f'Cayó <b class="neg">{esc(malos[1])}</b> {frente}' if len(malos) > 1 else f"Cayó {frente}"
     if tipo == "Cerrar brecha" and malos:
         return f'Va en <b class="neg">{esc(malos[0])}</b> de su meta'
     if tipo == "Escalar" and buenos:
@@ -268,7 +298,7 @@ def _dato_jugada(j: dict) -> str:
     return _frase_con_color(partes)
 
 
-def _jugada_html(j: dict) -> str:
+def _jugada_html(j: dict, anterior: str = "") -> str:
     tono = _TONO_JUGADA.get(j.get("tono"), "")
     palanca = clean(j.get("palanca") or "")
     if palanca.lower().startswith(_PALANCA_VACIA):
@@ -279,13 +309,13 @@ def _jugada_html(j: dict) -> str:
         f'<b class="jugada-canal">{esc_limpio(j["canal"])}</b></div>'
         f'<div class="jugada-impacto"><b>{_fmt(j["impacto"])}</b>'
         f'<span>{esc(_QUE_ES_IMPACTO.get(j["tipo"], "impacto"))}</span></div></div>'
-        f'<p>{_dato_jugada(j)}</p>'
+        f'<p>{_dato_jugada(j, anterior)}</p>'
         + (f'<p class="palanca">{esc(palanca[:1].upper() + palanca[1:])}</p>' if palanca else "")
         + '</article>'
     )
 
 
-def bloque_estrategia(df, schema) -> str:
+def bloque_estrategia(df, schema, fuente=None) -> str:
     """El semáforo por canal y las jugadas con su cifra de impacto."""
     try:
         matriz = matriz_comercial(df, schema)
@@ -313,16 +343,25 @@ def bloque_estrategia(df, schema) -> str:
             f'<div class="canal-jugada">→ {esc_limpio(fila["jugada"])}</div></div>'
         )
 
-    jugadas = [_jugada_html(j) for j in oportunidades(matriz)]
+    jugadas = [_jugada_html(j, clean(matriz["periodo_anterior_label"])) for j in oportunidades(matriz)]
 
     cuerpo = (f'<div class="callout">{esc_limpio(matriz["titular"])}</div>'
               f'<div class="canal-grid">{"".join(tarjetas)}</div>'
               + (f'<p class="subhead" style="margin-top:18px">Jugadas, de mayor a menor impacto</p>'
-                 f'<div class="jugadas-grid">{"".join(jugadas)}</div>' if jugadas else "")
-              + f'<p class="note">Comparación entre {esc_limpio(matriz["periodo_anterior_label"])} y '
-                f'{esc_limpio(matriz["periodo_label"])}, sobre {esc_limpio(matriz["metrica"])}.</p>')
-    return seccion("estrategia", f"Estrategia por {clean(matriz['canal'])}",
-                   "Cuánto pesa cada uno, hacia dónde va y qué jugada le corresponde.", cuerpo)
+                 f'<p class="note" style="margin:-4px 0 10px">La cifra grande estima cuánto está en juego: '
+                 f'lo que se perdió, lo que falta para la meta o la base que ya crece.</p>'
+                 f'<div class="jugadas-grid">{"".join(jugadas)}</div>' if jugadas else ""))
+    canal, metrica = clean(matriz["canal"]), clean(matriz["metrica"])
+    actual, anterior = clean(matriz["periodo_label"]), clean(matriz["periodo_anterior_label"])
+    leer = (f"Cada tarjeta es un valor de «{esc(canal)}». <b>Participación</b>: qué parte del total de "
+            f"{esc(metrica.lower())} aportó en {esc(actual)}. <b>Movimiento</b>: cuánto cambió frente a {esc(anterior)}."
+            + (" <b>Meta</b>: cumplimiento de su meta." if con_meta else "")
+            + " La recomendación sale de cruzar peso y rumbo: pesar mucho y estar cayendo es lo más urgente.")
+    return seccion("estrategia", f"Estrategia por {canal}",
+                   f"Cuánto pesa cada {canal.lower()} en {metrica.lower()}, hacia dónde va y qué conviene hacer con cada uno.",
+                   cuerpo, leer=leer,
+                   fuente=fuente(f"columna «{esc(metrica)}» por «{esc(canal)}», {esc(actual)} frente a {esc(anterior)}")
+                   if fuente else "")
 
 
 # ── 🎯 Planes de mejora ─────────────────────────────────────────────────────
@@ -336,7 +375,7 @@ def calcular_planes(df, schema, dashboard) -> dict:
         return {}
 
 
-def bloque_planes(df, schema, dashboard, plan: dict | None = None) -> str:
+def bloque_planes(df, schema, dashboard, plan: dict | None = None, fuente=None) -> str:
     """Los frentes de trabajo con sus pasos, para que el informe termine en acciones."""
     if plan is None:
         plan = calcular_planes(df, schema, dashboard)
@@ -358,14 +397,20 @@ def bloque_planes(df, schema, dashboard, plan: dict | None = None) -> str:
             f'<article class="plan {tono}">'
             f'<div class="plan-head"><span class="plan-num">#{i}</span><span class="pill {tono}">{esc(nombre)}</span></div>'
             f'<h3>{esc_limpio(p.get("titulo", "Frente de trabajo"))}</h3>'
-            + (f'<p class="situacion">{esc_limpio(p.get("situacion"))}</p>' if p.get("situacion") else "")
-            + (f'<div class="chips">{nombres}</div>' if nombres else "")
-            + (f'<ol class="pasos">{pasos}</ol>' if pasos else "")
+            + (f'<p class="plan-lbl">Qué muestran los datos</p><p class="situacion">{esc_limpio(p.get("situacion"))}</p>'
+               if p.get("situacion") else "")
+            + (f'<p class="plan-lbl">A quiénes involucra</p><div class="chips">{nombres}</div>' if nombres else "")
+            + (f'<p class="plan-lbl">Qué hacer</p><ol class="pasos">{pasos}</ol>' if pasos else "")
             + (f'<div class="plan-meta"><b>Para cerrarlo:</b> {esc_limpio(indicador)}</div>' if indicador else "")
             + '</article>'
         )
     cuerpo = (f'<div class="planes-grid">{"".join(tarjetas)}</div>'
               + desplegable("Tablero de seguimiento para el equipo", tablero_seguimiento(planes[:8]),
                             "responsable y fecha para llenar en la reunión"))
+    leer = ("Cada tarjeta es un frente de trabajo que salió del análisis, en orden de urgencia. El color de la "
+            "etiqueta dice qué tan urgente es; debajo, el dato que lo originó, a quiénes involucra, los pasos "
+            "sugeridos y cómo saber que quedó resuelto.")
     return seccion("planes", "Planes de mejora",
-                   f"{clean(plan.get('resumen', ''))}", cuerpo)
+                   f"{clean(plan.get('resumen', ''))}", cuerpo, leer=leer,
+                   fuente=(fuente("") + " · Frentes generados a partir de los hallazgos del análisis automático.")
+                   if fuente else "")

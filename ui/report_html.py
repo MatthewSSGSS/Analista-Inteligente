@@ -55,6 +55,161 @@ from visualization.charts import (
 _TONO = {"positive": "pos", "negative": "neg", "warning": "warn"}
 
 
+# ── Contexto: lo que el público de la presentación no sabe ────────────────
+#
+# Quien ve el informe proyectado no tiene el Excel ni la app al lado. Cada
+# cifra tiene que poder responder "¿de dónde sale esto?" sin que el
+# presentador lo explique de memoria: qué hoja, qué columna, qué periodo,
+# cuántos registros y contra qué se compara. Todo eso se calcula una vez
+# aquí y se reparte a las secciones.
+
+def _contexto(df: pd.DataFrame, schema: dict, dashboard: dict, filename: str, sheet: str,
+              scope_label: str = "") -> dict:
+    from ui.report_base import fecha_larga, mes
+    metrics = metric_candidates(df, schema)
+    dims = dimension_candidates(df, schema)
+    primary = dashboard.get("primary_metric") or (metrics[0] if metrics else None)
+    sem = semantic_map(schema)
+    suma = sem.get(primary) in ADDITIVE if primary else True
+    ctx = {
+        "archivo": str(filename), "hoja": str(sheet), "alcance": scope_label or "Hoja completa",
+        "registros": len(df), "primary": primary, "suma": suma,
+        "metrica": _label(schema, primary) if primary else None,
+        "dim_col": dims[0] if dims else None,
+        "dim": _label(schema, dims[0]) if dims else None,
+        "n_dim": int(df[dims[0]].nunique(dropna=True)) if dims and dims[0] in df.columns else 0,
+        "desde": None, "hasta": None, "mes_a": None, "mes_b": None, "fecha_col": None, "meta_col": None,
+    }
+    for col in schema.get("dates", []):
+        if col not in df.columns:
+            continue
+        fechas = pd.to_datetime(df[col], errors="coerce")
+        validas = fechas.dropna()
+        if validas.empty:
+            continue
+        ctx["fecha_col"] = str(col)
+        ctx["desde"], ctx["hasta"] = validas.min(), validas.max()
+        # Los dos últimos meses con dato en la métrica: los mismos que usa
+        # el veredicto (core/executive.py) para decir si subió o bajó.
+        if primary and primary in df.columns:
+            con_dato = fechas[pd.to_numeric(df[primary], errors="coerce").notna()].dropna()
+        else:
+            con_dato = validas
+        meses = sorted(con_dato.dt.to_period("M").unique())
+        if len(meses) >= 2:
+            ctx["mes_a"], ctx["mes_b"] = mes(meses[-2].to_timestamp()), mes(meses[-1].to_timestamp())
+        break
+    if ctx["desde"] is not None:
+        ctx["periodo"] = f"del {fecha_larga(ctx['desde'])} al {fecha_larga(ctx['hasta'])}"
+        ctx["periodo_corto"] = f"{mes(ctx['desde'], True)} – {mes(ctx['hasta'], True)}"
+    else:
+        ctx["periodo"] = ctx["periodo_corto"] = "sin fechas en el archivo"
+    try:
+        from core.performance import columna_meta
+        meta = columna_meta(df, schema, primary) if primary else None
+        ctx["meta_col"] = str(meta) if meta is not None else None
+    except Exception:
+        pass
+    return ctx
+
+
+def _fuente(ctx: dict, columnas: str = "") -> str:
+    """La línea «Fuente» de cada sección, siempre con los mismos datos."""
+    partes = [f"Hoja «{_esc(ctx['hoja'])}» de {_esc(ctx['archivo'])}"]
+    if columnas:
+        partes.append(columnas)
+    partes.append(f"{ctx['registros']:,} registros")
+    if ctx.get("periodo_corto") and ctx.get("desde") is not None:
+        partes.append(_esc(ctx["periodo_corto"]))
+    if ctx.get("alcance") and "sin filtros" not in ctx["alcance"].lower():
+        partes.append(_esc(ctx["alcance"]))
+    return " · ".join(partes)
+
+
+def _col(nombre) -> str:
+    return f"columna «{_esc(nombre)}»"
+
+
+def _comparacion_txt(ctx: dict) -> str:
+    if ctx.get("mes_a") and ctx.get("mes_b"):
+        return f"{ctx['mes_b']} frente a {ctx['mes_a']}"
+    return "el último periodo frente al anterior"
+
+
+def _contexto_block(ctx: dict, agenda: list[tuple[str, str]], extra_mide: list[str] = (),
+                    datos: list[tuple[str, str]] = None, sid: str = "contexto") -> str:
+    """Diapositiva «Sobre este informe»: de dónde salen los datos, qué se mide
+    y cómo leer los colores. Es la que responde las preguntas que el público
+    haría antes de creerle a cualquier cifra."""
+    if datos is None:
+        datos = [("Archivo", ctx["archivo"]), ("Hoja", ctx["hoja"]),
+                 ("Registros", f"{ctx['registros']:,}"), ("Periodo", ctx["periodo"]),
+                 ("Filtros", ctx["alcance"])]
+    dl = "".join(f"<dt>{_esc(k)}</dt><dd>{_esc(v)}</dd>" for k, v in datos if v)
+
+    mide = []
+    if ctx.get("metrica"):
+        como = "sumando todos los registros" if ctx["suma"] else "como promedio de los registros"
+        mide.append(f"El indicador principal es <b>{_esc(ctx['metrica'])}</b>, calculado {como}.")
+    if ctx.get("mes_a"):
+        mide.append(f"Para ver si mejora o empeora se compara el último mes con datos, <b>{_esc(ctx['mes_b'])}</b>, "
+                    f"contra <b>{_esc(ctx['mes_a'])}</b>.")
+    if ctx.get("dim"):
+        mide.append(f"Los grupos se comparan por <b>{_esc(ctx['dim'])}</b> ({ctx['n_dim']:,} valores distintos).")
+    if ctx.get("meta_col"):
+        mide.append(f"El archivo trae meta (<b>{_esc(ctx['meta_col'])}</b>): cumplimiento = resultado ÷ meta; "
+                    "100% significa meta cumplida.")
+    mide += list(extra_mide)
+    mide_html = "".join(f"<p>{m}</p>" for m in mide) or "<p>El archivo no tiene una métrica numérica principal.</p>"
+
+    leyenda = (
+        "<ul class='leyenda'>"
+        "<li><span class='pill neg'>Crítico</span><span>Ya está afectando el resultado: requiere acción ahora.</span></li>"
+        "<li><span class='pill warn'>En observación</span><span>Se está desviando: revisarlo antes de que crezca.</span></li>"
+        "<li><span class='pill pos'>Oportunidad</span><span>Margen de mejora que los datos permiten ver.</span></li>"
+        "</ul><p class='note'>En las cifras, <b style='color:var(--pos)'>verde</b> es una mejora y "
+        "<b style='color:var(--neg)'>rojo</b> un deterioro.</p>"
+    )
+    agenda_html = "".join(f"<li><div><b>{_esc(t)}</b><span>{_esc(d)}</span></div></li>" for t, d in agenda)
+    cuerpo = (
+        "<div class='ctx-grid'>"
+        f"<div class='ctx-card'><h3>📁 De dónde salen los datos</h3><dl>{dl}</dl></div>"
+        f"<div class='ctx-card'><h3>📏 Qué se mide</h3>{mide_html}</div>"
+        f"<div class='ctx-card'><h3>🚦 Cómo leer los colores</h3>{leyenda}</div>"
+        "</div>"
+        + (f"<p class='subhead' style='margin-top:20px'>Qué contiene este informe</p><ol class='agenda'>{agenda_html}</ol>"
+           if agenda_html else "")
+    )
+    return seccion(sid, "Sobre este informe", "Qué datos se usaron, cómo se midieron y cómo leer lo que sigue.", cuerpo)
+
+
+def _titular(ex: dict, ctx: dict) -> tuple[str, str]:
+    """El veredicto con los meses nombrados. «Retrocedió 2.8% frente al
+    periodo anterior» obliga a preguntar «¿qué periodo?»; aquí se dice."""
+    titular = clean_display_text(ex.get("headline", ""))
+    detalle = clean_display_text(ex.get("detail", ""))
+    if ctx.get("mes_a") and ctx.get("mes_b"):
+        titular = titular.replace("frente al periodo anterior", f"en {ctx['mes_b']} frente a {ctx['mes_a']}")
+        if ex.get("previous") is not None and ex.get("current_period") is not None:
+            que = "el total" if ctx.get("suma") else "el promedio"
+            detalle = (f"{ctx.get('metrica') or 'El indicador'} pasó de {_fmt(ex['previous'])} en {ctx['mes_a']} "
+                       f"a {_fmt(ex['current_period'])} en {ctx['mes_b']} ({que} de cada mes).")
+            if ex.get("status") not in {"positive", "negative"} and ex.get("change") is not None:
+                detalle += " La variación es pequeña: menos del umbral que se considera un cambio real."
+        else:
+            detalle = detalle.replace("el periodo anterior", ctx["mes_a"])
+    elif ex.get("change") is None and ctx.get("metrica") and titular.startswith(f"{ctx['metrica']}:"):
+        # Sin comparación posible, «Salario: 3.6M» no dice si es un total o
+        # un promedio, ni por qué no se compara con nada.
+        como = "total" if ctx.get("suma") else "promedio"
+        titular = titular.replace(f"{ctx['metrica']}:", f"{ctx['metrica']} ({como}):", 1)
+        detalle = (f"Resultado de los {ctx.get('registros', 0):,} registros. "
+                   + ("El archivo no tiene fechas, así que no hay un periodo anterior contra el cual comparar."
+                      if ctx.get("desde") is None else
+                      "Hay menos de dos meses con datos, así que todavía no hay contra qué comparar."))
+    return titular, detalle
+
+
 def _esc(value) -> str:
     return html.escape(str(value))
 
@@ -122,22 +277,40 @@ def _kpi_label(k: dict, schema: dict) -> str:
     return label
 
 
-def _kpi_card(k: dict, schema: dict) -> str:
-    """Tarjeta KPI. El líder se parte en dos líneas —nombre grande y su cifra
-    debajo— porque "Bogotá · 106" en una sola línea no decía que 106 era un %."""
-    if k.get("kind") == "leader":
-        sub = k.get("texto") or (_fmt(k.get("raw")) if k.get("raw") is not None else "")
-        return (f"<div class='kpi'><div class='kpi-label'>{_esc(_kpi_label(k, schema))}</div>"
-                f"<div class='kpi-value'>{_esc(clean_display_text(k.get('value', '—')))}</div>"
-                f"{f'<div class=kpi-sub>{_esc(clean_display_text(sub))}</div>' if sub else ''}</div>")
+def _kpi_explicacion(k: dict, schema: dict, n_registros: int | None) -> str:
+    """Una línea bajo cada KPI que dice cómo se calculó: «37.7M» solo no dice
+    si es un total, un promedio o un caso aislado."""
+    kind = k.get("kind")
+    metrica = _label(schema, k["metric"]) if k.get("metric") else "el indicador"
+    registros = f" de los {n_registros:,} registros" if n_registros else ""
+    if kind == "primary":
+        return (f"Suma de «{metrica}»{registros}" if k.get("label") == "Total"
+                else f"Promedio de «{metrica}»{registros}")
+    if kind == "median":
+        return "Valor del caso típico: la mitad de los registros está por encima y la mitad por debajo"
+    if kind == "max":
+        return "El registro individual más alto de todo el periodo"
+    if kind == "leader":
+        partes = [p for p in (k.get("texto"), k.get("detalle")) if p]
+        return " · ".join(str(clean_display_text(p)) for p in partes) or (_fmt(k.get("raw")) if k.get("raw") is not None else "")
+    return ""
+
+
+def _kpi_card(k: dict, schema: dict, n_registros: int | None = None) -> str:
+    """Tarjeta KPI con su explicación debajo. El líder se parte en dos
+    líneas —nombre grande y su cifra debajo— porque "Bogotá · 106" en una
+    sola línea no decía que 106 era un %."""
+    sub = _kpi_explicacion(k, schema, n_registros)
+    sub_html = f"<div class='kpi-sub'>{_esc(sub)}</div>" if sub else ""
+    valor = clean_display_text(k.get("value", "—")) if k.get("kind") == "leader" else _kpi_value(k)
     return (f"<div class='kpi'><div class='kpi-label'>{_esc(_kpi_label(k, schema))}</div>"
-            f"<div class='kpi-value'>{_esc(_kpi_value(k))}</div></div>")
+            f"<div class='kpi-value'>{_esc(valor)}</div>{sub_html}</div>")
 
 
-def _kpis_html(kpis: list, schema: dict, maximo: int = 6) -> str:
+def _kpis_html(kpis: list, schema: dict, maximo: int = 6, n_registros: int | None = None) -> str:
     """Los KPI sin los que ya están en la portada y el veredicto (el conteo de
     registros y el cambio reciente): repetirlos era ruido."""
-    tarjetas = [_kpi_card(k, schema) for k in (kpis or [])
+    tarjetas = [_kpi_card(k, schema, n_registros) for k in (kpis or [])
                 if isinstance(k, dict) and k.get("kind") not in {"count", "growth"}][:maximo]
     return "".join(tarjetas)
 
@@ -319,9 +492,63 @@ def _build_charts(df: pd.DataFrame, schema: dict, dashboard: dict, include_geo: 
     # copia, y el archivo llegaba a 58 MB —imposible de enviar por correo—
     # cuando con una sola copia pesa una fracción de eso.
     blocks = []
-    for i, (_, title, subtitle, fig) in enumerate(charts, 1):
+    for i, (kind, title, subtitle, fig) in enumerate(charts, 1):
+        title, subtitle = _titulo_grafico(kind, title, subtitle, schema, dashboard, metrics, dims, primary)
         blocks.append(_chart_block(title, subtitle, fig, i, include_js=(incluir_motor and i == 1)))
     return blocks
+
+
+def _titulo_grafico(kind, title, subtitle, schema, dashboard, metrics, dims, primary) -> tuple[str, str]:
+    """Título y bajada que dicen QUÉ muestra el gráfico y cómo leerlo.
+
+    El motor universal nombra los gráficos de forma genérica ("Evolución del
+    indicador", "Ranking de resultados") porque no conoce el archivo. En una
+    presentación eso obliga a adivinar; aquí se nombran con las columnas
+    reales."""
+    from ui.report_base import mes
+    m = _label(schema, primary) if primary else "el indicador"
+    d = _label(schema, dims[0]) if dims else "categoría"
+    if kind == "trend":
+        return (f"{m} mes a mes",
+                "Cada punto es el resultado de un mes. La etiqueta del último punto es su variación frente al mes anterior.")
+    if kind == "multi_trend":
+        nombres = " y ".join(_label(schema, x) for x in metrics[:3])
+        return (f"{nombres} mes a mes", "Una línea por indicador, para ver si se mueven juntos o por separado.")
+    if kind == "ranking":
+        return (f"{m} por {d}",
+                f"Cada barra es un valor de «{d}», de mayor a menor. La línea punteada marca la mediana del grupo.")
+    if kind == "ranking2" and len(dims) >= 2:
+        d2 = _label(schema, dims[1])
+        return (f"{m} por {d2}",
+                f"Cada barra es un valor de «{d2}», de mayor a menor. La línea punteada marca la mediana del grupo.")
+    if kind == "donut":
+        return (f"Participación de cada {d} en {m}", f"Qué parte del total de «{m}» aporta cada valor de «{d}».")
+    if kind == "scatter" and len(metrics) >= 2:
+        a, b = _label(schema, metrics[0]), _label(schema, metrics[1])
+        return (f"Relación entre {a} y {b}",
+                "Cada punto es un registro. Si forman una línea, los dos indicadores suben y bajan juntos.")
+    if kind == "histogram":
+        return (f"Cómo se reparten los valores de {m}",
+                "Cada barra agrupa registros con valores parecidos; la más alta es el rango más frecuente.")
+    if kind == "rangos":
+        return (f"{m} por rango de valores", "Cuántos registros caen en cada tramo de valores.")
+    if kind == "cascada":
+        cambio = dashboard.get("change_analysis") or {}
+        try:
+            a = mes(pd.Timestamp(cambio.get("period_before")))
+            b = mes(pd.Timestamp(cambio.get("period_after")))
+        except Exception:
+            a, b = cambio.get("period_before", ""), cambio.get("period_after", "")
+        return (f"Qué explica el cambio de {m}", f"De {a} a {b}: cuánto sumó o restó cada parte.")
+    if kind == "periodo":
+        return (f"{m} por {d}: último mes y anterior",
+                f"Cada columna es un valor de «{d}»; los colores separan el último mes del anterior.")
+    if kind == "correlacion":
+        return ("Qué indicadores se mueven juntos",
+                "Cerca de 1: suben y bajan a la vez. Cerca de −1: cuando uno sube, el otro baja. Cerca de 0: no se relacionan.")
+    if kind == "mapa":
+        return (f"{m} por ubicación", "Cada punto es una ubicación del archivo; el tamaño indica cuánto pesa.")
+    return title, subtitle
 
 
 def _narrative_summary(df: pd.DataFrame, schema: dict, dashboard: dict, primary, dims) -> str:
@@ -361,7 +588,8 @@ def _delta_html(dashboard: dict, clase: str = "delta") -> str:
 
 
 def _resumen_block(dashboard: dict, plan: dict, sid: str = "lectura-ejecutiva",
-                   titulo: str = "Resumen para decidir", enlace_planes: str = "planes") -> str:
+                   titulo: str = "Resumen para decidir", enlace_planes: str = "planes",
+                   ctx: dict | None = None) -> str:
     """El veredicto, el semáforo y las tres prioridades con su primer paso.
 
     Es lo único que muchos van a leer: tiene que decir cómo va el negocio y
@@ -371,8 +599,9 @@ def _resumen_block(dashboard: dict, plan: dict, sid: str = "lectura-ejecutiva",
     planes = (plan or {}).get("planes") or []
     veredicto = ""
     if ex.get("headline"):
-        detalle = f"<p>{esc_limpio(ex.get('detail', ''))}</p>" if ex.get("detail") else ""
-        veredicto = (f"<div class='verdict {_status(dashboard)}'><div><h3>{esc_limpio(ex['headline'])}</h3>"
+        titular, detalle_txt = _titular(ex, ctx or {})
+        detalle = f"<p>{_esc(detalle_txt)}</p>" if detalle_txt else ""
+        veredicto = (f"<div class='verdict {_status(dashboard)}'><div><h3>{_esc(titular)}</h3>"
                      f"{detalle}</div>{_delta_html(dashboard)}</div>")
 
     izquierda = ""
@@ -398,11 +627,20 @@ def _resumen_block(dashboard: dict, plan: dict, sid: str = "lectura-ejecutiva",
     if not (veredicto or izquierda or derecha):
         return ""
     grid = (f"<div class='resumen-grid'><div>{izquierda}</div>{derecha}</div>" if (izquierda or derecha) else "")
-    return seccion(sid, titulo, "La conclusión primero: cómo va y qué hacer.", veredicto + grid)
+    ctx = ctx or {}
+    leer = ""
+    if planes:
+        leer = ("Arriba, cómo cerró el indicador principal"
+                + (f" en {_esc(ctx['mes_b'])} comparado con {_esc(ctx['mes_a'])}" if ctx.get("mes_a") else "")
+                + ". Debajo, los tres frentes más urgentes que detectó el análisis: cada uno trae el dato "
+                  "que lo originó y el primer paso para atenderlo. El semáforo cuenta cuántos frentes hay de cada tipo.")
+    fuente = _fuente(ctx, _col(ctx["metrica"])) if ctx.get("hoja") and ctx.get("metrica") else ""
+    return seccion(sid, titulo, "La conclusión primero: cómo va el resultado y qué conviene hacer.",
+                   veredicto + grid, leer=leer, fuente=fuente)
 
 
 def _concentration_block(dashboard: dict, schema: dict, df: pd.DataFrame | None = None,
-                         primary=None, dims=None) -> str:
+                         primary=None, dims=None, ctx: dict | None = None) -> str:
     """Concentración: cuánto pesa cada grupo sobre el total, y cuánto se
     acumula en los primeros. Responde la pregunta que sigue siempre a un
     total ("¿de dónde sale?") y detecta dependencia excesiva de un solo
@@ -477,6 +715,10 @@ def _concentration_block(dashboard: dict, schema: dict, df: pd.DataFrame | None 
         f"<div class='table-card'><table><thead><tr><th>{_esc(dim_label)}</th><th class='num'>{_esc(metric_label)}</th>"
         f"<th class='num'>% del total</th><th class='num'>Acumulado</th><th>Peso</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table></div>{extremos}",
+        leer=(f"Cada fila es un valor de «{_esc(dim_label)}». «% del total» es la parte de {_esc(metric_label.lower())} "
+              f"que aporta; «Acumulado» va sumando las filas anteriores y muestra cuántos concentran la mayor parte. "
+              f"Depender de pocos es un riesgo: si uno cae, arrastra el total."),
+        fuente=_fuente(ctx, f"{_col(metric_label)} por «{_esc(dim_label)}»") if ctx else "",
     )
 
 
@@ -546,7 +788,12 @@ def _ya_cubiertos(plan: dict) -> set[str]:
     return {str(p.get("titulo", "")).strip().lower() for p in (plan or {}).get("planes") or []}
 
 
-def _findings_html(items: list, cubiertos: set[str], maximo: int = 6) -> str:
+# Hallazgos que solo repiten lo que ya dicen las tarjetas KPI y el veredicto
+# del resumen: en una presentación, decir dos veces el total resta atención.
+_REDUNDANTES = {"nivel de actividad", "evolución reciente"}
+
+
+def _findings_html(items: list, cubiertos: set[str], maximo: int = 6, ctx: dict | None = None) -> str:
     """Hallazgos que no se convirtieron en plan: una fila por hallazgo, con el
     dato, sus nombres y qué revisar. La "implicación" larga queda fuera: en
     una presentación se lee el dato y la acción.
@@ -558,8 +805,10 @@ def _findings_html(items: list, cubiertos: set[str], maximo: int = 6) -> str:
         if not isinstance(item, dict):
             continue
         title, finding, action, _ = _insight_text(item)
-        if not finding or title.strip().lower() in cubiertos:
+        if not finding or title.strip().lower() in cubiertos or title.strip().lower() in _REDUNDANTES:
             continue
+        if ctx and ctx.get("mes_a"):
+            finding = finding.replace("frente al periodo anterior", f"en {ctx['mes_b']} frente a {ctx['mes_a']}")
         tono = {"positive": "pos", "warning": "warn", "negative": "neg"}.get(item.get("kind"), "")
         accion = f"<p class='action'><b>→</b> {_esc(action)}</p>" if action else ""
         cubiertos.add(title.strip().lower())
@@ -647,24 +896,38 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
         except Exception:
             return ""
 
-    planes_html = _seguro(lambda: bloque_planes(df, schema, dashboard, plan))
-    estrategia_html = _seguro(lambda: bloque_estrategia(df, schema))
-    cuadro_html = _seguro(lambda: bloque_cuadro_comparativo(df, schema, primary, _bloque, _numerar))
-    cambio_html = _seguro(lambda: bloque_cambio_periodos(df, schema, primary, _bloque, _numerar))
+    ctx = _contexto(df, schema, dashboard, filename, sheet, scope_label)
 
-    resumen_html = _resumen_block(dashboard, plan)
+    def _fuente_de(columnas: str = "") -> str:
+        return _fuente(ctx, columnas)
+
+    planes_html = _seguro(lambda: bloque_planes(df, schema, dashboard, plan, fuente=_fuente_de))
+    estrategia_html = _seguro(lambda: bloque_estrategia(df, schema, fuente=_fuente_de))
+    cuadro_html = _seguro(lambda: bloque_cuadro_comparativo(df, schema, primary, _bloque, _numerar, fuente=_fuente_de))
+    cambio_html = _seguro(lambda: bloque_cambio_periodos(df, schema, primary, _bloque, _numerar, fuente=_fuente_de))
+
+    resumen_html = _resumen_block(dashboard, plan, ctx=ctx)
     kpis = dashboard.get("kpis") or []
-    kpi_cards = _kpis_html(kpis, schema)
+    kpi_cards = _kpis_html(kpis, schema, n_registros=len(df))
     indicadores_html = seccion(
-        "resumen", "Indicadores clave", "",
+        "resumen", "Indicadores clave",
+        (f"Las cifras generales de {ctx['metrica'].lower()} en todo el periodo analizado ({ctx['periodo_corto']})."
+         if ctx.get("metrica") else "Las cifras generales del periodo analizado."),
         (f"<div class='kpis'>{kpi_cards}</div>" if kpi_cards else "")
         + (f"<div class='grid2' id='vista-principal' style='margin-top:14px'>{''.join(chart_blocks[:2])}</div>"
            if chart_blocks else ""),
+        leer="Cada tarjeta dice debajo cómo se calculó su cifra. Los gráficos muestran la evolución mes a mes "
+             "y cómo se reparte el resultado entre los grupos.",
+        fuente=_fuente(ctx, _col(ctx["metrica"]) if ctx.get("metrica") else ""),
     )
-    concentracion_html = _concentration_block(dashboard, schema, df, primary, dims)
-    hallazgos = _findings_html(dashboard.get("insights") or [], cubiertos)
-    hallazgos_html = (seccion("lectura", "Otros hallazgos", "Lo que el análisis detectó y no está ya en el plan.", hallazgos)
-                      if hallazgos else "")
+    concentracion_html = _concentration_block(dashboard, schema, df, primary, dims, ctx=ctx)
+    hallazgos = _findings_html(dashboard.get("insights") or [], cubiertos, ctx=ctx)
+    hallazgos_html = (seccion(
+        "lectura", "Otros hallazgos", "Patrones que detectó el análisis y que no necesitan un plan propio.", hallazgos,
+        leer="El punto de color indica el tipo: verde es favorable, ámbar pide atención y gris es informativo. "
+             "Bajo cada hallazgo, los nombres y cifras que lo sustentan y, tras la flecha, qué revisar.",
+        fuente=_fuente(ctx) + " · Hallazgos generados por el análisis automático de la hoja.",
+    ) if hallazgos else "")
 
     # ── Anexo plegado ──
     stats_html = _statistics_table(dashboard, schema)
@@ -672,32 +935,39 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     alerts_html = _alerts_table(dashboard.get("alerts") or [], cubiertos)
     otros = "".join(chart_blocks[2:])
     anexo_items = [
-        ("estadistica", "Estadística descriptiva", stats_html, "valor típico, dispersión y extremos"),
-        ("atipicos", "Valores atípicos", anomalies_html, f"{n_atipicos:,} detectados" if n_atipicos else ""),
+        ("estadistica", "Estadística descriptiva", stats_html, "valor típico, dispersión y extremos de cada columna numérica"),
+        ("atipicos", "Valores atípicos", anomalies_html, f"{n_atipicos:,} registros fuera de lo normal" if n_atipicos else ""),
         ("alertas", "Otras alertas", alerts_html, ""),
-        ("graficos", "Otros gráficos", f"<div class='grid2'>{otros}</div>" if otros else "", f"{len(chart_blocks[2:])} gráficos"),
-        ("calidad", "Calidad del dato", _quality_html(df, schema, quality, metrics, dims), quality[0][1]),
+        ("graficos", "Otros gráficos", f"<div class='grid2'>{otros}</div>" if otros else "", f"{len(chart_blocks[2:])} vistas adicionales"),
+        ("calidad", "Calidad del dato", _quality_html(df, schema, quality, metrics, dims), f"puntaje {quality[0][1]}"),
     ]
     anexo_items = [a for a in anexo_items if a[2]]
     anexo_html = seccion(
-        "anexo", "Anexo técnico", "Soporte del análisis. Se despliega al hacer clic y sale completo al imprimir.",
+        "anexo", "Anexo técnico", "Material de soporte para quien quiera verificar las cifras.",
         "".join(desplegable(t, c, d, sid=sid) for sid, t, c, d in anexo_items),
+        leer="Cada bloque se abre con un clic. Al imprimir o guardar en PDF salen todos desplegados.",
+        fuente=_fuente(ctx),
     )
 
     # ── Orden del documento = orden del menú ──
+    # (grupo, id, etiqueta del menú, qué dice en la agenda, html)
     cuerpo_secciones = [
-        ("Resumen", "lectura-ejecutiva", "Resumen para decidir", resumen_html),
-        ("Resumen", "resumen", "Indicadores clave", indicadores_html),
-        ("Decisión", "planes", "Planes de mejora", planes_html),
-        ("Decisión", "estrategia", "Estrategia por canal", estrategia_html),
-        ("Decisión", "cuadro-comparativo", "Cómo va cada uno", cuadro_html),
-        ("Decisión", "cambio-periodos", "Qué cambió y quién lo explica", cambio_html),
-        ("Contexto", "concentracion", "De dónde sale el resultado", concentracion_html),
-        ("Contexto", "lectura", "Otros hallazgos", hallazgos_html),
-        ("Anexo", "anexo", "Anexo técnico", anexo_html),
+        ("Resumen", "lectura-ejecutiva", "Resumen para decidir", "Cómo cerró el resultado y los tres frentes más urgentes.", resumen_html),
+        ("Resumen", "resumen", "Indicadores clave", "Las cifras generales y su evolución mes a mes.", indicadores_html),
+        ("Decisión", "planes", "Planes de mejora", "Qué hacer, en orden de urgencia, con pasos concretos.", planes_html),
+        ("Decisión", "estrategia", "Estrategia por canal", "Cuánto pesa cada canal, hacia dónde va y qué jugada le toca.", estrategia_html),
+        ("Decisión", "cuadro-comparativo", "Cómo va cada uno", "Cada uno contra su meta o contra el promedio del grupo.", cuadro_html),
+        ("Decisión", "cambio-periodos", "Qué cambió y quién lo explica", "Quién sumó y quién restó entre los dos últimos meses.", cambio_html),
+        ("Contexto", "concentracion", "De dónde sale el resultado", "Cuánto depende el total de unos pocos.", concentracion_html),
+        ("Contexto", "lectura", "Otros hallazgos", "Patrones adicionales que detectó el análisis.", hallazgos_html),
+        ("Anexo", "anexo", "Anexo técnico", "Estadística, atípicos, alertas y calidad del dato.", anexo_html),
     ]
+    agenda = [(etiqueta, desc) for _, _, etiqueta, desc, contenido in cuerpo_secciones if contenido]
+    contexto_html = _contexto_block(ctx, agenda)
+    cuerpo_secciones.insert(0, ("Resumen", "contexto", "Sobre este informe", "", contexto_html))
+
     grupos: dict[str, list] = {}
-    for grupo, sid, etiqueta, contenido in cuerpo_secciones:
+    for grupo, sid, etiqueta, _, contenido in cuerpo_secciones:
         if contenido:
             grupos.setdefault(grupo, []).append((sid, etiqueta))
     nav_html = nav(list(grupos.items()), "Informe analítico", sheet)
@@ -705,16 +975,17 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     valor, etiqueta_valor = _primary_kpi(kpis, schema)
     ex = dashboard.get("executive") or {}
     cambio = ex.get("change")
+    criticos = sum(1 for p in plan.get("planes") or [] if p.get("estado") == "critico")
     stats = [
-        (valor, etiqueta_valor or "Indicador principal", ""),
+        (valor, f"{etiqueta_valor or 'Indicador principal'} del periodo", ""),
         ((f"{'▲' if cambio > 0 else '▼' if cambio < 0 else '='} {abs(cambio):.1f}%" if cambio is not None else None),
-         "vs periodo anterior", _status(dashboard)),
-        (f"{len(df):,}", "Registros", ""),
-        (str(sum(1 for p in plan.get("planes") or [] if p.get("estado") == "critico")) if plan.get("planes") else None,
-         "Frentes críticos", "neg" if any(p.get("estado") == "critico" for p in plan.get("planes") or []) else "pos"),
+         f"{ctx['mes_b']} vs {ctx['mes_a']}" if ctx.get("mes_a") else "vs periodo anterior", _status(dashboard)),
+        (f"{len(df):,}", "Registros analizados", ""),
+        (str(criticos) if plan.get("planes") else None,
+         "Frentes críticos" if criticos != 1 else "Frente crítico", "neg" if criticos else "pos"),
     ]
     cover = _cover("Panel Analítico Universal · Informe ejecutivo", sheet, narrative, stats,
-                   [("Archivo", filename), ("Alcance", scope_label), ("Periodo", _date_range(df, schema)),
+                   [("Archivo", filename), ("Alcance", scope_label), ("Periodo", ctx["periodo"]),
                     ("Generado", generated)])
     cuerpo = (cover + "".join(c for *_, c in cuerpo_secciones if c)
               + "<footer class='footer'>Generado por Panel Analítico Universal · El contenido se adapta a la estructura real del Excel.</footer>")
@@ -795,6 +1066,7 @@ def build_workbook_html_report(workbook: dict) -> str:
     for r in reports:
         d, schema = r["dashboard"], r["schema"]
         ex = d.get("executive") or {}
+        r["_ctx"] = _contexto(r["df"], schema, d, filename, r["sheet"], "Hoja completa (sin filtros)")
         planes = (r["plan"] or {}).get("planes") or []
         criticos = sum(1 for p in planes if p.get("estado") == "critico")
         atencion = sum(1 for p in planes if p.get("estado") == "atencion")
@@ -814,7 +1086,7 @@ def build_workbook_html_report(workbook: dict) -> str:
         metrica = _label(schema, r["primary"]) if r["primary"] else "Sin métrica principal"
         board_rows.append(
             f"<tr><td><b>{_esc(r['sheet'])}</b><br><span class='muted'>{len(r['df']):,} registros · {_esc(metrica)}</span></td>"
-            f"<td>{esc_limpio(ex.get('headline', '—'))}</td>"
+            f"<td>{_esc(_titular(ex, r['_ctx'])[0] or '—')}</td>"
             f"<td class='num'>{_fmt(r['total_value']) if r['total_value'] is not None else '—'}</td>"
             f"<td class='num'>{cambio_html}</td><td>{' '.join(frentes)}</td>"
             f"<td><a class='go' href='#{r['_anchor']}'>Ver →</a></td></tr>"
@@ -823,11 +1095,15 @@ def build_workbook_html_report(workbook: dict) -> str:
     todas_prioridades.sort(key=lambda p: orden.get(p.get("estado"), 2))
 
     tablero_html = seccion(
-        "resumen-libro", "Tablero por hoja", "Cómo va cada parte del libro y cuántos frentes abiertos tiene.",
+        "resumen-libro", "Tablero por hoja", "Cómo va cada hoja del libro y cuántos frentes abiertos tiene.",
         "<div class='table-card'><div class='table-scroll'><table><thead><tr><th>Hoja</th><th>Lectura</th>"
         "<th class='num'>Total principal</th><th class='num'>Cambio</th><th>Frentes</th><th></th></tr></thead>"
         f"<tbody>{''.join(board_rows) or '<tr><td colspan=6>No se encontraron hojas analizables.</td></tr>'}</tbody>"
         "</table></div></div>",
+        leer="Una fila por hoja. «Lectura» es el veredicto de su indicador principal, «Cambio» compara su último "
+             "mes con datos contra el anterior y «Frentes» cuenta los asuntos críticos o en observación que "
+             "encontró el análisis. «Ver →» lleva al detalle de la hoja.",
+        fuente=f"{_esc(filename)} · {len(reports):,} hoja(s) con datos · {total_rows:,} registros · sin filtros",
     )
     prioridades_html = ""
     if todas_prioridades:
@@ -836,6 +1112,9 @@ def build_workbook_html_report(workbook: dict) -> str:
             prioridades(todas_prioridades, 6, con_hoja=True)
             + (f"<p class='note'>Y {len(todas_prioridades) - 6} frente(s) más en el detalle de cada hoja.</p>"
                if len(todas_prioridades) > 6 else ""),
+            leer="Cada fila es un frente de trabajo; la etiqueta roja indica la hoja de donde sale. Debajo del "
+                 "título, el dato que lo originó y el primer paso para atenderlo.",
+            fuente=f"{_esc(filename)} · frentes generados por el análisis automático de cada hoja",
         )
 
     # ── Detalle por hoja ──
@@ -852,8 +1131,12 @@ def build_workbook_html_report(workbook: dict) -> str:
         sheet_id = r["_anchor"]
         plan = r["plan"] or {}
         cubiertos = _ya_cubiertos(plan)
+        ctx_h = r["_ctx"]
 
-        kpi_html = _kpis_html(d.get("kpis") or [], schema, 4)
+        def _fuente_hoja(columnas: str = "", _c=ctx_h) -> str:
+            return _fuente(_c, columnas)
+
+        kpi_html = _kpis_html(d.get("kpis") or [], schema, 4, n_registros=len(df))
         if not kpi_html:
             kpi_html = f"<div class='kpi'><div class='kpi-label'>Registros</div><div class='kpi-value'>{len(df):,}</div></div>"
 
@@ -877,11 +1160,11 @@ def build_workbook_html_report(workbook: dict) -> str:
 
         secciones_hoja = []
         for constructor in (
-            lambda: bloque_planes(df, schema, d, plan),
-            lambda: bloque_estrategia(df, schema),
-            lambda: bloque_cuadro_comparativo(df, schema, r["primary"], _bloque_hoja, _numerar_hoja),
-            lambda: bloque_cambio_periodos(df, schema, r["primary"], _bloque_hoja, _numerar_hoja),
-            lambda: _concentration_block(d, schema, df, r["primary"], r["dims"]),
+            lambda: bloque_planes(df, schema, d, plan, fuente=_fuente_hoja),
+            lambda: bloque_estrategia(df, schema, fuente=_fuente_hoja),
+            lambda: bloque_cuadro_comparativo(df, schema, r["primary"], _bloque_hoja, _numerar_hoja, fuente=_fuente_hoja),
+            lambda: bloque_cambio_periodos(df, schema, r["primary"], _bloque_hoja, _numerar_hoja, fuente=_fuente_hoja),
+            lambda: _concentration_block(d, schema, df, r["primary"], r["dims"], ctx=ctx_h),
         ):
             try:
                 bloque = constructor()
@@ -893,9 +1176,11 @@ def build_workbook_html_report(workbook: dict) -> str:
                 bloque = bloque.replace('<section class="section" id="', f'<section class="section" id="{sheet_id}-', 1)
                 bloque = bloque.replace('id="top-bottom"', f'id="{sheet_id}-top-bottom"')
                 secciones_hoja.append(bloque)
-        hallazgos = _findings_html(d.get("insights") or [], cubiertos, 4)
+        hallazgos = _findings_html(d.get("insights") or [], cubiertos, 4, ctx=ctx_h)
         if hallazgos:
-            secciones_hoja.append(seccion(f"{sheet_id}-lectura", "Otros hallazgos", "", hallazgos))
+            secciones_hoja.append(seccion(f"{sheet_id}-lectura", "Otros hallazgos",
+                                          "Patrones que detectó el análisis y que no necesitan un plan propio.", hallazgos,
+                                          fuente=_fuente(ctx_h)))
         if secondary_charts_html:
             secciones_hoja.append(seccion(f"{sheet_id}-graficos", "Otros gráficos", "",
                                           f"<div class='grid2'>{secondary_charts_html}</div>"))
@@ -903,24 +1188,45 @@ def build_workbook_html_report(workbook: dict) -> str:
                                       _quality_html(df, schema, r["quality"], r["metrics"], r["dims"])))
 
         ex = d.get("executive") or {}
+        titular, detalle = _titular(ex, ctx_h)
         que_hacer = prioridades((plan.get("planes") or []), 3)
         status_pill = {"pos": "<span class='pill pos'>Mejora</span>", "neg": "<span class='pill neg'>Declive</span>"}.get(_status(d), "")
         sheet_sections.append(
             f"<section class='sheet-section' id='{sheet_id}'>"
             f"<div class='sheet-heading'><div><span class='kicker'>Hoja</span><h2>{_esc(r['sheet'])}</h2>"
-            f"<p>{len(df):,} registros · {len(df.columns):,} columnas · {_esc(_date_range(df, schema))}</p></div>{status_pill}</div>"
-            + (f"<div class='verdict {_status(d)}'><div><h3>{esc_limpio(ex['headline'])}</h3>"
-               f"<p>{esc_limpio(ex.get('detail', ''))}</p></div>{_delta_html(d)}</div>" if ex.get("headline") else "")
+            f"<p>{len(df):,} registros · {len(df.columns):,} columnas · {_esc(ctx_h['periodo'])}"
+            + (f" · indicador principal: «{_esc(ctx_h['metrica'])}»" if ctx_h.get("metrica") else "")
+            + f"</p></div>{status_pill}</div>"
+            + (f"<div class='verdict {_status(d)}'><div><h3>{_esc(titular)}</h3>"
+               f"<p>{_esc(detalle)}</p></div>{_delta_html(d)}</div>" if ex.get("headline") else "")
             + f"<div class='kpis' style='margin-top:12px'>{kpi_html}</div>"
             + (f"<div class='grid2' style='margin-top:12px'>{primary_charts_html}</div>" if primary_charts_html else "")
             + (f"<div style='margin-top:16px'><p class='subhead'>Qué hacer en esta hoja</p>{que_hacer}</div>" if que_hacer else "")
             + desplegable("Análisis completo de esta hoja", "".join(secciones_hoja),
                           "plan, comparativos, cambios, hallazgos y calidad", sid=f"{sheet_id}-detalle")
+            + f"<p class='fuente'><b>Fuente</b> {_fuente(ctx_h)}</p>"
             + "</section>"
         )
 
+    hojas_txt = ", ".join(r["sheet"] for r in reports[:6]) + (f" y {len(reports) - 6} más" if len(reports) > 6 else "")
+    ctx_libro = {"archivo": filename, "hoja": "", "registros": total_rows, "periodo": "", "alcance": "",
+                 "metrica": None, "dim": None, "mes_a": None, "meta_col": None, "suma": True}
+    agenda = ([("Tablero por hoja", "Cómo va cada hoja, en una fila, con sus frentes abiertos.")]
+              + ([("Prioridades del libro", "Los frentes más urgentes de todas las hojas juntas.")] if prioridades_html else [])
+              + [(f"Hoja «{r['sheet']}»", "Veredicto, cifras, gráficos y qué hacer; el análisis completo va plegado.")
+                 for r in reports])
+    contexto_html = _contexto_block(
+        ctx_libro, agenda,
+        extra_mide=["Cada hoja se analiza por separado, con su propio indicador principal (el que aparece en el tablero).",
+                    "En cada hoja se compara su último mes con datos contra el mes anterior; el veredicto de cada una "
+                    "nombra los meses que compara.",
+                    "Este informe no usa los filtros de la app: cada hoja se analiza completa."],
+        datos=[("Archivo", filename), ("Hojas", hojas_txt), ("Registros", f"{total_rows:,} en total"),
+               ("Filtros", "Ninguno: cada hoja completa")],
+    )
     nav_html = nav(
-        [("Libro", [("resumen-libro", "Tablero por hoja")] + ([("hallazgos", "Prioridades del libro")] if prioridades_html else [])),
+        [("Libro", [("contexto", "Sobre este informe"), ("resumen-libro", "Tablero por hoja")]
+          + ([("hallazgos", "Prioridades del libro")] if prioridades_html else [])),
          ("Hojas", [(r["_anchor"], r["sheet"]) for r in reports])],
         "Informe del libro", filename,
     )
@@ -934,7 +1240,7 @@ def build_workbook_html_report(workbook: dict) -> str:
          (f"{weighted_quality:.0f}/100", "Calidad del dato", "")],
         [("Archivo", filename), ("Generado", generated)],
     )
-    cuerpo = (cover + tablero_html + prioridades_html
+    cuerpo = (cover + contexto_html + tablero_html + prioridades_html
               + ("".join(sheet_sections) or '<section class="section"><div class="empty">No se encontraron hojas con datos analizables.</div></section>')
               + "<footer class='footer'>Generado por Panel Analítico Universal · Resumen del libro completo · Los análisis se adaptan a cada hoja.</footer>")
     return documento(f"Informe general del Excel — {filename}", cuerpo, nav_html)
