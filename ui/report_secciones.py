@@ -35,7 +35,7 @@ from ui.report_base import (desplegable, esc, esc_limpio, estado_plan, negritas,
                             tablero_seguimiento)
 
 # Cuántas frases de lectura se muestran abiertas; el resto se pliega.
-_FRASES_VISIBLES = 4
+_FRASES_VISIBLES = 3
 # Con más de estos elementos, el cuadro muestra los mejores y los más
 # rezagados en vez de solo los primeros: un informe para decidir que solo
 # enseña a los que cumplen esconde justo a quienes hay que ayudar.
@@ -233,6 +233,58 @@ def bloque_cambio_periodos(df, schema, metrica, chart_block, numerar) -> str:
 
 # ── 📈 Estrategia por canal ─────────────────────────────────────────────────
 
+_TONO_JUGADA = {"malo": "neg", "bueno": "pos"}
+# Qué significa la cifra grande de cada jugada, dicho en dos palabras.
+_QUE_ES_IMPACTO = {"Recuperar": "perdido", "Cerrar brecha": "falta para la meta",
+                   "Escalar": "base actual", "Sostener": "base actual"}
+# Palancas que no dicen nada: se omiten en vez de ocupar una línea.
+_PALANCA_VACIA = ("sin cambio relevante",)
+
+
+def _cifras(partes, tono: str) -> list[str]:
+    return [clean(t) for t, x in partes if x == tono and clean(t)]
+
+
+def _dato_jugada(j: dict) -> str:
+    """El dato clave de la jugada en una línea corta, sin la frase completa.
+
+    La frase del motor ("Recuperar lo que Win+ perdió frente a julio de 2026:
+    -174, una caída de -17.0%.") repetía el tipo, el canal y la cifra que la
+    tarjeta ya muestra en grande; aquí queda solo lo que falta decir.
+    """
+    partes, tipo = j.get("partes") or [], j.get("tipo")
+    malos, buenos = _cifras(partes, "malo"), _cifras(partes, "bueno")
+    info = _cifras(partes, "info")
+    pct = [c for c in info if c.endswith("%")]
+    if tipo == "Recuperar":
+        return f'Cayó <b class="neg">{esc(malos[1])}</b> frente al periodo anterior' if len(malos) > 1 else "Cayó frente al periodo anterior"
+    if tipo == "Cerrar brecha" and malos:
+        return f'Va en <b class="neg">{esc(malos[0])}</b> de su meta'
+    if tipo == "Escalar" and buenos:
+        return (f'Crece <b class="pos">{esc(buenos[0])}</b>'
+                + (f' con solo {esc(pct[0])} del negocio' if pct else ""))
+    if tipo == "Sostener" and pct:
+        return f"Aporta {esc(pct[0])} del negocio y está estable"
+    return _frase_con_color(partes)
+
+
+def _jugada_html(j: dict) -> str:
+    tono = _TONO_JUGADA.get(j.get("tono"), "")
+    palanca = clean(j.get("palanca") or "")
+    if palanca.lower().startswith(_PALANCA_VACIA):
+        palanca = ""
+    return (
+        f'<article class="jugada {tono}">'
+        f'<div class="jugada-top"><div><span class="jugada-tipo">{esc_limpio(j["tipo"])}</span>'
+        f'<b class="jugada-canal">{esc_limpio(j["canal"])}</b></div>'
+        f'<div class="jugada-impacto"><b>{_fmt(j["impacto"])}</b>'
+        f'<span>{esc(_QUE_ES_IMPACTO.get(j["tipo"], "impacto"))}</span></div></div>'
+        f'<p>{_dato_jugada(j)}</p>'
+        + (f'<p class="palanca">{esc(palanca[:1].upper() + palanca[1:])}</p>' if palanca else "")
+        + '</article>'
+    )
+
+
 def bloque_estrategia(df, schema) -> str:
     """El semáforo por canal y las jugadas con su cifra de impacto."""
     try:
@@ -243,32 +295,30 @@ def bloque_estrategia(df, schema) -> str:
         return ""
 
     tarjetas = []
-    for fila in filas_peso_y_rumbo(matriz)["filas"]:
+    filas_canal = filas_peso_y_rumbo(matriz)["filas"]
+    # Sin meta en el archivo, la columna "Meta —" repetida en cada tarjeta no dice nada.
+    con_meta = any(f["cumplimiento"] is not None for f in filas_canal)
+    for fila in filas_canal:
         cumplimiento = ("—" if fila["cumplimiento"] is None else f"{fila['cumplimiento']:.0f}%")
         crecimiento = ("—" if fila["crecimiento"] is None else f"{fila['crecimiento']:+.1f}%")
         tarjetas.append(
             f'<div class="canal-card" style="border-top-color:{fila["color_barra"]}">'
             f'<div class="canal-head"><b>{esc_limpio(fila["canal"])}</b><span>{esc_limpio(fila["estado"])}</span></div>'
             f'<div class="canal-barra"><span style="width:{fila["ancho"]:.0f}%;background:{fila["color_barra"]}"></span></div>'
-            f'<div class="canal-datos"><span>Participación<b>{fila["participacion"]:.1f}%</b></span>'
+            f'<div class="canal-datos"{"" if con_meta else " style=grid-template-columns:repeat(2,1fr)"}>'
+            f'<span>Participación<b>{fila["participacion"]:.1f}%</b></span>'
             f'<span>Movimiento<b style="color:{fila["color_crecimiento"]}">{crecimiento}</b></span>'
-            f'<span>Meta<b style="color:{fila["color_meta"]}">{cumplimiento}</b></span></div>'
+            + (f'<span>Meta<b style="color:{fila["color_meta"]}">{cumplimiento}</b></span>' if con_meta else "")
+            + '</div>'
             f'<div class="canal-jugada">→ {esc_limpio(fila["jugada"])}</div></div>'
         )
 
-    jugadas = []
-    for j in oportunidades(matriz):
-        jugadas.append(
-            f'<article class="jugada"><div class="jugada-top"><span class="jugada-tipo">{esc_limpio(j["tipo"])}</span>'
-            f'<span class="jugada-impacto"><span>IMPACTO</span><b>{_fmt(j["impacto"])}</b></span></div>'
-            f'<p>{_frase_con_color(j["partes"])}</p>'
-            + (f'<p class="muted">Palanca: {esc_limpio(j["palanca"])}</p>' if j.get("palanca") else "")
-            + '</article>'
-        )
+    jugadas = [_jugada_html(j) for j in oportunidades(matriz)]
 
     cuerpo = (f'<div class="callout">{esc_limpio(matriz["titular"])}</div>'
               f'<div class="canal-grid">{"".join(tarjetas)}</div>'
-              + (f'<div class="jugadas-grid">{"".join(jugadas)}</div>' if jugadas else "")
+              + (f'<p class="subhead" style="margin-top:18px">Jugadas, de mayor a menor impacto</p>'
+                 f'<div class="jugadas-grid">{"".join(jugadas)}</div>' if jugadas else "")
               + f'<p class="note">Comparación entre {esc_limpio(matriz["periodo_anterior_label"])} y '
                 f'{esc_limpio(matriz["periodo_label"])}, sobre {esc_limpio(matriz["metrica"])}.</p>')
     return seccion("estrategia", f"Estrategia por {clean(matriz['canal'])}",
@@ -297,7 +347,7 @@ def bloque_planes(df, schema, dashboard, plan: dict | None = None) -> str:
     tarjetas = []
     for i, p in enumerate(planes[:8], 1):
         nombre, tono = estado_plan(p.get("estado", "mejora"))
-        pasos = "".join(f"<li>{esc_limpio(paso)}</li>" for paso in (p.get("pasos") or [])[:4])
+        pasos = "".join(f"<li>{esc_limpio(paso)}</li>" for paso in (p.get("pasos") or [])[:3])
         # Los nombres concretos salen de la evidencia del hallazgo, igual que
         # en la pestaña: un plan sobre "RIOHACHA" se ejecuta; uno sobre "los
         # segmentos afectados", no.

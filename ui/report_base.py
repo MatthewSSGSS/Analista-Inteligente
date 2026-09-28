@@ -308,15 +308,20 @@ details.more details.more{background:var(--line-soft)}
 .canal-datos span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .canal-datos b{display:block;font-size:15px;color:var(--ink);letter-spacing:0;text-transform:none}
 .canal-jugada{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;font-weight:700;color:var(--brand-dark)}
-.jugadas-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px}
-.jugada{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow)}
-.jugada-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
-.jugada-tipo{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--brand)}
-.jugada-impacto{text-align:right;white-space:nowrap}
-.jugada-impacto span{font-size:9px;letter-spacing:.1em;color:var(--soft);margin-right:5px}
-.jugada-impacto b{font-size:16px;color:var(--brand)}
-.jugada p{font-size:13px;line-height:1.5}
-.jugada p.muted{font-size:12px;margin-top:4px}
+.jugadas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:4px}
+.jugada{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--soft);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);min-width:0}
+.jugada.neg{border-left-color:var(--neg)}.jugada.pos{border-left-color:var(--pos)}
+.jugada-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px}
+.jugada-top>div:first-child{min-width:0}
+.jugada-tipo{display:block;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.jugada-canal{display:block;font-size:15px;margin-top:2px;overflow-wrap:anywhere}
+.jugada-impacto{text-align:right;flex:0 0 auto}
+.jugada-impacto b{display:block;font-size:20px;font-weight:800;line-height:1.1;color:var(--ink)}
+.jugada-impacto span{display:block;font-size:10px;color:var(--soft);margin-top:2px}
+.jugada.neg .jugada-impacto b{color:var(--neg)}.jugada.pos .jugada-impacto b{color:var(--pos)}
+.jugada p{font-size:13px;line-height:1.45}
+.jugada b.neg{color:var(--neg)}.jugada b.pos{color:var(--pos)}
+.jugada p.palanca{font-size:12px;color:var(--muted);margin-top:4px}
 
 /* Plan de acción */
 .planes-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
