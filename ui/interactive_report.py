@@ -383,7 +383,9 @@ document.addEventListener("DOMContentLoaded", function() {{
 <script>{js}</script>
 """
     return documento(f"Informe interactivo — {sheet} · {filename}", cuerpo,
-                     css_extra=_CSS_EXTRA, head_extra=f"<script>{plotly_js}</script>\n")
+                     css_extra=_CSS_EXTRA, head_extra=f"<script>{plotly_js}</script>\n",
+                     # Aquí se filtra en vivo: pasar de a una sección esconde los filtros.
+                     presentar=False)
 
 
 _CSS_EXTRA = """

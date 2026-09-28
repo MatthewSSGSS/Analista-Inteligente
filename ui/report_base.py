@@ -137,13 +137,21 @@ def nav(grupos: list[tuple[str, list[tuple[str, str]]]], titulo: str, subtitulo:
             f'<small>{esc(subtitulo)}</small></div></div>{"".join(partes)}</nav>')
 
 
-def documento(titulo: str, cuerpo: str, nav_html: str = "", css_extra: str = "", head_extra: str = "") -> str:
-    """Envuelve el informe con estilos, menú y script comunes."""
+def documento(titulo: str, cuerpo: str, nav_html: str = "", css_extra: str = "", head_extra: str = "",
+              presentar: bool = True) -> str:
+    """Envuelve el informe con estilos, menú y script comunes.
+
+    `presentar` agrega el botón «▶ Presentar»: el informe pasa a pantalla
+    completa y muestra una sección por diapositiva (flechas para avanzar,
+    Esc para salir). Estos HTML se proyectan en reuniones; sin este modo
+    había que ir haciendo scroll delante de todos.
+    """
     shell = (f'<div class="report-shell">{nav_html}<main class="wrap">{cuerpo}</main></div>' if nav_html
              else f'<div class="report-shell single"><main class="wrap">{cuerpo}</main></div>')
+    marca = ' data-presentar="1"' if presentar else ""
     return (f'<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>{esc(titulo)}</title>\n'
-            f'{head_extra}<style>{CSS}{css_extra}</style>\n</head>\n<body>\n{shell}\n<script>{JS}</script>\n</body></html>')
+            f'{head_extra}<style>{CSS}{css_extra}</style>\n</head>\n<body{marca}>\n{shell}\n<script>{JS}</script>\n</body></html>')
 
 
 CSS = """
@@ -192,6 +200,7 @@ b{color:var(--ink)}
 .sec-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:16px}
 .sec-num{font-size:11px;font-weight:800;color:var(--brand);background:var(--brand-soft);border-radius:7px;padding:5px 8px;flex:0 0 auto;margin-top:2px;min-width:30px;text-align:center}
 .sec-num:before{counter-increment:sec;content:counter(sec,decimal-leading-zero)}
+body.num-fijo .sec-num:before{content:attr(data-n)}
 .sec-head h2{font-size:20px;margin:0;letter-spacing:-.02em;color:var(--ink);line-height:1.25}
 .sec-head p{margin-top:3px;color:var(--muted);font-size:13px}
 h3{color:var(--ink)}
@@ -351,6 +360,37 @@ details.more details.more{background:var(--line-soft)}
 .go{font-size:12px;font-weight:700;color:var(--brand);text-decoration:none;white-space:nowrap}
 .footer{margin-top:48px;padding-top:14px;border-top:1px solid var(--line);color:var(--soft);font-size:11.5px;text-align:center}
 
+/* Modo presentación: una sección por diapositiva, a pantalla completa */
+.present-btn{position:fixed;bottom:22px;right:22px;z-index:60;display:flex;align-items:center;gap:7px;background:var(--ink);color:#fff;border:0;border-radius:999px;padding:10px 17px;font:700 12.5px/1 Inter,"Segoe UI",Arial,sans-serif;cursor:pointer;box-shadow:0 6px 18px rgba(15,23,42,.22)}
+.present-btn:hover{background:var(--brand)}
+.present-bar{display:none}
+body.presenting{background:#fff}
+body.presenting .side-nav,body.presenting .present-btn,body.presenting .footer{display:none!important}
+body.presenting .report-shell{display:block;max-width:1320px;padding:40px 56px 110px}
+body.presenting .wrap>*{display:none}
+body.presenting .wrap>.slide-on{display:block;margin-top:0;animation:slideIn .28s ease}
+body.presenting .cover.slide-on{min-height:calc(100vh - 160px);display:flex;flex-direction:column;justify-content:center;padding:56px 60px}
+body.presenting .cover h1{font-size:46px}
+body.presenting .cover .lead{font-size:18px}
+body.presenting .cover-stat b{font-size:34px}
+body.presenting .sec-head{margin-bottom:22px}
+body.presenting .sec-head h2{font-size:32px}
+body.presenting .sec-head p{font-size:16px}
+body.presenting .sec-num{font-size:14px;padding:7px 11px}
+body.presenting .verdict h3{font-size:24px}
+body.presenting .prio-body h3,body.presenting .plan h3{font-size:17px}
+body.presenting .prio-body p,body.presenting .bullets li,body.presenting .plan .situacion,body.presenting .finding p,body.presenting .callout,body.presenting .jugada p{font-size:15px}
+body.presenting .kpi-value{font-size:30px}
+body.presenting .sheet-heading h2{font-size:32px}
+body.presenting .present-bar{display:flex;align-items:center;gap:6px;position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:60;background:rgba(15,23,42,.92);color:#fff;border-radius:999px;padding:6px 8px;box-shadow:0 10px 30px rgba(15,23,42,.3);font-size:13px;max-width:calc(100vw - 32px)}
+.present-bar button{background:transparent;border:0;color:#fff;font:700 15px/1 inherit;padding:8px 12px;border-radius:999px;cursor:pointer}
+.present-bar button:hover{background:rgba(255,255,255,.14)}
+.present-bar .p-count{font-weight:800;padding:0 4px;font-variant-numeric:tabular-nums}
+.present-bar .p-title{color:#cbd3e3;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px}
+.present-bar .p-exit{font-size:12px;color:#ff8da0}
+@keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media(max-width:860px){.present-btn{bottom:16px;right:16px}body.presenting .report-shell{padding:20px 14px 100px}.present-bar .p-title{display:none}}
+@media print{.present-btn,.present-bar{display:none!important}}
 @media(max-width:1100px){.side-nav{display:none}}
 @media(max-width:860px){
   .report-shell{padding:16px 12px 48px}
@@ -407,5 +447,69 @@ JS = """
     links.forEach(function(a,i){ a.classList.toggle('active', i===current); });
   }
   if(links.length){ window.addEventListener('scroll',onScroll,{passive:true}); onScroll(); }
+
+  // Números de sección fijos: el contador de CSS no cuenta lo que está
+  // oculto, y en modo presentación todas menos una lo están.
+  var n=0;
+  document.querySelectorAll('.wrap .sec-num').forEach(function(el){
+    if(el.offsetParent!==null){ n+=1; el.setAttribute('data-n',(n<10?'0':'')+n); }
+  });
+  document.body.classList.add('num-fijo');
+
+  // Modo presentación.
+  if(document.body.getAttribute('data-presentar')){
+    var slides=Array.prototype.slice.call(document.querySelectorAll('.wrap > .cover, .wrap > .section, .wrap > .sheet-section'));
+    if(slides.length>1){
+      var idx=0, pantalla=false;
+      var btn=document.createElement('button');
+      btn.className='present-btn'; btn.type='button'; btn.title='Mostrar una sección por pantalla (flechas para avanzar, Esc para salir)';
+      btn.innerHTML='&#9654; Presentar';
+      var bar=document.createElement('div');
+      bar.className='present-bar';
+      bar.innerHTML='<button type="button" data-a="prev" title="Anterior">&#8249;</button><span class="p-count"></span>'+
+        '<button type="button" data-a="next" title="Siguiente">&#8250;</button><span class="p-title"></span>'+
+        '<button type="button" class="p-exit" data-a="exit">Salir &#10005;</button>';
+      document.body.appendChild(btn); document.body.appendChild(bar);
+      var titulo=function(el){var h=el.querySelector('h1,h2');return h?h.textContent.trim():'';};
+      var show=function(i){
+        idx=Math.max(0,Math.min(slides.length-1,i));
+        slides.forEach(function(el,k){el.classList.toggle('slide-on',k===idx);});
+        window.scrollTo(0,0);
+        bar.querySelector('.p-count').textContent=(idx+1)+' / '+slides.length;
+        bar.querySelector('.p-title').textContent=titulo(slides[idx]);
+        setTimeout(function(){resizePlots(slides[idx]);},30);
+      };
+      var start=function(){
+        document.body.classList.add('presenting'); show(0);
+        var de=document.documentElement;
+        if(de.requestFullscreen){ de.requestFullscreen().then(function(){pantalla=true;}).catch(function(){}); }
+      };
+      var stop=function(){
+        document.body.classList.remove('presenting');
+        slides.forEach(function(el){el.classList.remove('slide-on');});
+        if(document.fullscreenElement&&document.exitFullscreen){ document.exitFullscreen().catch(function(){}); }
+        pantalla=false; setTimeout(function(){resizePlots(document);},30);
+      };
+      btn.addEventListener('click',start);
+      bar.addEventListener('click',function(e){
+        var a=e.target.closest('button'); if(!a)return;
+        var acc=a.getAttribute('data-a');
+        if(acc==='prev')show(idx-1); else if(acc==='next')show(idx+1); else if(acc==='exit')stop();
+      });
+      document.addEventListener('keydown',function(e){
+        if(!document.body.classList.contains('presenting'))return;
+        if(/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||''))return;
+        var k=e.key;
+        if(k==='ArrowRight'||k==='PageDown'||k===' '){e.preventDefault();show(idx+1);}
+        else if(k==='ArrowLeft'||k==='PageUp'){e.preventDefault();show(idx-1);}
+        else if(k==='Home'){show(0);} else if(k==='End'){show(slides.length-1);}
+        else if(k==='Escape'){stop();}
+      });
+      // Si el navegador sale de pantalla completa (Esc), se sale también del modo.
+      document.addEventListener('fullscreenchange',function(){
+        if(!document.fullscreenElement&&pantalla&&document.body.classList.contains('presenting'))stop();
+      });
+    }
+  }
 })();
 """
