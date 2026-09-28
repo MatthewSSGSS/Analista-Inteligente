@@ -492,7 +492,12 @@ if not st.session_state.workbook:
     st.info("Carga un archivo para comenzar, o selecciona varios archivos en la sección Comparar periodos o archivos, o usa Seguimiento consolidado en la barra lateral.")
     st.stop()
 
-st.session_state.active_sheet = sheet
+# Se vuelven a tomar aquí y no de la barra lateral: allá nacen dentro de
+# `if wb:`, y aunque el `st.stop()` de arriba garantiza que existen, el editor
+# no lo sabe y marcaba `sheet`/`item` como posiblemente sin definir. Son los
+# mismos valores: la barra lateral acaba de guardar la hoja en active_sheet.
+wb=st.session_state.workbook
+sheet=st.session_state.active_sheet
 item=wb["sheets"][sheet]
 df=item["processed"].copy()
 schema=item["profile"]["schema"]
