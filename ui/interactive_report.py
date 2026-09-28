@@ -18,6 +18,7 @@ import pandas as pd
 
 from core.universal_analysis import ADDITIVE, semantic_map, choose_metric
 from visualization.charts import metric_candidates, dimension_candidates, _label
+from ui.report_base import documento
 
 MAX_ROWS = 20000
 
@@ -115,8 +116,9 @@ const DATE_COL = {json.dumps(date_col)};
 const SEARCH_COL = {json.dumps(search_col)};
 const DIST_COL = {json.dumps(dist_dim)};
 const FILTER_COLS = {json.dumps(filter_dims)};
-const METRIC_LABEL = {json.dumps(metric_label)};
-const SEARCH_LABEL = {json.dumps(_esc(_label(schema, search_col)).lower() if search_col else "elementos")};
+const METRIC_LABEL = {json.dumps(_label(schema, metric) if metric else "Registros")};
+const SEARCH_LABEL = {json.dumps(_label(schema, search_col).lower() if search_col else "elementos")};
+const NAME_LABEL = {json.dumps(_label(schema, search_col) if search_col else "Nombre")};
 
 function fmtNumber(v) {{
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -195,11 +197,11 @@ function renderNarrative(rows) {{
   }}
   const total = aggregate(rows);
   const uniqueSearch = SEARCH_COL ? new Set(rows.map(function(r) {{ return r[SEARCH_COL]; }})).size : null;
-  let text = "Con los filtros actuales se analizan " + rows.length.toLocaleString("es-CO") + " registros";
+  let text = rows.length.toLocaleString("es-CO") + " registros con los filtros actuales";
   if (SEARCH_COL && uniqueSearch !== null) {{
-    text += " (" + uniqueSearch.toLocaleString("es-CO") + " valores distintos de " + SEARCH_LABEL + ")";
+    text += " (" + uniqueSearch.toLocaleString("es-CO") + " de " + SEARCH_LABEL + ")";
   }}
-  text += ", con un " + (ADDITIVE ? "total" : "promedio") + " de " + METRIC_LABEL.toLowerCase() + " de " + fmtNumber(total) + ".";
+  text += " · " + (ADDITIVE ? "total" : "promedio") + " de " + METRIC_LABEL.toLowerCase() + ": " + fmtNumber(total) + ".";
   el.textContent = text;
 }}
 
@@ -243,14 +245,20 @@ function renderDistribution(rows) {{
   let entries = Object.keys(byGroup).map(function(g) {{ return [g, ADDITIVE ? byGroup[g].sum : byGroup[g].sum / byGroup[g].count]; }});
   entries.sort(function(a,b) {{ return b[1]-a[1]; }});
   entries = entries.slice(0, 10);
-  Plotly.react(box, [{{x: entries.map(function(e) {{ return e[1]; }}), y: entries.map(function(e) {{ return e[0]; }}), type: "bar", orientation: "h", marker: {{color: "#172033"}}}}], {{
+  Plotly.react(box, [{{x: entries.map(function(e) {{ return e[1]; }}), y: entries.map(function(e) {{ return e[0]; }}), type: "bar", orientation: "h", marker: {{color: entries.map(function(e, i) {{ return i === 0 ? "#e4002b" : "#94a3b8"; }})}}}}], {{
     margin: {{l: 140, r: 20, t: 10, b: 40}}, height: 320, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
     font: {{family: "Inter,Segoe UI,Arial,sans-serif", size: 12}}, xaxis: {{title: METRIC_LABEL}}, yaxis: {{autorange: "reversed"}}
   }}, {{displayModeBar: false, responsive: true}});
 }}
 
+function escHtml(v) {{
+  return String(v === null || v === undefined ? "" : v).replace(/[&<>"']/g, function(c) {{
+    return {{"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}}[c];
+  }});
+}}
+
 function renderTables(rows) {{
-  if (!SEARCH_COL || !METRIC) return;
+  if (!SEARCH_COL || !METRIC) {{ document.getElementById("tables_row").style.display = "none"; return; }}
   const byName = {{}};
   rows.forEach(function(r) {{
     const n = r[SEARCH_COL];
@@ -264,16 +272,36 @@ function renderTables(rows) {{
   }});
   let entries = Object.keys(byName).map(function(n) {{ return [n, ADDITIVE ? byName[n].sum : byName[n].sum/byName[n].count, byName[n].extra]; }});
   entries.sort(function(a,b) {{ return b[1]-a[1]; }});
+  const total = entries.length;
+  // Posición y promedio sobre TODOS los visibles con los filtros, no solo
+  // sobre los 10 que se muestran.
+  const avg = total ? entries.reduce(function(a, e) {{ return a + e[1]; }}, 0) / total : 0;
+  const maxAbs = entries.reduce(function(m, e) {{ return Math.max(m, Math.abs(e[1])); }}, 0) || 1;
   const extraCols = FILTER_COLS.slice(0, 2);
-  function renderTable(el, list) {{
-    let headHtml = "<tr><th>#</th><th>{_esc(_label(schema, search_col)) if search_col else "Nombre"}</th>" + extraCols.map(function(c) {{ return "<th>"+c+"</th>"; }}).join("") + "<th>" + METRIC_LABEL + "</th></tr>";
-    let bodyHtml = list.map(function(e, i) {{
-      return "<tr><td>"+(i+1)+"</td><td>"+e[0]+"</td>" + extraCols.map(function(c) {{ return "<td>"+(e[2][c]!==undefined?e[2][c]:"—")+"</td>"; }}).join("") + "<td>"+fmtNumber(e[1])+"</td></tr>";
+  function renderTable(el, list, startRank, step) {{
+    const headHtml = "<tr><th class='num'>#</th><th>" + escHtml(NAME_LABEL) + "</th>" + extraCols.map(function(c) {{ return "<th>"+escHtml(c)+"</th>"; }}).join("") + "<th class='num'>" + escHtml(METRIC_LABEL) + "</th><th>vs. promedio</th></tr>";
+    const bodyHtml = list.map(function(e, i) {{
+      const diff = avg ? (e[1] - avg) / Math.abs(avg) * 100 : 0;
+      const tone = diff >= 0 ? "pos" : "neg";
+      const width = Math.max(Math.abs(e[1]) / maxAbs * 110, 2).toFixed(0);
+      return "<tr><td class='num muted'>" + (startRank + step * i) + "</td><td><b>" + escHtml(e[0]) + "</b></td>" +
+        extraCols.map(function(c) {{ return "<td>" + (e[2][c] !== undefined ? escHtml(e[2][c]) : "—") + "</td>"; }}).join("") +
+        "<td class='num'>" + fmtNumber(e[1]) + "</td><td class='barcell'><span class='bar" + (e[1] < avg ? " soft" : "") +
+        "' style='width:" + width + "px'></span><span class='kpi-delta " + tone + "'>" + (diff >= 0 ? "+" : "") + diff.toFixed(0) + "%</span></td></tr>";
     }}).join("");
-    el.innerHTML = "<table><thead>"+headHtml+"</thead><tbody>"+bodyHtml+"</tbody></table>";
+    el.innerHTML = list.length ? "<table><thead>" + headHtml + "</thead><tbody>" + bodyHtml + "</tbody></table>"
+                               : "<div class='empty'>Sin datos con estos filtros.</div>";
   }}
-  renderTable(document.getElementById("table_top"), entries.slice(0, 10));
-  renderTable(document.getElementById("table_bottom"), entries.slice(-10).reverse());
+  document.getElementById("top_title").textContent = total > 10 ? "Los 10 con mayor " + METRIC_LABEL.toLowerCase() : "Ranking completo";
+  document.getElementById("ref_note").textContent = total ? "Posición y promedio calculados sobre los " + total.toLocaleString("es-CO") + " visibles con estos filtros." : "";
+  renderTable(document.getElementById("table_top"), entries.slice(0, 10), 1, 1);
+  const bottomCard = document.getElementById("bottom_card");
+  if (total > 10) {{
+    bottomCard.style.display = "";
+    renderTable(document.getElementById("table_bottom"), entries.slice(-10).reverse(), total, -1);
+  }} else {{
+    bottomCard.style.display = "none";
+  }}
 }}
 
 function exportCsv() {{
@@ -316,74 +344,60 @@ document.addEventListener("DOMContentLoaded", function() {{
 
     kpi_extra = "" if metric else "style='display:none'"
     plotly_js = _plotly_js_bundle()
+    nombre = _esc(_label(schema, search_col)) if search_col else "Elementos"
+    nota_truncado = (f" · archivo recortado a {MAX_ROWS:,} filas para mantenerlo liviano" if truncated else "")
 
-    return f"""<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Informe interactivo — {_esc(filename)}</title>
-<script>{plotly_js}</script>
-<style>
-:root{{--bg:#f4f6fa;--card:#fff;--text:#172033;--muted:#667085;--line:#dfe4ec;--blue:#e4002b;--shadow:0 5px 18px rgba(23,32,51,.06)}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.45}}
-.wrap{{max-width:1280px;margin:0 auto;padding:28px 20px 60px}}
-.header{{background:#fff;border:1px solid var(--line);border-top:6px solid var(--blue);border-radius:16px;padding:20px 24px;box-shadow:var(--shadow)}}
-.kicker{{font-size:10px;font-weight:900;letter-spacing:.13em;color:var(--blue);text-transform:uppercase;display:flex;align-items:center;gap:8px}}
-h1{{margin:6px 0 6px;font-size:22px}}
-.narrative{{color:var(--muted);font-size:13px;max-width:900px}}
-.filters{{display:flex;flex-wrap:wrap;align-items:end;gap:12px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-top:16px;box-shadow:var(--shadow)}}
-.filter-field{{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);font-weight:700}}
-.filter-field select,.filter-field input{{border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12.5px;color:var(--text);min-width:150px}}
-.filter-field.search input{{min-width:200px}}
-.export-btn{{margin-left:auto;background:var(--blue);color:#fff;border:none;border-radius:9px;padding:9px 16px;font-weight:700;font-size:12.5px;cursor:pointer}}
-.export-btn:hover{{background:#c8001f}}
-#result_count{{font-size:11px;color:var(--muted);margin-top:8px}}
-.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:18px}}
-.kpi{{background:#fff;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:15px;box-shadow:var(--shadow)}}
-.kpi-label{{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase}}
-.kpi-value{{font-size:22px;font-weight:800;margin-top:6px}}
-.grid2{{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}}
-.chart-card,.table-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}}
-.chart-card h3,.table-card h3{{margin:0 0 10px;font-size:14px}}
-table{{width:100%;border-collapse:collapse;font-size:12px}}
-th,td{{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}}
-th{{color:var(--muted);font-size:10px;text-transform:uppercase}}
-.footer{{margin-top:30px;color:#8792a3;font-size:11px;text-align:center}}
-@media(max-width:900px){{.grid2{{grid-template-columns:1fr}}.filters{{flex-direction:column;align-items:stretch}}.export-btn{{margin-left:0}}}}
-</style></head>
-<body><div class="wrap">
-<header class="header">
-  <div class="kicker">🔎 Panel Analítico Universal · Informe interactivo</div>
-  <h1>{_esc(filename)} · {_esc(sheet)}</h1>
-  <p class="narrative" id="narrative_text">Cargando resumen…</p>
+    cuerpo = f"""
+<header class="cover">
+  <div class="cover-kicker">Panel Analítico Universal · Informe interactivo</div>
+  <h1>{_esc(sheet)}</h1>
+  <p class="lead" id="narrative_text">Cargando resumen…</p>
+  <div class="cover-meta"><span>Archivo: <b>{_esc(filename)}</b></span><span>Generado: <b>{_esc(generated)}</b></span>
+  <span>Los filtros funcionan dentro de este archivo, sin la app ni internet.</span></div>
 </header>
 
 <section class="filters">
   {search_html}
   {filter_selects}
-  <button class="export-btn" id="export_btn">⬇ Exportar Dataset</button>
+  <div class="filters-end"><span id="result_count"></span><button class="export-btn" id="export_btn" type="button">⬇ Descargar CSV filtrado</button></div>
 </section>
-<div id="result_count"></div>
 
-<section class="kpis" {kpi_extra}>
+<section class="kpis" {kpi_extra} style="margin-top:16px">
   <div class="kpi"><div class="kpi-label">Registros</div><div class="kpi-value" id="kpi_count">—</div></div>
   <div class="kpi"><div class="kpi-label" id="kpi_metric_label">{metric_label}</div><div class="kpi-value" id="kpi_metric">—</div></div>
-  <div class="kpi"><div class="kpi-label">{_esc(_label(schema, search_col)) if search_col else "Elementos"} únicos</div><div class="kpi-value" id="kpi_unique">—</div></div>
-  <div class="kpi"><div class="kpi-label">Promedio por {(_esc(_label(schema, search_col)) if search_col else "elemento").lower()}</div><div class="kpi-value" id="kpi_avg">—</div></div>
+  <div class="kpi"><div class="kpi-label">{nombre} únicos</div><div class="kpi-value" id="kpi_unique">—</div></div>
+  <div class="kpi"><div class="kpi-label">Promedio por {nombre.lower()}</div><div class="kpi-value" id="kpi_avg">—</div></div>
 </section>
 
-<section class="grid2">
-  <div class="chart-card"><h3>📈 Tendencia{f' · {metric_label}' if metric else ''}</h3><div id="chart_trend"></div></div>
-  <div class="chart-card"><h3>📊 Distribución{f' por {dist_label}' if dist_dim else ''}</h3><div id="chart_dist"></div></div>
+<section class="grid2" style="margin-top:14px">
+  <div class="chart-card"><div class="chart-head"><h3>Evolución{f' · {metric_label}' if metric else ''}</h3><p>Por mes, con los filtros aplicados</p></div><div id="chart_trend"></div></div>
+  <div class="chart-card"><div class="chart-head"><h3>Distribución{f' por {dist_label}' if dist_dim else ''}</h3><p>Los 10 de mayor valor; el primero resaltado</p></div><div id="chart_dist"></div></div>
 </section>
 
-<section class="grid2">
-  <div class="table-card"><h3>🏆 Top 10 (mayor {metric_label.lower()})</h3><div id="table_top"></div></div>
-  <div class="table-card"><h3>🔻 Bottom 10 (menor {metric_label.lower()})</h3><div id="table_bottom"></div></div>
+<section class="grid2" id="tables_row" style="margin-top:14px">
+  <div class="table-card"><div class="chart-head"><h3 id="top_title">Los 10 con mayor {metric_label.lower()}</h3><p id="ref_note"></p></div><div class="table-scroll" id="table_top"></div></div>
+  <div class="table-card" id="bottom_card"><div class="chart-head"><h3>Los 10 con menor {metric_label.lower()}</h3><p>Donde más margen de mejora hay</p></div><div class="table-scroll" id="table_bottom"></div></div>
 </section>
 
-<footer class="footer">
-  Generado: {_esc(generated)} · {len(payload_df):,} registros incluidos{' (archivo truncado a ' + f'{MAX_ROWS:,}' + ' filas para mantener el archivo liviano)' if truncated else ''}.
-  Los filtros de arriba funcionan dentro de este archivo, sin necesitar la app.
-</footer>
-</div>
+<footer class="footer">{len(payload_df):,} registros incluidos{nota_truncado}.</footer>
 <script>{js}</script>
-</body></html>"""
+"""
+    return documento(f"Informe interactivo — {sheet} · {filename}", cuerpo,
+                     css_extra=_CSS_EXTRA, head_extra=f"<script>{plotly_js}</script>\n")
+
+
+_CSS_EXTRA = """
+.filters{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;margin-top:16px;box-shadow:var(--shadow)}
+.filter-field{display:flex;flex-direction:column;gap:4px;font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.filter-field select,.filter-field input{border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:13px;color:var(--text);min-width:150px;background:#fff;font-family:inherit;text-transform:none;letter-spacing:0}
+.filter-field.search input{min-width:210px}
+.filters-end{margin-left:auto;display:flex;align-items:center;gap:12px}
+#result_count{font-size:12px;color:var(--muted)}
+.export-btn{background:var(--brand);color:#fff;border:none;border-radius:9px;padding:9px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit}
+.export-btn:hover{background:var(--brand-dark)}
+td.barcell{white-space:nowrap;width:auto}
+td.barcell .bar{display:inline-block;vertical-align:middle;margin-right:8px}
+td.barcell .kpi-delta{display:inline;margin:0}
+@media(max-width:860px){.filters{position:static;flex-direction:column;align-items:stretch}.filters-end{margin-left:0;justify-content:space-between}}
+@media print{.filters{position:static}.export-btn{display:none}}
+"""

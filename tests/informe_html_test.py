@@ -63,7 +63,7 @@ def test_las_secciones_de_decision_estan():
 
 def test_traen_sus_graficos_y_sus_cifras():
     html = _informe()
-    check("hay gráficos de las secciones nuevas", html.count("VISUAL") >= 5)
+    check("hay gráficos de las secciones nuevas", html.count('class="chart-card"') >= 5)
     check("el motor de gráficos se incrusta UNA sola vez (el archivo abre sin internet)",
           html.count("plotly.js v") <= 1 and "Plotly.newPlot" in html)
     check("el cuadro compara contra la meta del archivo", "Cumplimiento = resultado ÷ meta" in html)
@@ -91,8 +91,38 @@ def test_se_descartan_solas_sin_datos_para_ellas():
     check("y el informe se genera igual", "Indicadores clave" in html and len(html) > 10000)
 
 
+def test_lo_que_hay_que_hacer_va_primero_y_se_dice_una_vez():
+    """El informe abría con cifras y dejaba el plan al final, y el mismo
+    hallazgo salía cuatro veces (atención, plan, lectura y alertas)."""
+    html = _informe()
+    pos = {sid: html.find(f'id="{sid}"') for sid in ("lectura-ejecutiva", "resumen", "planes", "anexo")}
+    check("todas las secciones base están", all(p > 0 for p in pos.values()))
+    check("el resumen con prioridades abre el informe y el anexo lo cierra",
+          pos["lectura-ejecutiva"] < pos["resumen"] < pos["planes"] < pos["anexo"])
+    check("el resumen trae semáforo y primer paso", 'class="semaforo"' in html and "Primer paso:" in html)
+    tarjetas = re.findall(r"<article class='finding[^']*'><span class='dot'></span><div><h3>([^<]+)</h3>", html)
+    planes = re.findall(r'<article class="plan [a-z]+">.*?<h3>([^<]+)</h3>', html)
+    check("un hallazgo que ya es plan no se repite como hallazgo", not set(tarjetas) & set(planes))
+    anexo = html[pos["anexo"]:]
+    check("el detalle técnico va plegado", anexo.count('<details class="more"') >= 2)
+    check("y se abre solo al imprimir", "beforeprint" in html)
+
+
+def test_libro_abre_con_tablero_por_hoja():
+    from ui.report_html import build_workbook_html_report
+    filas = [{"Mes": m, "Región": r, "Altas": 100 + i, "Meta": 110}
+             for i, m in enumerate(pd.date_range("2026-01-01", periods=4, freq="MS")) for r in ("R1", "R2", "R3")]
+    item = profile_sheet(pd.DataFrame(filas), {"sheet_name": "Comercial", "workbook_name": "c.xlsx"})
+    html = build_workbook_html_report({"filename": "c.xlsx", "sheets": {"Comercial": item}})
+    check("el libro abre con el tablero por hoja", 'id="resumen-libro"' in html and "Tablero por hoja" in html)
+    check("cada hoja tiene su análisis completo plegado", 'id="comercial-detalle"' in html)
+    check("el motor de gráficos va una sola vez en el libro", html.count("plotly.js v") <= 1)
+
+
 if __name__ == "__main__":
     test_las_secciones_de_decision_estan()
     test_traen_sus_graficos_y_sus_cifras()
     test_se_descartan_solas_sin_datos_para_ellas()
+    test_lo_que_hay_que_hacer_va_primero_y_se_dice_una_vez()
+    test_libro_abre_con_tablero_por_hoja()
     print("\nInforme HTML test completado sin errores.")

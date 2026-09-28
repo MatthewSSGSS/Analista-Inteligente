@@ -71,8 +71,9 @@ HALLAZGOS
     # Informes HTML autocontenidos y compartibles.
     st.markdown("### 🌐 Informes HTML para compartir")
     st.caption(
-        "Puedes sacar tres tipos de informe: uno general de todo el Excel, uno enfocado en una "
-        "sola hoja, o uno que refleje exactamente los filtros que tienes activos ahora mismo."
+        "Todos abren con el resumen para decidir (veredicto, semáforo y prioridades con su primer "
+        "paso), siguen con el plan de acción y dejan el detalle técnico plegado al final. "
+        "Se abren sin la app ni internet y, al imprimir, sale todo desplegado."
     )
 
     filters_summary = _active_filters_summary(schema)
@@ -111,11 +112,9 @@ HALLAZGOS
 
     st.divider()
 
-    st.divider()
-
     st.markdown("#### 🧭 Informe interactivo (filtros que funcionan dentro del HTML)")
     st.caption(
-        "A diferencia de los otros tres, este lleva los datos completos metidos adentro. "
+        "A diferencia de los demás, este lleva los datos completos metidos adentro. "
         "Quien lo abra puede cambiar los filtros ahí mismo — sin la app, sin internet — y todo "
         "se actualiza solo: KPIs, gráficos y tablas de mayor/menor valor."
     )
