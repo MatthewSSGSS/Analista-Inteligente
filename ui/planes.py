@@ -26,6 +26,7 @@ Streamlit.
 from __future__ import annotations
 
 import hashlib
+import html
 import io
 from datetime import date
 
@@ -274,15 +275,74 @@ def _css() -> None:
         .plan-caja-texto{font-size:13px;color:var(--text);line-height:1.45}
         .plan-pasos-titulo{font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
           color:var(--muted);margin:12px 0 2px}
+
+        .dx{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);
+          padding:20px 22px;box-shadow:var(--shadow-md);margin:4px 0 16px}
+        .dx-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap}
+        .dx-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.11em;color:var(--blue);text-transform:uppercase}
+        .dx-titular{font-size:21px;font-weight:850;font-family:'Sora','Inter',sans-serif;color:var(--text);
+          margin:4px 0 2px;letter-spacing:-.015em;line-height:1.3}
+        .dx-sub{font-size:13px;color:var(--muted)}
+        .dx-delta{font-size:24px;font-weight:850;font-family:'Sora','Inter',sans-serif;padding:8px 14px;
+          border-radius:12px;white-space:nowrap}
+        .dx-delta.neg{color:#E4002B;background:color-mix(in srgb,#E4002B 10%,transparent)}
+        .dx-delta.pos{color:#22A06B;background:color-mix(in srgb,#22A06B 10%,transparent)}
+        .dx-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;margin-top:16px}
+        @media(max-width:980px){.dx-grid{grid-template-columns:1fr}}
+        .dx-card{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-md);padding:14px 16px}
+        .dx-lbl{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+        .dx-row{margin-bottom:12px}
+        .dx-row-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline;font-size:13.5px}
+        .dx-row-top b{color:var(--text)}
+        .dx-row-top span{font-weight:800;font-variant-numeric:tabular-nums}
+        .dx-bar{height:7px;background:var(--line-soft);border-radius:999px;margin:5px 0 4px;overflow:hidden}
+        .dx-bar i{display:block;height:100%;border-radius:999px}
+        .dx-row-sub{font-size:12px;color:var(--muted)}
+        .dx-row-sub b{color:var(--text);font-weight:650}
+        .dx-nota{font-size:12px;color:var(--muted);margin-top:4px;padding-top:8px;border-top:1px dashed var(--line)}
+        .dx-lever{display:grid;grid-template-columns:90px 1fr auto;gap:8px 10px;align-items:center;font-size:12.5px}
+        .dx-lever .dx-bar{margin:0}
+        .dx-lever span{font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
+        .dx-lever-txt{font-size:13px;color:var(--text);line-height:1.5;margin-top:10px}
+        .dx-lever-acc{font-size:12.5px;color:var(--text);margin-top:8px;padding:8px 10px;border-radius:8px;
+          background:var(--panel);border-left:3px solid var(--blue)}
+        .atq{display:grid;gap:10px;margin:2px 0 18px}
+        .atq-item{display:grid;grid-template-columns:42px minmax(0,1fr) 150px;gap:14px;align-items:center;
+          background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-md);padding:12px 16px;
+          box-shadow:var(--shadow-sm)}
+        @media(max-width:760px){.atq-item{grid-template-columns:34px 1fr}.atq-monto{grid-column:2}}
+        .atq-num{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:850;
+          font-family:'Sora','Inter',sans-serif;color:#fff;background:var(--blue)}
+        .atq-titulo{font-size:15px;font-weight:800;color:var(--text);font-family:'Sora','Inter',sans-serif}
+        .atq-texto{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:2px}
+        .atq-quien{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+        .atq-quien span{font-size:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+        .atq-quien b{margin-left:4px;color:var(--text)}
+        .atq-acc{font-size:12.5px;color:var(--text);margin-top:6px}
+        .atq-monto{text-align:right}
+        .atq-monto b{display:block;font-size:22px;font-weight:850;font-family:'Sora','Inter',sans-serif;color:#22A06B}
+        .atq-monto small{font-size:11px;color:var(--muted)}
+        .tarjeta-valor{font-size:12px;font-weight:800;color:#22A06B;margin:-4px 0 8px}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
+def _pasos_guardados() -> dict:
+    """Copia de las casillas marcadas fuera de los widgets.
+
+    La navegación solo dibuja la vista activa, y Streamlit borra el estado de
+    un widget que no se dibujó: sin esta copia, los pasos marcados se perdían
+    al pasar a otra vista y volver."""
+    return st.session_state.setdefault("planes_pasos_marcados", {})
+
+
 def _pasos_hechos(plan: dict) -> list[bool]:
     clave = _clave_plan(plan)
-    return [bool(st.session_state.get(f"paso_{clave}_{j}")) for j in range(len(plan["pasos"]))]
+    guardados = _pasos_guardados()
+    return [bool(st.session_state.get(f"paso_{clave}_{j}", guardados.get(f"paso_{clave}_{j}", False)))
+            for j in range(len(plan["pasos"]))]
 
 
 def _chips_seguimiento(filas: list) -> str:
@@ -371,7 +431,8 @@ def _tablero(planes: list, filas: list) -> None:
                 f'<div class="tarjeta" style="--c:{tono["color"]}">'
                 f'<div class="tarjeta-top"><span class="tarjeta-num">#{fila["#"]}</span>{alerta}</div>'
                 f'<div class="tarjeta-titulo">{clean_display_text(plan["titulo"])}</div>'
-                f'<div class="tarjeta-casos">{chips_casos}</div>'
+                + (f'<div class="tarjeta-valor">💰 {plan["impacto_txt"]}</div>' if plan.get("impacto_txt") else "")
+                + f'<div class="tarjeta-casos">{chips_casos}</div>'
                 f'<div class="tarjeta-avance"><span style="width:{ancho:.0f}%"></span></div>'
                 f'<div class="tarjeta-pie"><span style="color:{color_estado};font-weight:600">'
                 f'{fila["Estado"]} · {fila["hechos"]}/{fila["total"]} pasos</span>{fecha}</div>'
@@ -505,24 +566,135 @@ def _plan(i: int, plan: dict, fila: dict) -> None:
 
         st.markdown('<div class="plan-pasos-titulo">Plan · marca cada paso cuando esté hecho</div>',
                     unsafe_allow_html=True)
+        guardados = _pasos_guardados()
         for j, paso in enumerate(plan["pasos"]):
-            st.checkbox(f"{j + 1}. {paso}", key=f"paso_{clave}_{j}")
+            k = f"paso_{clave}_{j}"
+            st.checkbox(f"{j + 1}. {paso}", key=k, value=bool(guardados.get(k, False)))
+            guardados[k] = bool(st.session_state.get(k, False))
         hechos = sum(_pasos_hechos(plan))
         total = len(plan["pasos"])
         if total:
             st.progress(hechos / total, text=f"{hechos} de {total} pasos completados")
 
 
+def _monto(v: float) -> str:
+    from core.diagnostics import _fmt
+    return _fmt(v)
+
+
+def _signo(v: float) -> str:
+    return ("+" if v > 0 else "−") + _monto(abs(v))
+
+
+def _diagnostico(g: dict) -> None:
+    """Por qué se movió el número: causa raíz en dos niveles y palanca.
+
+    Es la pregunta que un gerente hace antes de aprobar cualquier plan: si
+    no se sabe dónde nació el cambio ni si fue volumen o precio, el plan
+    ataca a ciegas."""
+    esc = lambda t: html.escape(str(clean_display_text(t)))  # noqa: E731
+    tono = "neg" if g.get("empeoro") else "pos"
+    delta = ""
+    if g.get("pct") is not None and g.get("se_movio"):
+        delta = f'<div class="dx-delta {tono}">{"▲" if g["delta"] > 0 else "▼"} {abs(g["pct"]):.1f}%</div>'
+
+    causa_html = ""
+    c = g.get("causas")
+    if c and c.get("nodos"):
+        mayor = max(abs(n["delta"]) for n in c["nodos"]) or 1
+        color = "#E4002B" if g["delta"] < 0 else "#22A06B"
+        filas = []
+        for n in c["nodos"]:
+            peso = (f' · {n["peso"]:.0f}% del cambio' if n.get("peso") is not None and 0 < abs(n["peso"]) <= 300 else "")
+            sub = ""
+            if n.get("detalle") and n["detalle"]["segmentos"]:
+                partes = [f'<b>{esc(x["nombre"])}</b> {_signo(x["delta"])}' for x in n["detalle"]["segmentos"]]
+                sub = f'<div class="dx-row-sub">↳ Por {esc(n["detalle"]["etiqueta"].lower())}: {" · ".join(partes)}</div>'
+            filas.append(
+                f'<div class="dx-row"><div class="dx-row-top"><b>{esc(n["nombre"])}</b>'
+                f'<span style="color:{color}">{_signo(n["delta"])}</span></div>'
+                f'<div class="dx-bar"><i style="width:{abs(n["delta"]) / mayor * 100:.0f}%;background:{color}"></i></div>'
+                f'<div class="dx-row-sub">De {_monto(n["antes"])} a {_monto(n["ahora"])}{peso}</div>{sub}</div>')
+        nota = ""
+        if c.get("compensaron"):
+            k = c["compensaron"][0]
+            nota = (f'<div class="dx-nota">En sentido contrario: <b>{esc(k["nombre"])}</b> {_signo(k["delta"])} '
+                    f'{"amortiguó la caída" if g["delta"] < 0 else "frenó la subida"}.</div>')
+        causa_html = (f'<div class="dx-card"><div class="dx-lbl">Dónde nació el cambio · por {esc(c["etiqueta"].lower())}</div>'
+                      f'{"".join(filas)}{nota}</div>')
+
+    palanca_html = ""
+    p = g.get("palanca")
+    if p:
+        mayor = max(abs(p["efecto_volumen"]), abs(p["efecto_ticket"])) or 1
+        def barra(etq, v, pct):
+            col = "#22A06B" if v >= 0 else "#E4002B"
+            return (f'<b>{etq}</b><div class="dx-bar"><i style="width:{abs(v) / mayor * 100:.0f}%;background:{col}"></i></div>'
+                    f'<span style="color:{col}">{_signo(v)}</span>')
+        texto = g.get("texto_palanca") or ""
+        palanca_html = (
+            '<div class="dx-card"><div class="dx-lbl">La palanca · volumen o ticket</div>'
+            f'<div class="dx-lever">{barra("Volumen", p["efecto_volumen"], p["ops_pct"])}'
+            f'{barra("Ticket", p["efecto_ticket"], p["ticket_pct"])}</div>'
+            f'<div class="dx-lever-txt">{esc(texto)}</div>'
+            + (f'<div class="dx-lever-acc">👉 {esc(g["accion_palanca"])}</div>' if g.get("accion_palanca") else "")
+            + '</div>')
+
+    grid = ""
+    if causa_html or palanca_html:
+        grid = f'<div class="dx-grid">{causa_html or "<div></div>"}{palanca_html or ""}</div>'
+    sub = f'{esc(g["mes_b"])} frente a {esc(g["mes_a"])} · {esc(g["etiqueta"])}'
+    if g.get("parcial"):
+        sub += " · el último mes está incompleto y se dejó fuera"
+    st.markdown(
+        f'<div class="dx"><div class="dx-head"><div><div class="dx-eyebrow">Por qué se movió el número</div>'
+        f'<div class="dx-titular">{esc(g["titular"])}</div><div class="dx-sub">{sub}</div></div>{delta}</div>'
+        f'{grid}</div>', unsafe_allow_html=True)
+
+
+def _que_atacar(g: dict) -> None:
+    """Las oportunidades con cifra, de la que más vale a la que menos."""
+    oportunidades = g.get("oportunidades") or []
+    if not oportunidades:
+        return
+    esc = lambda t: html.escape(str(clean_display_text(t)))  # noqa: E731
+    items = []
+    for i, o in enumerate(oportunidades, 1):
+        quienes = "".join(f'<span>{esc(q["nombre"])}<b>{_monto(q["monto"])}</b></span>' for q in o["quienes"])
+        pct = f'{o["pct_total"]:.0f}% de {esc(g["mes_b"])}' if o.get("pct_total") else "al mes"
+        items.append(
+            f'<div class="atq-item"><div class="atq-num">{i}</div><div><div class="atq-titulo">{esc(o["titulo"])}</div>'
+            f'<div class="atq-texto">{esc(o["texto"])}</div><div class="atq-quien">{quienes}</div>'
+            f'<div class="atq-acc">👉 {esc(o["accion"])}</div></div>'
+            f'<div class="atq-monto"><b>+{_monto(o["monto"])}</b><small>{pct}</small></div></div>')
+    st.markdown(section_header(
+        "Qué atacar primero",
+        subtitle="Cada oportunidad con lo que vale al mes. Van en orden de valor: empieza por la de arriba.",
+        compact=True), unsafe_allow_html=True)
+    st.markdown(f'<div class="atq">{"".join(items)}</div>', unsafe_allow_html=True)
+    st.caption("Recuperar lo perdido, cerrar la meta y subir a los rezagados se pueden solapar (un mismo caso puede "
+               "estar en dos), así que no se suman entre sí. «Subir a los rezagados» cuenta solo la mitad del camino "
+               "hasta la mediana: es lo que un plan de un mes puede mover.")
+
+
 def render_planes(df: pd.DataFrame, schema: dict, dashboard: dict) -> None:
     _css()
     st.markdown(section_header(
-        "Planes de mejora",
+        "Qué atacar para mejorar los números",
         eyebrow="DECISIONES",
-        subtitle="Cada hallazgo del análisis convertido en un plan con pasos concretos y una forma de medir si funcionó.",
+        subtitle="Por qué se movió el resultado, qué vale más la pena atacar y el plan para hacerlo.",
     ), unsafe_allow_html=True)
 
     resultado = generar(df, schema, dashboard or {})
     planes = resultado["planes"]
+    g = resultado.get("gerencia")
+    if g:
+        _diagnostico(g)
+        _que_atacar(g)
+        st.markdown(section_header(
+            "Plan de acción",
+            subtitle="Cada frente con su urgencia, lo que vale, quién lo lleva y cómo se sabe que funcionó.",
+            compact=True), unsafe_allow_html=True)
     if not planes:
         st.success("No hay hallazgos que convertir en plan con los datos visibles. "
                    "Si esperabas ver algo aquí, revisa los filtros activos.")

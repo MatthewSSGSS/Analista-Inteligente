@@ -1,6 +1,8 @@
 from __future__ import annotations
 import pandas as pd
 import streamlit as st
+
+from ui.layouts.tabs import ir_a, VISTA_ATACAR, VISTA_SEGUIMIENTO
 from core.universal_analysis import dynamic_kpis, smart_chart_questions, period_series
 from core.tracking_engine import project_metric
 from core.dates import format_month_year
@@ -14,6 +16,40 @@ from ui.layouts.columns import two_column, kpi_grid
 from ui.person_profile import has_entity
 
 
+def _por_que_y_que_atacar(df, schema, dashboard) -> None:
+    """La lectura gerencial en tres frases, justo bajo el veredicto.
+
+    El veredicto dice CUÁNTO se movió el número; un gerente pregunta enseguida
+    por qué y qué hacer. Aquí va la respuesta corta (causa, palanca y lo que
+    más vale atacar) y un botón a la vista con el detalle y el plan."""
+    import html as _html
+    from core.gerencia import analisis_gerencial
+    g = (dashboard or {}).get("gerencia") if isinstance(dashboard, dict) else None
+    if g is None and not (isinstance(dashboard, dict) and "gerencia" in dashboard):
+        try:
+            g = analisis_gerencial(df, schema, dashboard)
+        except Exception:
+            g = None
+    if not g or not g.get("frases"):
+        return
+    frases = [f for f in g["frases"] if not f.startswith("En sentido contrario") and not f.startswith("Le siguen")][:3]
+    items = "".join(f"<li>{_html.escape(clean_display_text(f))}</li>" for f in frases)
+    st.markdown(
+        """<style>
+        .pq-card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--blue);
+          border-radius:var(--radius-md);padding:14px 18px;box-shadow:var(--shadow-sm);margin:6px 0 4px}
+        .pq-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--blue)}
+        .pq-card ul{margin:6px 0 0;padding-left:18px}
+        .pq-card li{font-size:13.5px;color:var(--text);line-height:1.5;margin-bottom:3px}
+        </style>"""
+        f'<div class="pq-card"><div class="pq-eyebrow">Por qué y qué atacar · {_html.escape(g["mes_b"])} vs {_html.escape(g["mes_a"])}</div>'
+        f"<ul>{items}</ul></div>",
+        unsafe_allow_html=True,
+    )
+    st.button("🎯 Ver qué atacar y el plan de acción", key="ir_atacar_resumen", type="primary",
+              on_click=ir_a, args=(VISTA_ATACAR,))
+
+
 def render_executive(df, schema, dashboard):
     st.markdown(banner_header("Resumen ejecutivo", "Vista ejecutiva · lectura compacta para decidir rápido. El contenido se adapta al tipo de Excel detectado.", "ciudad_red.jpg"), unsafe_allow_html=True)
 
@@ -25,13 +61,16 @@ def render_executive(df, schema, dashboard):
     if isinstance(dashboard, dict) and dashboard.get("executive"):
         executive_headline(dashboard)
 
+    _por_que_y_que_atacar(df, schema, dashboard)
+
     # El análisis de seguimiento ya no vive aquí dentro: tiene pestaña propia
     # ("🔎 Análisis de seguimiento"). Enterrado a media página, con un botón
     # que había que descubrir, era de las herramientas menos usadas del panel
     # pese a responder una de las preguntas más frecuentes.
     if has_entity(df, schema):
-        st.caption("¿Quieres ver un punto, asesor o código en concreto? Está en la pestaña "
-                   "**🔎 Análisis de seguimiento**, con sus alertas y su comparación contra el grupo.")
+        st.button("🔎 Ver un punto, asesor o código en concreto", key="ir_seguimiento_res",
+                  on_click=ir_a, args=(VISTA_SEGUIMIENTO,),
+                  help="Abre el seguimiento de un caso: sus alertas y su comparación contra el grupo.")
 
     # ── Layout de dos columnas: a la izquierda los KPIs y los gráficos
     # principales (lo que ocupa más espacio de lectura), a la derecha la

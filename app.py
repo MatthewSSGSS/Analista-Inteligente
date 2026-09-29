@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from ui.styles.theme import inject_theme
 from ui.layouts.hero import hero
-from ui.layouts.tabs import grouped_nav
+from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_SEGUIMIENTO
 from ui.components.section import section_header
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
@@ -610,85 +610,63 @@ usable_sheet_count = sum(
 )
 multi_sheet_enabled = usable_sheet_count >= 2
 
-# La comparativa vive en el mismo producto, pero separada del análisis individual.
-# El análisis de seguimiento SÍ es una pestaña propia: antes se abría con un botón
-# dentro del dashboard y quedaba enterrado a media página, cuando es una de las
-# preguntas que más se repiten ("¿cómo va este punto?").
-general_views = [
-    ("🏠 Inicio", lambda: render_home(wb, sheet, mode_info, dashboard, seleccion=seleccion)),
-    ("Asistente IA", lambda: render_assistant(df, schema, item["profile"], mode_info, dashboard)),
-    ("Datos", lambda: render_data_table(df)),
-    ("Calidad", lambda: render_quality(item["profile"])),
-    ("Exportar", lambda: render_exports(df,dashboard,wb["filename"],sheet,full_df=item["processed"],schema=schema,workbook=wb)),
+# ── Navegación ─────────────────────────────────────────────────────────────
+# Pocas vistas principales —lo que un gerente abre todos los días, en el orden
+# en que se usa: cómo va, qué atacar, quién va bien y quién no, canales,
+# hacia dónde va— y el resto de herramientas en «➕ Más». Solo se ejecuta la
+# vista abierta (ver ui/layouts/tabs.py): antes se ejecutaban todas en cada
+# clic y la app se sentía lenta.
+V_INICIO, V_RESUMEN, V_ATACAR = "🏠 Inicio", "📋 Resumen", VISTA_ATACAR
+V_CUADRO, V_CANALES, V_PROYECCION, V_EXPORTAR = "📊 Cómo va cada uno", "📈 Canales", "🔮 Proyección", "⬇️ Exportar"
+
+inicio = (V_INICIO, lambda: render_home(wb, sheet, mode_info, dashboard, seleccion=seleccion))
+exportar = (V_EXPORTAR, lambda: render_exports(df,dashboard,wb["filename"],sheet,full_df=item["processed"],schema=schema,workbook=wb))
+herramientas = [
+    ("🤖 Asistente IA", lambda: render_assistant(df, schema, item["profile"], mode_info, dashboard)),
+    ("🧮 Datos", lambda: render_data_table(df)),
+    ("✅ Calidad del dato", lambda: render_quality(item["profile"])),
 ]
 if multi_sheet_enabled:
-    general_views.append(("🗂️ Varias hojas", lambda: render_multi_sheet(wb)))
-people_views = []
+    herramientas.append(("🗂️ Varias hojas", lambda: render_multi_sheet(wb)))
+if st.session_state.comparison_result:
+    herramientas.append(("⚖️ Comparar archivos", lambda: render_comparison(st.session_state.comparison_result)))
+personas = []
 if profile_enabled:
-    people_views.append(("⚔️ Comparar personas", lambda: render_person_compare(df, schema)))
+    personas.append(("⚔️ Comparar personas", lambda: render_person_compare(df, schema)))
 if st.session_state.tracking_data is not None and not st.session_state.tracking_data.empty:
-    people_views.append(("📍 Seguimiento consolidado", lambda: render_tracking(st.session_state.tracking_data)))
+    personas.append(("📍 Seguimiento consolidado", lambda: render_tracking(st.session_state.tracking_data)))
+geo = [("🗺️ Georreferenciación", lambda: render_georeferencing(df, schema))] if geo_enabled else []
+seguimiento = ([(VISTA_SEGUIMIENTO, lambda: render_person_profile(df, schema, dashboard))]
+               if mode_info["mode"] not in {"catalog", "reference"} and has_entity(df, schema) else [])
 
 if mode_info["mode"] in {"catalog", "reference"}:
     st.markdown(f'<div class="mode-banner"><b>{mode_info["label"]}</b> · {mode_info["reason"]}</div>', unsafe_allow_html=True)
-    # Vista principal reemplaza a Comparar personas en el modo catálogo: un
-    # catálogo/lista de referencia no tiene "personas" que comparar, así que
-    # Comparar personas nunca aparecía aquí (igual que antes de esta tarea).
-    analysis_views = [("Vista principal", lambda: render_catalog(df, schema, mode_info))]
-    if geo_enabled:
-        analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
-    if st.session_state.comparison_result:
-        analysis_views.append(("⚖️ Comparativa", lambda: render_comparison(st.session_state.comparison_result)))
-    catalog_people_views = [v for v in people_views if v[0] != "⚔️ Comparar personas"]
-    grouped_nav([
-        ("📋 General", general_views),
-        ("📊 Análisis", analysis_views),
-        ("👥 Personas", catalog_people_views),
-    ])
+    # Un catálogo o lista de referencia no tiene desempeño que atacar ni
+    # personas que comparar: su vista principal es explorar el contenido.
+    principales = [inicio, ("📚 Vista principal", lambda: render_catalog(df, schema, mode_info)),
+                   herramientas[1], exportar]
+    secundarias = [herramientas[0]] + herramientas[2:] + geo + [v for v in personas if v[0] != "⚔️ Comparar personas"]
+    barra_de_vistas(principales, secundarias)
 else:
-    # Executive mode is deliberately compact; Analyst mode exposes every tool.
+    atacar = (V_ATACAR, lambda: render_planes(df, schema, dashboard))
+    cuadro = (V_CUADRO, lambda: render_cuadro_comparativo(df, schema))
+    canales = (V_CANALES, lambda: render_comercial(df, schema, dashboard))
+    proyeccion = (V_PROYECCION, lambda: render_forecast(df, schema, dashboard))
     if st.session_state.get("view_mode", "Ejecutivo") == "Ejecutivo":
-        analysis_views = [("Resumen ejecutivo", lambda: render_executive(df, schema, dashboard))]
-        analysis_views.append(("📊 Cuadro comparativo", lambda: render_cuadro_comparativo(df, schema)))
-        analysis_views.append(("📈 Estrategia por canal", lambda: render_comercial(df, schema, dashboard)))
-        analysis_views.append(("🎯 Planes de mejora", lambda: render_planes(df, schema, dashboard)))
-        if has_entity(df, schema):
-            analysis_views.append(("🔎 Análisis de seguimiento", lambda: render_person_profile(df, schema, dashboard)))
-        analysis_views.append(("🔮 Predicciones", lambda: render_forecast(df, schema, dashboard)))
-        if geo_enabled:
-            analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
-        if st.session_state.comparison_result:
-            analysis_views.append(("⚖️ Comparativa", lambda: render_comparison(st.session_state.comparison_result)))
-        grouped_nav([
-            ("📋 General", general_views),
-            ("📊 Análisis", analysis_views),
-            ("👥 Personas", people_views),
-        ])
+        # Modo ejecutivo: lo justo para decidir, sin herramientas de análisis fino.
+        principales = [inicio, (V_RESUMEN, lambda: render_executive(df, schema, dashboard)), atacar, cuadro,
+                       canales, proyeccion, exportar]
+        secundarias = seguimiento + geo + personas + herramientas
     else:
         def _render_finanzas():
             st.markdown(section_header("Lectura financiera", eyebrow="ANÁLISIS", compact=True), unsafe_allow_html=True)
             st.dataframe(dashboard["statistics"],use_container_width=True,hide_index=True)
             st.caption("Esta vista utiliza las métricas detectadas automáticamente; no presupone que el archivo sea de ventas.")
 
-        analysis_views = [("Descripción", lambda: render_dashboard(df,dashboard))]
-        analysis_views.append(("📊 Cuadro comparativo", lambda: render_cuadro_comparativo(df, schema)))
-        if has_entity(df, schema):
-            analysis_views.append(("🔎 Análisis de seguimiento", lambda: render_person_profile(df, schema, dashboard)))
-        if geo_enabled:
-            analysis_views.append(("Georeferenciación", lambda: render_georeferencing(df, schema)))
-        analysis_views += [
-            ("Analítica", lambda: render_explorer(df,schema)),
-            ("🔮 Predicciones", lambda: render_forecast(df, schema, dashboard)),
-            ("Finanzas", _render_finanzas),
-            ("📈 Estrategia por canal", lambda: render_comercial(df, schema, dashboard)),
-            ("🎯 Planes de mejora", lambda: render_planes(df, schema, dashboard)),
-            ("Anomalías", lambda: render_anomalies(df, schema)),
-        ]
-        if st.session_state.comparison_result:
-            analysis_views.append(("⚖️ Comparativa", lambda: render_comparison(st.session_state.comparison_result)))
-        grouped_nav([
-            ("📋 General", general_views),
-            ("📊 Análisis", analysis_views),
-            ("👥 Personas", people_views),
-        ])
-
+        # Modo analista: las mismas vistas principales más las de análisis fino.
+        principales = [inicio, ("🧾 Descripción", lambda: render_dashboard(df,dashboard)), atacar, cuadro,
+                       ("🔬 Analítica", lambda: render_explorer(df,schema)), canales, exportar]
+        secundarias = (seguimiento + [proyeccion, ("🚨 Anomalías", lambda: render_anomalies(df, schema)),
+                                      ("💵 Finanzas", _render_finanzas)]
+                       + geo + personas + herramientas)
+    barra_de_vistas(principales, secundarias)

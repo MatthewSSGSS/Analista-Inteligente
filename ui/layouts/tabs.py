@@ -1,26 +1,40 @@
-"""Navegación por pestañas con acceso por nombre, y agrupación de vistas en
-secciones lógicas.
+"""Navegación entre vistas.
 
-`named_tabs()` reemplaza el patrón `tabs = st.tabs(names); tab_map = {name:
-tabs[i] for i, name in enumerate(names)}` que estaba repetido tal cual tres
-veces en app.py.
+`barra_de_vistas()` es la navegación de nivel superior de la app. Antes era
+una sola fila de `st.tabs` con 11 a 16 pestañas, y tenía dos problemas:
 
-`grouped_nav()` es la navegación de nivel superior de la app: recibe las
-vistas ya organizadas en grupos lógicos ("General", "Análisis", "Personas")
-solo para que quien llama pueda seguir pensando en esos términos, pero las
-aplana en una sola fila de pestañas (Inicio, Resumen ejecutivo/Descripción,
-Comparar personas, Georeferenciación, Asistente IA, Datos, Calidad,
-Analítica, Finanzas, Trabajo, Anomalías, Exportar, Comparativa, Análisis
-Seguimiento — según el modo). Un grupo sin ninguna vista disponible no
-aporta nada a esa fila (p. ej. "Personas" cuando el Excel no tiene
-identidad ni seguimiento cargado) — ninguna vista deja de estar accesible,
-solo cambia si hay que desplazarse horizontalmente para llegar a ella.
+- **Lenta**: `st.tabs` ejecuta TODAS las pestañas en cada interacción, se
+  vean o no. Cambiar un filtro recalculaba las predicciones, armaba los
+  cuatro informes HTML de Exportar, etc., aunque se estuviera mirando el
+  Inicio.
+- **Incómoda**: con tantas pestañas la fila se desplazaba de lado, lo usado
+  todos los días quedaba mezclado con herramientas ocasionales y, al bajar
+  por una vista larga, había que volver arriba para cambiar.
+
+Ahora hay unas pocas vistas principales (lo que un gerente abre todos los
+días) en una barra que queda fija arriba, y el resto en un menú «➕ Más».
+Solo se dibuja la vista activa.
+
+Como Streamlit borra el estado de los widgets que no se dibujan, lo que
+tenga que sobrevivir al cambio de vista (por ejemplo, los pasos marcados de
+un plan) debe guardarse fuera del widget; ver `ui/planes.py`.
+
+`named_tabs()` sigue sirviendo para pestañas DENTRO de una vista.
 """
 from __future__ import annotations
 
 from typing import Callable
 
 import streamlit as st
+
+Vista = tuple[str, Callable[[], None]]
+
+_CLAVE = "nav_vista"
+
+# Nombres de las vistas a las que otras vistas pueden mandar con `ir_a()`.
+# Viven aquí para que el botón y la barra usen exactamente el mismo texto.
+VISTA_ATACAR = "🎯 Qué atacar"
+VISTA_SEGUIMIENTO = "🔎 Seguimiento de un caso"
 
 
 def named_tabs(names: list[str]) -> dict:
@@ -30,45 +44,61 @@ def named_tabs(names: list[str]) -> dict:
     return {name: tabs[i] for i, name in enumerate(names)}
 
 
-def grouped_nav(groups: list[tuple[str, list[tuple[str, Callable[[], None]]]]]) -> None:
-    """Navegación de nivel superior. `groups` es una lista de
-    `(etiqueta_de_grupo, vistas)`, donde `vistas` es una lista de
-    `(etiqueta_de_vista, función_sin_argumentos)` que renderiza esa vista
-    al llamarla. Los grupos sin ninguna vista disponible se omiten
-    automáticamente (p. ej. "Personas" cuando el Excel no tiene identidad
-    ni seguimiento cargado) — no se muestra un grupo vacío.
+def ir_a(vista: str) -> None:
+    """Pide abrir una vista en la próxima ejecución (para botones del tipo
+    «Ver qué atacar →» dentro de otra vista). Úsese en un `on_click`."""
+    st.session_state[_CLAVE] = vista
 
-    Todas las vistas de todos los grupos se muestran en UNA sola fila de
-    pestañas (antes había una fila por "grupo" — 📋 General/📊 Análisis/👥
-    Personas — y, al entrar a una, una SEGUNDA fila con sus vistas; dos
-    filas de pestañas apiladas, con el mismo estilo visual, hacían difícil
-    saber en qué nivel se estaba). El nombre del grupo ya no se usa como
-    pestaña propia — solo ayuda a mantener juntas, en el orden de la lista,
-    las vistas que pertenecen al mismo grupo. Si la fila crece mucho (modo
-    Analista con muchas herramientas), se desplaza horizontalmente
-    (`.stTabs [data-baseweb="tab-list"]{overflow-x:auto}`, ya existente)
-    en vez de partirse en niveles.
+
+def vista_activa() -> str | None:
+    return st.session_state.get(_CLAVE)
+
+
+def barra_de_vistas(principales: list[Vista], secundarias: list[Vista] | None = None) -> None:
+    """Dibuja la barra y la vista activa (solo esa).
+
+    `principales` van siempre a la vista; `secundarias`, dentro de «➕ Más».
+    Si la vista guardada ya no existe (se cambió de modo o de hoja), se abre
+    la primera principal.
     """
-    groups = [(label, views) for label, views in groups if views]
-    if not groups:
+    secundarias = [v for v in (secundarias or []) if v[0] not in {p[0] for p in principales}]
+    if not principales:
         return
-    all_views = [v for _, views in groups for v in views]
-    _render_views(all_views)
+    etiquetas_p = [v[0] for v in principales]
+    todas = dict(principales + secundarias)
 
+    activa = st.session_state.get(_CLAVE)
+    if activa not in todas:
+        activa = etiquetas_p[0]
+        st.session_state[_CLAVE] = activa
+    # El control de las principales refleja la vista activa (o ninguna, si la
+    # activa está en «Más»). Se fija antes de dibujarlo, que es lo permitido.
+    st.session_state["nav_principal"] = activa if activa in etiquetas_p else None
 
-def _render_views(views: list[tuple[str, Callable[[], None]]]) -> None:
-    if len(views) == 1:
-        views[0][1]()
-        return
-    if len(views) == 2:
-        labels = [v[0] for v in views]
-        choice = st.radio(
-            "Vista", labels, horizontal=True, label_visibility="collapsed",
-            key="nav_pair_" + "_".join(labels),
-        )
-        dict(views)[choice]()
-        return
-    view_map = named_tabs([v[0] for v in views])
-    for label, render in views:
-        with view_map[label]:
-            render()
+    def _al_elegir_principal():
+        elegida = st.session_state.get("nav_principal")
+        if elegida:
+            st.session_state[_CLAVE] = elegida
+
+    def _al_elegir_secundaria(etiqueta: str):
+        st.session_state[_CLAVE] = etiqueta
+        st.session_state["nav_principal"] = None
+
+    with st.container(key="nav_barra"):
+        if secundarias:
+            col_p, col_s = st.columns([6, 1.15], vertical_alignment="center", gap="small")
+        else:
+            col_p, col_s = st.container(), None
+        with col_p:
+            st.segmented_control("Vista", etiquetas_p, key="nav_principal", on_change=_al_elegir_principal,
+                                 label_visibility="collapsed")
+        if col_s is not None:
+            with col_s:
+                activa_mas = activa if activa not in etiquetas_p else None
+                with st.popover(f"➕ {activa_mas}" if activa_mas else "➕ Más", use_container_width=True):
+                    for etiqueta, _ in secundarias:
+                        st.button(etiqueta, key=f"nav_mas_{etiqueta}", use_container_width=True,
+                                  type="primary" if etiqueta == activa else "secondary",
+                                  on_click=_al_elegir_secundaria, args=(etiqueta,))
+
+    todas[activa]()

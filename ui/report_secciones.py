@@ -397,6 +397,7 @@ def bloque_planes(df, schema, dashboard, plan: dict | None = None, fuente=None) 
             f'<article class="plan {tono}">'
             f'<div class="plan-head"><span class="plan-num">#{i}</span><span class="pill {tono}">{esc(nombre)}</span></div>'
             f'<h3>{esc_limpio(p.get("titulo", "Frente de trabajo"))}</h3>'
+            + (f'<p class="plan-valor">💰 {esc(p["impacto_txt"])}</p>' if p.get("impacto_txt") else "")
             + (f'<p class="plan-lbl">Qué muestran los datos</p><p class="situacion">{esc_limpio(p.get("situacion"))}</p>'
                if p.get("situacion") else "")
             + (f'<p class="plan-lbl">A quiénes involucra</p><div class="chips">{nombres}</div>' if nombres else "")
@@ -414,3 +415,82 @@ def bloque_planes(df, schema, dashboard, plan: dict | None = None, fuente=None) 
                    f"{clean(plan.get('resumen', ''))}", cuerpo, leer=leer,
                    fuente=(fuente("") + " · Frentes generados a partir de los hallazgos del análisis automático.")
                    if fuente else "")
+
+
+# ── 🔎 Por qué se movió el número y qué atacar ──────────────────────────────
+
+def bloque_gerencia(g: dict | None, fuente=None) -> str:
+    """La lectura de un gerente: dónde nació el cambio, con qué palanca y qué
+    vale más la pena atacar. Sale de `core.gerencia` (la misma que la vista
+    «Qué atacar» del panel)."""
+    if not g or not (g.get("causas") or g.get("palanca") or g.get("oportunidades")):
+        return ""
+    color = "var(--neg)" if g["delta"] < 0 else "var(--pos)"
+
+    def signo(v):
+        return ("+" if v > 0 else "−") + _fmt(abs(v))
+
+    causa = ""
+    c = g.get("causas")
+    if c and c.get("nodos"):
+        mayor = max(abs(n["delta"]) for n in c["nodos"]) or 1
+        filas = []
+        for n in c["nodos"]:
+            peso = f" · {n['peso']:.0f}% del cambio" if n.get("peso") is not None and 0 < abs(n["peso"]) <= 300 else ""
+            sub = ""
+            if n.get("detalle") and n["detalle"]["segmentos"]:
+                partes = " · ".join(f"<b>{esc_limpio(x['nombre'])}</b> {signo(x['delta'])}"
+                                    for x in n["detalle"]["segmentos"])
+                sub = f'<div class="gx-sub">↳ Por {esc(n["detalle"]["etiqueta"].lower())}: {partes}</div>'
+            filas.append(
+                f'<div class="gx-row"><div class="gx-top"><b>{esc_limpio(n["nombre"])}</b>'
+                f'<span style="color:{color}">{signo(n["delta"])}</span></div>'
+                f'<div class="gx-bar"><i style="width:{abs(n["delta"]) / mayor * 100:.0f}%;background:{color}"></i></div>'
+                f'<div class="gx-sub">De {_fmt(n["antes"])} a {_fmt(n["ahora"])}{peso}</div>{sub}</div>')
+        contra = ""
+        if c.get("compensaron"):
+            k = c["compensaron"][0]
+            efecto = "amortiguó la caída" if g["delta"] < 0 else "frenó la subida"
+            contra = f'<p class="note">En sentido contrario, <b>{esc_limpio(k["nombre"])}</b> {signo(k["delta"])} {efecto}.</p>'
+        causa = (f'<div class="gx-card"><p class="subhead">Dónde nació el cambio · por {esc(c["etiqueta"].lower())}</p>'
+                 f'{"".join(filas)}{contra}</div>')
+
+    palanca = ""
+    p = g.get("palanca")
+    if p:
+        mayor = max(abs(p["efecto_volumen"]), abs(p["efecto_ticket"])) or 1
+
+        def barra(etq, v):
+            col = "var(--pos)" if v >= 0 else "var(--neg)"
+            return (f'<b>{etq}</b><div class="gx-bar"><i style="width:{abs(v) / mayor * 100:.0f}%;background:{col}"></i></div>'
+                    f'<span style="color:{col}">{signo(v)}</span>')
+        accion = f'<p class="gx-acc">→ {esc_limpio(g["accion_palanca"])}</p>' if g.get("accion_palanca") else ""
+        palanca = (f'<div class="gx-card"><p class="subhead">La palanca · volumen o ticket</p>'
+                   f'<div class="gx-lever">{barra("Volumen", p["efecto_volumen"])}{barra("Ticket", p["efecto_ticket"])}</div>'
+                   f'<p class="gx-txt">{esc_limpio(g.get("texto_palanca") or "")}</p>{accion}</div>')
+
+    atacar = ""
+    if g.get("oportunidades"):
+        items = []
+        for i, o in enumerate(g["oportunidades"], 1):
+            quienes = " · ".join(f"{esc_limpio(q['nombre'])} <b>{_fmt(q['monto'])}</b>" for q in o["quienes"])
+            items.append(
+                f'<div class="gx-opp"><span class="gx-num">{i}</span><div><b class="gx-opp-t">{esc(o["titulo"])}</b>'
+                f'<p>{esc_limpio(o["texto"])}</p><p class="gx-quien">{quienes}</p>'
+                f'<p class="gx-acc">→ {esc_limpio(o["accion"])}</p></div>'
+                f'<div class="gx-monto"><b>+{_fmt(o["monto"])}</b><small>al mes</small></div></div>')
+        atacar = ('<p class="subhead" style="margin-top:18px">Qué atacar primero · en orden de valor</p>'
+                  f'<div class="gx-opps">{"".join(items)}</div>'
+                  '<p class="note">Las cifras pueden solaparse (un mismo caso puede estar en dos frentes), así que no se '
+                  'suman entre sí. «Subir a los rezagados» cuenta solo la mitad del camino hasta la mediana.</p>')
+
+    grid = f'<div class="gx-grid">{causa}{palanca}</div>' if (causa or palanca) else ""
+    tono = "neg" if g.get("empeoro") else "pos"
+    titular = f'<div class="callout {tono}"><b>{esc(g["titular"])}</b></div>'
+    leer = (f"Se compara {esc(g['mes_b'])} con {esc(g['mes_a'])}. «Dónde nació el cambio» prueba todas las columnas y "
+            "muestra la que concentra el movimiento en menos nombres y, dentro de cada uno, dónde está. «La palanca» "
+            "separa si el cambio vino de hacer menos operaciones (volumen) o de que cada una valiera menos (ticket).")
+    columnas = f"columna «{esc(g['etiqueta'])}», {esc(g['mes_a'])} y {esc(g['mes_b'])}"
+    return seccion("por-que", "Por qué se movió el número y qué atacar",
+                   "La causa, la palanca y las oportunidades con su valor, antes del plan de acción.",
+                   titular + grid + atacar, leer=leer, fuente=fuente(columnas) if fuente else "")

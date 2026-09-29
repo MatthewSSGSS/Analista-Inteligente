@@ -331,6 +331,86 @@ def _mejoras_disponibles(df, schema, dashboard) -> list[dict]:
     return planes
 
 
+# Qué oportunidad de la lectura gerencial corresponde a cada plan: así el
+# plan hereda su cifra ("vale 16M al mes") en vez de repetirse como frente
+# aparte.
+_OPORTUNIDAD_DE = {
+    "Dónde se concentra la caída": "recuperar",
+    "Caída generalizada": "recuperar",
+    "Cumplimiento de meta": "meta",
+    "Rezago frente a la mediana": "nivelar",
+    MEJORAS["brecha"]["titulo"]: "nivelar",
+}
+_ESTADO_OPORTUNIDAD = {"recuperar": "critico", "meta": "atencion", "nivelar": "mejora"}
+
+
+def _con_gerencia(planes: list, g: dict) -> list:
+    """Cruza los planes con la lectura gerencial.
+
+    - Cada plan que corresponde a una oportunidad hereda su valor en dinero.
+    - El plan de la caída se abre con la causa raíz (dónde entrar) y con la
+      acción de la palanca (volumen o ticket), que cambia lo que hay que hacer.
+    - Si una oportunidad con cifra no tiene plan, se agrega como frente nuevo.
+    - Dentro de cada nivel de urgencia, va primero lo que más vale.
+    """
+    oportunidades = {o["clave"]: o for o in g.get("oportunidades") or []}
+    usadas = set()
+    for plan in planes:
+        clave = _OPORTUNIDAD_DE.get(plan["titulo"])
+        o = oportunidades.get(clave)
+        if o and clave not in usadas:
+            usadas.add(clave)
+            plan["impacto"] = o["monto"]
+            plan["impacto_txt"] = f"Vale {_fmt(o['monto'])} al mes"
+        if clave == "recuperar" and g.get("causas"):
+            extra = _pasos_de_causa(g)
+            if extra:
+                plan["pasos"] = plan["pasos"][:1] + extra + plan["pasos"][1:]
+            plan["causa"] = g["causas"]
+            plan["palanca"] = g.get("palanca")
+    for clave, o in oportunidades.items():
+        if clave in usadas:
+            continue
+        # Recuperar solo es un frente si el total de verdad empeoró.
+        if clave == "recuperar" and not g.get("empeoro"):
+            continue
+        # Una mejora sin cifra relevante no compite con lo urgente.
+        planes.append({
+            "titulo": o["titulo"], "estado": _ESTADO_OPORTUNIDAD.get(clave, "mejora"),
+            "situacion": o["texto"],
+            "por_que": "Es donde más valor hay en juego con los datos de este archivo.",
+            "pasos": [o["accion"], f"Asignar un responsable por cada uno de {_lista([q['nombre'] for q in o['quienes']])}.",
+                      "Revisar el avance cada semana, no al cierre del mes."],
+            "medir": o["medir"],
+            "evidencia": [{"nombre": q["nombre"], "valor": _fmt(q["monto"]), "detalle": q["detalle"]}
+                          for q in o["quienes"]],
+            "objetivo": {},
+            "impacto": o["monto"], "impacto_txt": f"Vale {_fmt(o['monto'])} al mes",
+        })
+    orden = {"critico": 0, "atencion": 1, "mejora": 2}
+    # Estable: a igual urgencia e igual valor se respeta el orden del análisis.
+    planes.sort(key=lambda p: (orden.get(p["estado"], 3), -(p.get("impacto") or 0)))
+    return planes
+
+
+def _pasos_de_causa(g: dict) -> list[str]:
+    """Pasos que dependen de la causa y la palanca, en palabras de gerente."""
+    pasos = []
+    causas = g.get("causas") or {}
+    nodos = causas.get("nodos") or []
+    if nodos:
+        n0 = nodos[0]
+        donde = n0["nombre"]
+        if n0.get("detalle") and n0["detalle"]["segmentos"]:
+            s0 = n0["detalle"]["segmentos"][0]
+            donde += f" ({n0['detalle']['etiqueta'].lower()} {s0['nombre']})"
+        peso = f": ahí está el {n0['peso']:.0f}% del cambio" if n0.get("peso") is not None and 0 < abs(n0["peso"]) <= 300 else ""
+        pasos.append(f"Entrar primero por {donde}{peso}.")
+    if g.get("accion_palanca"):
+        pasos.append(g["accion_palanca"])
+    return pasos
+
+
 def generar(df: pd.DataFrame, schema: dict, dashboard: dict) -> dict:
     """Los planes que salen del análisis, y el estado general del archivo.
 
@@ -359,6 +439,21 @@ def generar(df: pd.DataFrame, schema: dict, dashboard: dict) -> dict:
     except Exception:
         pass
 
+    # La lectura gerencial —causa, palanca y cuánto vale cada frente— se
+    # cruza con los planes: sin eso, un plan dice QUÉ hacer pero no cuánto
+    # mueve el número ni por dónde entrarle.
+    gerencia = (dashboard or {}).get("gerencia")
+    if gerencia is None and "gerencia" not in (dashboard or {}):
+        try:
+            from .gerencia import analisis_gerencial
+            gerencia = analisis_gerencial(df, schema, dashboard or {})
+        except Exception:
+            gerencia = None
+    if gerencia:
+        planes = _con_gerencia(planes, gerencia)
+        criticos = sum(1 for p in planes if p["estado"] == "critico")
+        atencion = sum(1 for p in planes if p["estado"] == "atencion")
+
     if criticos:
         resumen = (f"{criticos} frente(s) crítico(s) y {atencion} en observación. "
                    f"El orden de abajo es el orden de atención: lo primero es lo que más pesa.")
@@ -368,4 +463,7 @@ def generar(df: pd.DataFrame, schema: dict, dashboard: dict) -> dict:
     else:
         resumen = ("No hay ningún frente en rojo con los datos visibles. Lo de abajo son mejoras: "
                    "dónde está el margen que el archivo sí permite ver.")
-    return {"planes": planes, "criticos": criticos, "atencion": atencion, "resumen": resumen}
+    if gerencia and gerencia.get("se_movio"):
+        resumen = f"{gerencia['titular']} {resumen}"
+    return {"planes": planes, "criticos": criticos, "atencion": atencion, "resumen": resumen,
+            "gerencia": gerencia}

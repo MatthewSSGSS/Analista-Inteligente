@@ -68,7 +68,11 @@ Inside `ui/`:
   tokens, never redefine `:root` colors.
 - `ui/components/` — pure, reusable render helpers (`cards.py`, `charts.py`, `section.py`). No
   business logic, no reading `core/` directly, no reading business `session_state` keys.
-- `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `grouped_nav`, `columns.py`).
+- `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
+  Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a
+  «➕ Más» menu, and **only the active view is executed** (unlike `st.tabs`, which ran every tab on every
+  rerun). Consequence: Streamlit drops the state of widgets that weren't drawn, so anything that must survive
+  switching views has to be mirrored outside the widget (see `ui/planes.py::_pasos_guardados`).
 - `ui/format.py` — the single `_fmt`/`_label`/`_compact_number` implementation; don't reintroduce
   local copies in a view.
 - `ui/*.py` (the rest) — one file per screen/tab, combining `core/` + `visualization/` +
@@ -88,7 +92,12 @@ on extension) and calls `core/profile.profile_sheet` per sheet, which cleans the
 metrics, categorical, text, geography, ids — including semantic typing
 (`core/semantic_engine.interpret_dataframe`, e.g. `revenue` vs `quantity` vs `percentage`) and
 identifier detection (`ID_RE`/`DOC_ID_RE` in `core/schema.py`, which keeps cédulas/NIT/SKU out of
-numeric aggregation even when they repeat). The resulting `{df, schema}` (called `item["processed"]`
+numeric aggregation even when they repeat). `core/gerencia.analisis_gerencial` adds the sales-manager reading on top of the diagnostics: root cause of the
+change across every groupable column (two levels, e.g. region → channel), volume-vs-ticket lever, and
+opportunities valued in money. It is computed once inside `build_dashboard` (`dashboard["gerencia"]`) and
+reused by the plans, alerts, Resumen, «🎯 Qué atacar» and the HTML reports; `tests/gerencia_test.py`.
+
+The resulting `{df, schema}` (called `item["processed"]`
 / `item["profile"]`) feeds `core/dashboard_engine.build_dashboard`, which is the expensive
 aggregate step (KPIs, insights, alerts, anomalies, performance, growth) and is wrapped in
 `st.cache_data` in `app.py` because Streamlit reruns the whole script on every interaction.

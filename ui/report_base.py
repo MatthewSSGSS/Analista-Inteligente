@@ -124,7 +124,9 @@ def prioridades(planes: list, maximo: int = 3, con_hoja: bool = False, enlace: s
         hoja = f'<span class="tag">{esc(p.get("_hoja"))}</span>' if con_hoja and p.get("_hoja") else ""
         filas.append(
             f'<li class="prio {tono}"><span class="pill {tono}">{esc(nombre)}</span>'
-            f'<div class="prio-body"><h3>{hoja}{esc_limpio(p.get("titulo", "Frente de trabajo"))}</h3>'
+            f'<div class="prio-body"><h3>{hoja}{esc_limpio(p.get("titulo", "Frente de trabajo"))}'
+            + (f' <span class="plan-valor" style="margin-left:8px">💰 {esc(p["impacto_txt"])}</span>' if p.get("impacto_txt") else "")
+            + '</h3>'
             f'<p>{esc_limpio(p.get("situacion", ""))}</p>{primero}</div></li>'
         )
     if not filas:
@@ -321,6 +323,32 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .agenda b{display:block;color:var(--ink)}
 .agenda span{color:var(--muted)}
 @media(max-width:860px){.ctx-grid{grid-template-columns:1fr}}
+
+/* Por qué se movió el número y qué atacar */
+.gx-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px;margin-top:14px}
+.gx-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+.gx-row{margin-bottom:12px}
+.gx-top{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.gx-top span{font-weight:800;font-variant-numeric:tabular-nums}
+.gx-bar{height:7px;background:var(--line-soft);border-radius:999px;margin:5px 0 4px;overflow:hidden}
+.gx-bar i{display:block;height:100%;border-radius:999px}
+.gx-sub{font-size:12px;color:var(--muted)}
+.gx-lever{display:grid;grid-template-columns:70px 1fr auto;gap:8px 10px;align-items:center;font-size:13px}
+.gx-lever .gx-bar{margin:0}
+.gx-lever span{font-weight:800;font-variant-numeric:tabular-nums}
+.gx-txt{font-size:13px;margin-top:10px}
+.gx-acc{font-size:12.5px;color:var(--brand-dark);font-weight:600;margin-top:6px}
+.gx-opps{display:grid;gap:10px}
+.gx-opp{display:grid;grid-template-columns:34px minmax(0,1fr) 120px;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:var(--shadow)}
+.gx-num{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--brand);color:#fff;font-weight:800}
+.gx-opp-t{font-size:14.5px}
+.gx-opp p{font-size:12.5px;color:var(--muted);margin-top:2px}
+.gx-opp p.gx-quien{color:var(--text)}
+.gx-monto{text-align:right}
+.gx-monto b{display:block;font-size:20px;color:var(--pos)}
+.gx-monto small{font-size:11px;color:var(--muted)}
+.plan-valor{font-size:12.5px;font-weight:800;color:var(--pos);margin:0 0 4px}
+@media(max-width:860px){.gx-grid{grid-template-columns:1fr}.gx-opp{grid-template-columns:30px 1fr}.gx-monto{grid-column:2;text-align:left}}
 
 /* Lecturas en viñetas */
 .bullets{margin:12px 0 0;padding:0;list-style:none;display:grid;gap:6px}

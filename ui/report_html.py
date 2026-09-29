@@ -31,7 +31,7 @@ from core.quality import assess
 from ui.labels import clean_display_text
 from ui.report_base import (desplegable, documento, esc_limpio, nav, prioridades, seccion, semaforo)
 from ui.report_secciones import (bloque_cambio_periodos, bloque_cuadro_comparativo, bloque_estrategia,
-                                 bloque_planes, calcular_planes)
+                                 bloque_gerencia, bloque_planes, calcular_planes)
 from core.dashboard_engine import build_dashboard
 from core.geo_engine import geographic_summary, supports_georeferencing
 from core.universal_analysis import semantic_map, ADDITIVE, drilldown_table
@@ -901,6 +901,7 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     def _fuente_de(columnas: str = "") -> str:
         return _fuente(ctx, columnas)
 
+    gerencia_html = _seguro(lambda: bloque_gerencia(plan.get("gerencia"), fuente=_fuente_de))
     planes_html = _seguro(lambda: bloque_planes(df, schema, dashboard, plan, fuente=_fuente_de))
     estrategia_html = _seguro(lambda: bloque_estrategia(df, schema, fuente=_fuente_de))
     cuadro_html = _seguro(lambda: bloque_cuadro_comparativo(df, schema, primary, _bloque, _numerar, fuente=_fuente_de))
@@ -954,6 +955,7 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
     cuerpo_secciones = [
         ("Resumen", "lectura-ejecutiva", "Resumen para decidir", "Cómo cerró el resultado y los tres frentes más urgentes.", resumen_html),
         ("Resumen", "resumen", "Indicadores clave", "Las cifras generales y su evolución mes a mes.", indicadores_html),
+        ("Decisión", "por-que", "Por qué y qué atacar", "Dónde nació el cambio, con qué palanca y qué vale más atacar.", gerencia_html),
         ("Decisión", "planes", "Planes de mejora", "Qué hacer, en orden de urgencia, con pasos concretos.", planes_html),
         ("Decisión", "estrategia", "Estrategia por canal", "Cuánto pesa cada canal, hacia dónde va y qué jugada le toca.", estrategia_html),
         ("Decisión", "cuadro-comparativo", "Cómo va cada uno", "Cada uno contra su meta o contra el promedio del grupo.", cuadro_html),
@@ -1160,6 +1162,7 @@ def build_workbook_html_report(workbook: dict) -> str:
 
         secciones_hoja = []
         for constructor in (
+            lambda: bloque_gerencia(plan.get("gerencia"), fuente=_fuente_hoja),
             lambda: bloque_planes(df, schema, d, plan, fuente=_fuente_hoja),
             lambda: bloque_estrategia(df, schema, fuente=_fuente_hoja),
             lambda: bloque_cuadro_comparativo(df, schema, r["primary"], _bloque_hoja, _numerar_hoja, fuente=_fuente_hoja),

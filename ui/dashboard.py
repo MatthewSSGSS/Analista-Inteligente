@@ -16,7 +16,7 @@ from ui.components.cards import kpi_card, insight_card, finding_card, executive_
 from ui.components.charts import chart_card as _shared_chart_card
 from ui.components.section import banner_header
 from ui.layouts.columns import kpi_grid as _kpi_grid_layout, two_column
-from ui.layouts.tabs import named_tabs
+from ui.layouts.tabs import named_tabs, ir_a, VISTA_SEGUIMIENTO
 
 
 def _card(label, value, delta=None, tone="neutral", icon=""):
@@ -841,8 +841,9 @@ def render_dashboard(df, dashboard):
     # indicación de navegación, y antes era lo primero que se leía de la
     # pestaña, por encima de las cifras y de la conclusión.
     if has_entity(df, schema):
-        st.caption("¿Quieres ver un punto, asesor o código en concreto? Está en la pestaña "
-                   "**🔎 Análisis de seguimiento**, con sus alertas y su comparación contra el grupo.")
+        st.button("🔎 Ver un punto, asesor o código en concreto", key="ir_seguimiento_desc",
+                  on_click=ir_a, args=(VISTA_SEGUIMIENTO,),
+                  help="Abre el seguimiento de un caso: sus alertas y su comparación contra el grupo.")
 
     # ── Detalle progresivo: nada se elimina, solo se reorganiza en dos
     # columnas temáticas para que no sea una fila larga de acordeones y se

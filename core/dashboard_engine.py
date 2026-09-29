@@ -35,6 +35,15 @@ def build_dashboard(df, profile):
     insights=generate(df,schema,anomalies)
     executive=build_executive(df,schema,insights,anomalies)
     alerts=build_alerts(df,schema,insights,anomalies)
+    # Lectura gerencial (causa, palanca y qué vale atacar): se calcula una vez
+    # aquí, que está en caché, y la reutilizan Resumen, Qué atacar e informes.
+    gerencia=None
+    try:
+        from .gerencia import analisis_gerencial, alertas_con_gerencia
+        gerencia=analisis_gerencial(df,schema,{"primary_metric":primary})
+        alerts=alertas_con_gerencia(alerts,gerencia)
+    except Exception:
+        gerencia=None
     change_analysis=explain_change(df,schema,primary)
     performance=analyze_performance(df,schema,primary)
     summary=(
@@ -77,7 +86,7 @@ def build_dashboard(df, profile):
                     growth = None
 
     return {
-        "kpis":dynamic_kpis(df, schema, {"primary_metric":primary,"performance":performance}), "anomalies":anomalies, "insights":insights, "executive":executive, "alerts":alerts, "change_analysis":change_analysis,
+        "kpis":dynamic_kpis(df, schema, {"primary_metric":primary,"performance":performance}), "anomalies":anomalies, "insights":insights, "executive":executive, "alerts":alerts, "gerencia":gerencia, "change_analysis":change_analysis,
         "summary":summary, "statistics":describe(df,schema),
         "performance": performance,
         "schema":schema, "primary_metric":primary, "growth":growth
