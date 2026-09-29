@@ -344,6 +344,65 @@ _OPORTUNIDAD_DE = {
 _ESTADO_OPORTUNIDAD = {"recuperar": "critico", "meta": "atencion", "nivelar": "mejora"}
 
 
+def _meta_de_caso(c: dict, mes: str) -> str:
+    """Una línea de meta con cifras: de dónde parte, a dónde va y cuánto por semana."""
+    texto = (f"{c['nombre']}: pasar de {_fmt(c['actual'])} a {_fmt(c['objetivo'])} en {mes} ({c['referencia']}) "
+             f"— +{_fmt(c['brecha'])}, unos {_fmt(c['semanal'])} por semana")
+    if c.get("operaciones"):
+        texto += f", o {c['operaciones']:,} {c['unidad']} más al ticket actual de {_fmt(c['ticket'])}"
+    return texto + "."
+
+
+def _plan_cuantitativo(clave: str, o: dict, g: dict) -> Optional[dict]:
+    """Pasos, medida, control y alarma calculados con la historia de cada caso.
+
+    Reemplaza los pasos de plantilla ("fijar una meta de recuperación") por
+    los números de esa meta: objetivo, brecha, ritmo semanal, operaciones
+    necesarias, si es alcanzable y cuándo escalar. Los casos que están
+    dentro de su variación normal no se intervienen: se vigilan."""
+    casos = [c for c in (o.get("casos") or []) if c.get("brecha", 0) > 0]
+    if not casos:
+        return None
+    mes = g.get("mes_siguiente") or "el próximo mes"
+    actuar = [c for c in casos if not (clave == "recuperar" and c.get("tipo") == "normal")]
+    vigilar = [c for c in casos if c not in actuar]
+    if not actuar:
+        return None
+    pasos = []
+    if clave == "recuperar":
+        puntuales = [c["nombre"] for c in actuar if c.get("tipo") == "puntual"]
+        sostenidos = [c for c in actuar if c.get("tipo") == "sostenida"]
+        if puntuales:
+            pasos.append(f"Averiguar qué pasó este mes en {_lista(puntuales)}: la caída es puntual (el mes anterior "
+                         "estaba en su nivel normal). Revisar clientes que dejaron de comprar, quiebres de inventario "
+                         "y cambios de ruta o de personal de ese mes.")
+        for c in sostenidos:
+            pasos.append(f"En {c['nombre']} la caída no es de un mes: lleva {c['racha']} meses seguidos bajando "
+                         f"(≈{_fmt(abs(c['pendiente']))} por mes) y sin acción cerraría {mes} en {_fmt(c['proyeccion'])}. "
+                         "Revisar cobertura y cartera desde que empezó, no solo el último mes.")
+    elif clave == "meta":
+        dificiles = [c["nombre"] for c in actuar if c.get("factibilidad") == "baja"]
+        if dificiles:
+            pasos.append(f"Revisar con datos la meta de {_lista(dificiles)}: exige superar su mejor mes en más de 10%. "
+                         "O se cambia el plan (clientes nuevos, canal, precio) o se ajusta la meta.")
+    elif clave == "nivelar" and o.get("lider"):
+        pasos.append(f"Tomar como referencia a {o['lider']}, el de mejor resultado en {g.get('mes_b', 'el último mes')}: "
+                     "documentar qué hace distinto (ruta, clientes, argumento, surtido) y copiar una práctica concreta.")
+    pasos += [_meta_de_caso(c, mes) for c in actuar[:4]]
+    if vigilar:
+        pasos.append(f"{_lista([c['nombre'] for c in vigilar])}: está dentro de su variación normal; no intervenir, "
+                     "solo confirmar el próximo mes.")
+    primero = actuar[0]
+    hitos = " · ".join(f"semana {i}: {_fmt(h)}" for i, h in enumerate(primero["hitos"], 1))
+    control = f"Cada viernes, comparar el acumulado de {primero['nombre']} con su línea de objetivo ({hitos})."
+    alarma = (f"Si a mitad de {mes} {primero['nombre']} lleva menos de {_fmt(primero['objetivo'] * 0.4)} "
+              "(40% del objetivo), escalar: reasignar apoyo, revisar la ruta o ajustar el objetivo con datos.")
+    total = sum(c["brecha"] for c in actuar)
+    medir = (f"Que {primero['nombre']} cierre {mes} en al menos {_fmt(primero['objetivo'])}"
+             + (f", y entre los {len(actuar)} se sumen {_fmt(total)}." if len(actuar) > 1 else "."))
+    return {"pasos": pasos, "medir": medir, "control": control, "alarma": alarma, "casos": actuar}
+
+
 def _con_gerencia(planes: list, g: dict) -> list:
     """Cruza los planes con la lectura gerencial.
 
@@ -362,12 +421,22 @@ def _con_gerencia(planes: list, g: dict) -> list:
             usadas.add(clave)
             plan["impacto"] = o["monto"]
             plan["impacto_txt"] = f"Vale {_fmt(o['monto'])} al mes"
+            cuant = _plan_cuantitativo(clave, o, g)
+            if cuant:
+                plan.update({k: cuant[k] for k in ("pasos", "medir", "control", "alarma", "casos")})
         if clave == "recuperar" and g.get("causas"):
             extra = _pasos_de_causa(g)
             if extra:
-                plan["pasos"] = plan["pasos"][:1] + extra + plan["pasos"][1:]
+                plan["pasos"] = extra[:1] + plan["pasos"] + extra[1:]
             plan["causa"] = g["causas"]
             plan["palanca"] = g.get("palanca")
+            sig = g.get("significancia")
+            if sig:
+                plan["diagnostico"] = sig["texto"]
+                # Si el total se movió dentro de su variación normal, no es
+                # una urgencia: se vigila y se confirma antes de mover gente.
+                if sig["nivel"] == "ruido" and plan["estado"] == "critico":
+                    plan["estado"] = "atencion"
     for clave, o in oportunidades.items():
         if clave in usadas:
             continue
@@ -375,13 +444,15 @@ def _con_gerencia(planes: list, g: dict) -> list:
         if clave == "recuperar" and not g.get("empeoro"):
             continue
         # Una mejora sin cifra relevante no compite con lo urgente.
+        cuant = _plan_cuantitativo(clave, o, g) or {}
         planes.append({
             "titulo": o["titulo"], "estado": _ESTADO_OPORTUNIDAD.get(clave, "mejora"),
             "situacion": o["texto"],
             "por_que": "Es donde más valor hay en juego con los datos de este archivo.",
-            "pasos": [o["accion"], f"Asignar un responsable por cada uno de {_lista([q['nombre'] for q in o['quienes']])}.",
-                      "Revisar el avance cada semana, no al cierre del mes."],
-            "medir": o["medir"],
+            "pasos": cuant.get("pasos") or [o["accion"], f"Asignar un responsable por cada uno de {_lista([q['nombre'] for q in o['quienes']])}.",
+                                            "Revisar el avance cada semana, no al cierre del mes."],
+            "medir": cuant.get("medir") or o["medir"],
+            "control": cuant.get("control"), "alarma": cuant.get("alarma"), "casos": cuant.get("casos") or [],
             "evidencia": [{"nombre": q["nombre"], "valor": _fmt(q["monto"]), "detalle": q["detalle"]}
                           for q in o["quienes"]],
             "objetivo": {},

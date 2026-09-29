@@ -197,19 +197,12 @@ def _palanca(df, schema, metrica, en_a, en_b, total_a, total_b, unidades_col=Non
         ops_b = float(pd.to_numeric(df.loc[en_b, unidades_col], errors="coerce").sum())
         unidad, ticket_nombre = str(unidades_col).lower(), "precio medio por unidad"
     else:
-        # Contar filas solo mide operaciones si las filas son transacciones.
-        # Si cada valor de la columna más detallada aparece una vez por mes
-        # (una fila por asesor y mes), el archivo ya viene resumido y el
-        # conteo no dice nada del volumen: se calla en vez de inventar.
-        excluir = set(schema.get("dates", [])) | set(schema.get("metrics", [])) | {metrica}
-        candidatas = list(dict.fromkeys(
-            c for c in (list(schema.get("semantic", {}).get("dimensions") or []) + schema.get("categorical", [])
-                        + schema.get("text", []) + schema.get("geography", []) + schema.get("ids", []))
-            if c in df.columns and c not in excluir))
-        if candidatas:
-            fina = max(candidatas, key=lambda c: df.loc[en_b, c].nunique(dropna=True))
-            if float(en_b.sum()) / max(df.loc[en_b, fina].nunique(dropna=True), 1) < 1.5:
-                return None
+        # Contar filas solo mide operaciones si las filas son transacciones
+        # (ver core/metas.filas_son_operaciones): si el archivo ya viene
+        # resumido, el conteo no dice nada del volumen y se calla.
+        from .metas import filas_son_operaciones
+        if not filas_son_operaciones(df, schema, metrica, en_b):
+            return None
         ops_a, ops_b = float(en_a.sum()), float(en_b.sum())
         unidad, ticket_nombre = "registros", "valor por registro"
     if ops_a <= 0 or ops_b <= 0:
@@ -295,7 +288,7 @@ def _oportunidades(df, schema, metrica, dim_causa, en_b, mov_causa, mes_a, mes_b
                 top = debajo.head(3)
                 salida.append({
                     "clave": "meta", "titulo": "Cerrar la brecha de meta",
-                    "monto": monto,
+                    "monto": monto, "metas": {str(n): float(f["m"]) for n, f in g.iterrows()},
                     "quienes": [{"nombre": str(n), "monto": float(f["brecha"]),
                                  "detalle": f"{f['v'] / f['m'] * 100:.0f}% de su meta"} for n, f in top.iterrows()],
                     "texto": (f"En {mes_b}, {len(debajo)} de {len(g)} {_conc(len(debajo), 'quedó', 'quedaron')} por debajo de su meta. "
@@ -323,7 +316,7 @@ def _oportunidades(df, schema, metrica, dim_causa, en_b, mov_causa, mes_a, mes_b
                 top = brecha.sort_values(ascending=False).head(3)
                 salida.append({
                     "clave": "nivelar", "titulo": "Subir a los rezagados",
-                    "monto": monto,
+                    "monto": monto, "referencia": mediana, "lider": str(g.idxmax()),
                     "quienes": [{"nombre": str(n), "monto": float(v) * 0.5,
                                  "detalle": f"{_fmt(g[n])} frente a una mediana de {_fmt(mediana)}"} for n, v in top.items()],
                     "texto": (f"{len(debajo)} de {len(g)} {_conc(len(debajo), 'está', 'están')} por debajo de la mediana del grupo ({_fmt(mediana)}) en {mes_b}. "
@@ -336,6 +329,49 @@ def _oportunidades(df, schema, metrica, dim_causa, en_b, mov_causa, mes_a, mes_b
     for o in salida:
         o["pct_total"] = o["monto"] / total_b * 100 if total_b else None
     salida.sort(key=lambda o: o["monto"], reverse=True)
+    return salida
+
+
+def _casos(trabajo, schema, metrica, periodos, mes_a, mes_b, en_b, o, unidades_col) -> list[dict]:
+    """Los casos de una oportunidad con su meta calculada (ver core/metas)."""
+    from . import metas
+    dim = o.get("dimension")
+    if not dim or dim not in trabajo.columns:
+        return []
+    tabla = metas.historia(trabajo, dim, metrica, periodos, mes_b)
+    if tabla is None or len(tabla) < 2:
+        return []
+    usar_filas = (not unidades_col) and metas.filas_son_operaciones(trabajo, schema, metrica, en_b)
+    segmento = trabajo[dim].astype(str).str.strip()
+    salida = []
+    for q in o.get("quienes") or []:
+        nombre = q["nombre"]
+        if nombre not in tabla.columns:
+            continue
+        serie = tabla[nombre]
+        actual = float(serie.iloc[-1])
+        if o["clave"] == "recuperar":
+            base = float(serie.iloc[:-1].tail(metas.VENTANA_BASE).mean()) if len(serie) > 1 else actual
+            objetivo, referencia = base, f"su promedio de los últimos {min(metas.VENTANA_BASE, len(serie) - 1)} meses"
+            if objetivo <= actual:
+                objetivo, referencia = float(serie.iloc[-2]), f"su nivel de {_mes(mes_a.to_timestamp())}"
+        elif o["clave"] == "meta" and nombre in (o.get("metas") or {}):
+            objetivo, referencia = o["metas"][nombre], "su meta"
+        elif o["clave"] == "nivelar" and o.get("referencia") is not None:
+            objetivo = actual + 0.5 * (float(o["referencia"]) - actual)
+            referencia = f"la mitad del camino a la mediana ({_fmt(o['referencia'])})"
+        else:
+            continue
+        ticket, unidad = None, "operaciones"
+        en_caso = en_b & segmento.eq(nombre)
+        valor = float(pd.to_numeric(trabajo.loc[en_caso, metrica], errors="coerce").sum())
+        if unidades_col:
+            unidades = float(pd.to_numeric(trabajo.loc[en_caso, unidades_col], errors="coerce").sum())
+            if unidades > 0:
+                ticket, unidad = valor / unidades, str(unidades_col).lower()
+        elif usar_filas and en_caso.sum():
+            ticket = valor / float(en_caso.sum())
+        salida.append(metas.caso(nombre, serie, objetivo, ticket, unidad, referencia))
     return salida
 
 
@@ -387,6 +423,37 @@ def analisis_gerencial(df: pd.DataFrame, schema: dict, dashboard: dict | None = 
     if dim_causa:
         mov_causa = _movimiento(trabajo, dim_causa, metrica, en_a, en_b)
     oportunidades = _oportunidades(trabajo, schema, metrica, dim_causa, en_b, mov_causa, nombre_a, nombre_b)
+    unidades_col = _columna_unidades(trabajo, schema, metrica) if metrica != METRICA_CONTEO else None
+    total_b_mes = float(valores[en_b].sum())
+    for o in oportunidades:
+        try:
+            o["casos"] = _casos(trabajo, schema, metrica, periodos, mes_a, mes_b, en_b, o, unidades_col)
+        except Exception:
+            o["casos"] = []
+        # "Recuperar" vale lo que suman las metas de los casos que de verdad
+        # hay que intervenir (llevarlos a su nivel habitual), no solo lo que
+        # cayeron contra el mes anterior: así la cifra de la oportunidad y la
+        # del plan son la misma. Los que están en su variación normal no cuentan.
+        if o["clave"] == "recuperar" and o["casos"]:
+            accionables = [c for c in o["casos"] if c["brecha"] > 0 and c.get("tipo") != "normal"]
+            if accionables:
+                o["monto"] = float(sum(c["brecha"] for c in accionables))
+                o["pct_total"] = o["monto"] / total_b_mes * 100 if total_b_mes else None
+                o["texto"] = (f"{_lista([c['nombre'] for c in accionables])} "
+                              f"{_conc(len(accionables), 'cayó', 'cayeron')} por debajo de su nivel habitual en {nombre_b}. "
+                              f"Devolverlos a su promedio de los últimos meses vale {_fmt(o['monto'])}.")
+    oportunidades.sort(key=lambda o: o["monto"], reverse=True)
+    # ¿El cambio del total es real o está dentro de su variación normal?
+    from . import metas
+    significancia = None
+    try:
+        por_mes = valores.groupby(periodos).sum()
+        por_mes = por_mes[por_mes.index <= mes_b]
+        if len(por_mes):
+            todos = pd.period_range(por_mes.index.min(), por_mes.index.max(), freq="M")
+            significancia = metas.significancia(por_mes.reindex(todos).fillna(0.0))
+    except Exception:
+        significancia = None
 
     # ── Titular y lectura en frases de gerente ──
     if pct is None:
@@ -433,7 +500,8 @@ def analisis_gerencial(df: pd.DataFrame, schema: dict, dashboard: dict | None = 
         "empeoro": (delta < 0) != peor_si_sube if se_movio else False,
         "parcial": salto_parcial, "titular": titular, "frases": frases,
         "causas": causas, "palanca": palanca, "accion_palanca": accion_palanca, "texto_palanca": texto_palanca,
-        "oportunidades": oportunidades,
+        "oportunidades": oportunidades, "significancia": significancia,
+        "mes_siguiente": metas.mes_siguiente(mes_b),
         "potencial": float(sum(o["monto"] for o in oportunidades[:1])) if oportunidades else 0.0,
     }
 

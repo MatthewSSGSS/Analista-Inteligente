@@ -375,6 +375,29 @@ def calcular_planes(df, schema, dashboard) -> dict:
         return {}
 
 
+_FACT_TONO = {"alta": ("Alcanzable", "pos"), "media": ("Exigente", "warn"), "baja": ("Difícil", "neg")}
+
+
+def _metas_html(p: dict) -> str:
+    """Metas del plan por caso, calculadas con la historia de cada uno (core/metas)."""
+    casos = p.get("casos") or []
+    if not casos:
+        return ""
+    filas = []
+    for c in casos:
+        nombre, tono = _FACT_TONO.get(c.get("factibilidad"), ("—", ""))
+        ops = f'<br><small>{c["operaciones"]:,} {esc(c["unidad"])}</small>' if c.get("operaciones") else ""
+        filas.append(
+            f'<tr><td><b>{esc_limpio(c["nombre"])}</b><br><small>{esc_limpio(c.get("lectura_corta") or "")}</small></td>'
+            f'<td class="num">{_fmt(c["actual"])}</td><td class="num"><b>{_fmt(c["objetivo"])}</b></td>'
+            f'<td class="num" style="color:var(--pos)"><b>+{_fmt(c["brecha"])}</b>{ops}</td>'
+            f'<td class="num">{_fmt(c["semanal"])}</td>'
+            f'<td><span class="pill {tono}">{nombre}</span><br><small>{esc_limpio(c.get("factibilidad_corta") or "")}</small></td></tr>')
+    return ('<p class="plan-lbl">Metas por caso</p><div class="table-scroll"><table class="metas-tab"><thead><tr>'
+            '<th>Caso</th><th class="num">Hoy</th><th class="num">Objetivo</th><th class="num">Brecha</th>'
+            f'<th class="num">Por semana</th><th>¿Alcanzable?</th></tr></thead><tbody>{"".join(filas)}</tbody></table></div>')
+
+
 def bloque_planes(df, schema, dashboard, plan: dict | None = None, fuente=None) -> str:
     """Los frentes de trabajo con sus pasos, para que el informe termine en acciones."""
     if plan is None:
@@ -402,6 +425,9 @@ def bloque_planes(df, schema, dashboard, plan: dict | None = None, fuente=None) 
                if p.get("situacion") else "")
             + (f'<p class="plan-lbl">A quiénes involucra</p><div class="chips">{nombres}</div>' if nombres else "")
             + (f'<p class="plan-lbl">Qué hacer</p><ol class="pasos">{pasos}</ol>' if pasos else "")
+            + _metas_html(p)
+            + (f'<p class="plan-lbl">Control semanal</p><p class="plan-ctrl">{esc_limpio(p["control"])}</p>' if p.get("control") else "")
+            + (f'<p class="plan-lbl">Cuándo escalar</p><p class="plan-ctrl alarma">{esc_limpio(p["alarma"])}</p>' if p.get("alarma") else "")
             + (f'<div class="plan-meta"><b>Para cerrarlo:</b> {esc_limpio(indicador)}</div>' if indicador else "")
             + '</article>'
         )

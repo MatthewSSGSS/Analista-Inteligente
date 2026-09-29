@@ -323,6 +323,45 @@ def _css() -> None:
         .atq-monto b{display:block;font-size:22px;font-weight:850;font-family:'Sora','Inter',sans-serif;color:#22A06B}
         .atq-monto small{font-size:11px;color:var(--muted)}
         .tarjeta-valor{font-size:12px;font-weight:800;color:#22A06B;margin:-4px 0 8px}
+
+        [class*="st-key-plancard_"]{background:var(--panel);border:1px solid var(--line);border-left:5px solid #94A3B8;
+          border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow-md);margin-bottom:14px;gap:.4rem}
+        [class*="st-key-plancard_critico"]{border-left-color:#E4002B}
+        [class*="st-key-plancard_atencion"]{border-left-color:#F59E0B}
+        [class*="st-key-plancard_mejora"]{border-left-color:#22A06B}
+        .pc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+        .pc-num{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:0 0 34px;
+          background:var(--c);color:#fff;font-weight:850;font-family:'Sora','Inter',sans-serif}
+        .pc-tit{flex:1;min-width:220px}
+        .pc-tit b{display:block;font-size:17px;font-family:'Sora','Inter',sans-serif;color:var(--text);line-height:1.3}
+        .pc-pill{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
+          color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);border-radius:999px;padding:2px 9px;margin-bottom:3px}
+        .pc-valor{font-size:15px;font-weight:850;color:#22A06B;background:color-mix(in srgb,#22A06B 10%,transparent);
+          border-radius:10px;padding:6px 12px;white-space:nowrap}
+        .pc-situacion{font-size:13.5px;color:var(--text);line-height:1.5;margin:8px 0 6px}
+        .pc-dx{font-size:12.5px;color:var(--text);background:var(--panel-2);border:1px dashed var(--line);
+          border-radius:8px;padding:7px 10px;margin-bottom:8px}
+        .metas{overflow-x:auto;margin:6px 0 4px;border:1px solid var(--line);border-radius:var(--radius-md)}
+        .metas table{width:100%;border-collapse:collapse;font-size:12.5px}
+        .metas th{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+          text-align:left;padding:8px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+        .metas td{padding:9px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top;color:var(--text)}
+        .metas tr:last-child td{border-bottom:none}
+        .metas .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+        .metas .pos{color:#22A06B;font-weight:800}
+        .metas small{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;white-space:normal;max-width:220px}
+        .metas td.n small{margin-left:auto;text-align:right}
+        .metas .lec{font-size:12px;color:var(--text);min-width:170px;max-width:260px;cursor:help}
+        .fact{display:inline-block;font-size:10.5px;font-weight:800;color:var(--f);border:1px solid var(--f);
+          border-radius:999px;padding:1px 8px;background:color-mix(in srgb,var(--f) 10%,transparent)}
+        .st-key-planes_filtro [data-testid="stWidgetLabel"]{display:none!important}
+        .st-key-planes_filtro [role="radiogroup"]{gap:6px;flex-wrap:wrap}
+        .st-key-planes_filtro [role="radiogroup"] label{border:1px solid var(--line);border-radius:999px;
+          padding:5px 14px;background:var(--panel);margin:0!important;cursor:pointer}
+        .st-key-planes_filtro [role="radiogroup"] label>div:first-child{display:none}
+        .st-key-planes_filtro [role="radiogroup"] label:has(input:checked){
+          background:linear-gradient(180deg,#ff3b4e,#e4002b);border-color:#e4002b}
+        .st-key-planes_filtro [role="radiogroup"] label:has(input:checked) p{color:#fff!important;font-weight:800}
         </style>
         """,
         unsafe_allow_html=True,
@@ -521,60 +560,90 @@ def _exportar(planes: list, asignaciones: dict, pasos: dict, hoy: date) -> None:
         st.code(texto, language=None)
 
 
-def _plan(i: int, plan: dict, fila: dict) -> None:
+_FACTIBILIDAD = {"alta": ("Alcanzable", "#22A06B"), "media": ("Exigente", "#F59E0B"), "baja": ("Difícil", "#E4002B")}
+
+
+def _tabla_metas(plan: dict, g: dict | None) -> str:
+    """Las metas del plan, caso por caso, con lo que dice su historia."""
+    casos = plan.get("casos") or []
+    if not casos:
+        return ""
+    esc = lambda t: html.escape(str(clean_display_text(t)))  # noqa: E731
+    hoy = esc((g or {}).get("mes_b", "Último mes")).split(" de ")[0].capitalize()
+    sig = esc((g or {}).get("mes_siguiente", "Próximo mes")).split(" de ")[0].capitalize()
+    filas = []
+    for c in casos:
+        etiqueta, color = _FACTIBILIDAD.get(c.get("factibilidad"), ("—", "#94A3B8"))
+        ops = f'{c["operaciones"]:,} {esc(c["unidad"])}' if c.get("operaciones") else "—"
+        filas.append(
+            f'<tr><td><b>{esc(c["nombre"])}</b></td><td class="n">{_monto(c["actual"])}</td>'
+            f'<td class="n"><b>{_monto(c["objetivo"])}</b><small>{esc(c["referencia"])}</small></td>'
+            f'<td class="n pos">+{_monto(c["brecha"])}</td><td class="n">{_monto(c["semanal"])}</td><td class="n">{ops}</td>'
+            f'<td class="lec" title="{esc(c.get("lectura") or "")}">{esc(c.get("lectura_corta") or "—")}</td>'
+            f'<td title="{esc(c["factibilidad_txt"])}"><span class="fact" style="--f:{color}">{etiqueta}</span>'
+            f'<small>{esc(c.get("factibilidad_corta") or "")}</small></td></tr>')
+    return (f'<div class="metas"><table><thead><tr><th>Caso</th><th class="n">Hoy · {hoy}</th>'
+            f'<th class="n">Objetivo · {sig}</th><th class="n">Brecha</th><th class="n">Por semana</th>'
+            f'<th class="n">Operaciones</th><th>Qué dicen sus datos <span title="Pasa el mouse sobre cada fila para ver la explicación">ⓘ</span></th><th>¿Alcanzable?</th></tr></thead>'
+            f'<tbody>{"".join(filas)}</tbody></table></div>')
+
+
+def _plan(i: int, plan: dict, fila: dict, g: dict | None = None) -> None:
+    """Un plan como tarjeta: encabezado, diagnóstico, metas por caso, pasos
+    para marcar y cómo se controla. Antes era un desplegable con el texto del
+    hallazgo y pasos de plantilla; ahora cada cifra sale de la historia del
+    caso (ver core/metas.py)."""
     tono = _TONO.get(plan["estado"], _TONO["mejora"])
     clave = fila["clave"]
-    # Título fijo: si incluyera el avance o el responsable, cambiaría con cada
-    # casilla marcada, y Streamlit cierra un plegable cuando cambia su título.
-    etiqueta = f"{tono['icono']}  {i}. {plan['titulo']}   ·   {tono['etiqueta']}"
-    abierto = plan["estado"] == "critico" or fila["Alerta"] == "Vencido"
-    with st.expander(etiqueta, expanded=abierto):
+    esc = lambda t: html.escape(str(clean_display_text(t)))  # noqa: E731
+    with st.container(key=f"plancard_{plan['estado']}_{clave}"):
         datos = [f'<span class="plan-dato">{fila["Estado"]} · {fila["hechos"]} de {fila["total"]} pasos</span>']
         if fila["Responsable"]:
-            datos.append(f'<span class="plan-dato">👤 {clean_display_text(fila["Responsable"])}</span>')
+            datos.append(f'<span class="plan-dato">👤 {esc(fila["Responsable"])}</span>')
         else:
-            datos.append('<span class="plan-dato falta">👤 Sin responsable · asígnalo en la tabla de arriba</span>')
+            datos.append('<span class="plan-dato falta">👤 Sin responsable</span>')
         if fila["Fecha compromiso"]:
             color_fecha = _ROJO if fila["Alerta"] == "Vencido" else "var(--text)"
-            fecha_txt = f"{fila['Fecha compromiso']:%d/%m/%Y}"
             vencido = " · vencido" if fila["Alerta"] == "Vencido" else ""
-            datos.append(f'<span class="plan-dato" style="color:{color_fecha}">📅 {fecha_txt}{vencido}</span>')
+            datos.append(f'<span class="plan-dato" style="color:{color_fecha}">📅 {fila["Fecha compromiso"]:%d/%m/%Y}{vencido}</span>')
         else:
-            datos.append('<span class="plan-dato falta">📅 Sin fecha compromiso</span>')
-        st.markdown(f'<div class="plan-datos">{"".join(datos)}</div>', unsafe_allow_html=True)
+            datos.append('<span class="plan-dato falta">📅 Sin fecha</span>')
+        valor = f'<span class="pc-valor">💰 {esc(plan["impacto_txt"])}</span>' if plan.get("impacto_txt") else ""
+        diagnostico = (f'<div class="pc-dx">📐 {esc(plan["diagnostico"])}</div>' if plan.get("diagnostico") else "")
+        st.markdown(
+            f'<div class="pc-head"><span class="pc-num" style="--c:{tono["color"]}">{i}</span>'
+            f'<div class="pc-tit"><span class="pc-pill" style="--c:{tono["color"]}">{tono["icono"]} {tono["etiqueta"]}</span>'
+            f'<b>{esc(plan["titulo"])}</b></div>{valor}</div>'
+            f'<div class="plan-datos">{"".join(datos)}</div>'
+            f'<div class="pc-situacion">{esc(plan["situacion"])}</div>{diagnostico}{_tabla_metas(plan, g)}',
+            unsafe_allow_html=True)
 
-        izquierda, derecha = st.columns([1.6, 1], gap="medium")
+        izquierda, derecha = st.columns([1.55, 1], gap="medium")
         with izquierda:
-            st.markdown(f'<div class="plan-situacion">{clean_display_text(plan["situacion"])}</div>',
+            st.markdown('<div class="plan-pasos-titulo">Plan de acción · marca cada paso cuando esté hecho</div>',
                         unsafe_allow_html=True)
-            if plan.get("evidencia"):
-                st.markdown(evidence_list(plan["evidencia"]), unsafe_allow_html=True)
+            guardados = _pasos_guardados()
+            for j, paso in enumerate(plan["pasos"]):
+                k = f"paso_{clave}_{j}"
+                st.checkbox(f"{j + 1}. {paso}", key=k, value=bool(guardados.get(k, False)))
+                guardados[k] = bool(st.session_state.get(k, False))
+            hechos = sum(_pasos_hechos(plan))
+            total = len(plan["pasos"])
+            if total:
+                st.progress(hechos / total, text=f"{hechos} de {total} pasos completados")
         with derecha:
-            st.markdown(
-                f'<div class="plan-caja" style="--c:{tono["color"]}">'
-                f'<div class="plan-caja-titulo">🎯 Cómo se sabe que funcionó</div>'
-                f'<div class="plan-caja-texto">{clean_display_text(plan["medir"])}</div></div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f'<div class="plan-caja" style="--c:var(--muted);margin-top:8px">'
-                f'<div class="plan-caja-titulo">Por qué importa</div>'
-                f'<div class="plan-caja-texto" style="font-size:12.5px;color:var(--muted)">'
-                f'{clean_display_text(plan["por_que"])}</div></div>',
-                unsafe_allow_html=True,
-            )
-
-        st.markdown('<div class="plan-pasos-titulo">Plan · marca cada paso cuando esté hecho</div>',
-                    unsafe_allow_html=True)
-        guardados = _pasos_guardados()
-        for j, paso in enumerate(plan["pasos"]):
-            k = f"paso_{clave}_{j}"
-            st.checkbox(f"{j + 1}. {paso}", key=k, value=bool(guardados.get(k, False)))
-            guardados[k] = bool(st.session_state.get(k, False))
-        hechos = sum(_pasos_hechos(plan))
-        total = len(plan["pasos"])
-        if total:
-            st.progress(hechos / total, text=f"{hechos} de {total} pasos completados")
+            cajas = [("🎯 Cómo se sabe que funcionó", plan.get("medir"), tono["color"])]
+            if plan.get("control"):
+                cajas.append(("📅 Control semanal", plan["control"], "#2563EB"))
+            if plan.get("alarma"):
+                cajas.append(("🚨 Cuándo escalar", plan["alarma"], _ROJO))
+            if not plan.get("casos") and plan.get("evidencia"):
+                st.markdown(evidence_list(plan["evidencia"]), unsafe_allow_html=True)
+            cajas.append(("Por qué importa", plan.get("por_que"), "var(--muted)"))
+            st.markdown("".join(
+                f'<div class="plan-caja" style="--c:{color};margin-bottom:8px"><div class="plan-caja-titulo">{titulo}</div>'
+                f'<div class="plan-caja-texto">{esc(texto)}</div></div>' for titulo, texto, color in cajas if texto),
+                unsafe_allow_html=True)
 
 
 def _monto(v: float) -> str:
@@ -717,8 +786,9 @@ def render_planes(df: pd.DataFrame, schema: dict, dashboard: dict) -> None:
     _exportar(planes, asignaciones, pasos, hoy)
 
     st.markdown(section_header(
-        "Pasos de cada plan",
-        subtitle="Abre un plan para ver su situación, por qué importa y marcar los pasos que se vayan cumpliendo.",
+        "Plan detallado",
+        subtitle="Cada frente con sus metas por caso (calculadas con su historia), los pasos para marcar, "
+                 "el control semanal y cuándo escalar.",
         compact=True), unsafe_allow_html=True)
     opciones = {
         "Todos": lambda p, f: True,
@@ -734,7 +804,7 @@ def render_planes(df: pd.DataFrame, schema: dict, dashboard: dict) -> None:
     if not visibles:
         st.info("No hay planes en esta categoría con los datos visibles.")
     for i, plan, fila in visibles:
-        _plan(i, plan, fila)
+        _plan(i, plan, fila, g)
 
     st.caption("Los planes salen del análisis de este archivo con los filtros activos. No incorporan lo que "
                "el archivo no contenga, como una campaña, un cierre o un cambio de precio, así que conviene "

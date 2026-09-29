@@ -425,6 +425,12 @@ details.more details.more{background:var(--line-soft)}
 .plan .situacion{font-size:13px;color:var(--text)}
 .plan-lbl{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--soft);margin:10px 0 3px}
 .plan-lbl+.chips{margin-top:0}
+.metas-tab{font-size:12px;margin-top:2px}
+.metas-tab th,.metas-tab td{padding:6px 7px;vertical-align:top}
+.metas-tab small{font-size:10.5px;color:var(--muted)}
+.plan-ctrl{font-size:12px;color:var(--text);margin:0}
+.plan-ctrl.alarma{color:var(--neg)}
+.planes-grid:has(.metas-tab){grid-template-columns:1fr}
 .plan-lbl+.pasos{margin-top:0}
 .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .chip{font-size:11px;background:var(--line-soft);border-radius:99px;padding:2px 9px;color:var(--ink);font-weight:600}

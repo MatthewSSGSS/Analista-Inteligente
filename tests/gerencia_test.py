@@ -127,6 +127,52 @@ def test_calla_con_una_metrica_que_no_se_suma():
     check("un porcentaje no produce causas ni oportunidades falsas", analisis_gerencial(df, schema, d) is None)
 
 
+def _seis_meses():
+    """Seis meses: Barranquilla cae solo el último (puntual) y Cali viene cayendo (sostenida)."""
+    rng = np.random.default_rng(1)
+    filas = []
+    for k, mes in enumerate(pd.date_range("2026-03-01", periods=6, freq="MS")):
+        for reg in ["Bogotá", "Medellín", "Barranquilla", "Cali", "Cartagena"]:
+            for can in ["Tienda", "Online", "Distribuidor"]:
+                n = 30
+                if reg == "Barranquilla" and can == "Tienda" and k == 5:
+                    n = 12
+                if reg == "Cali":
+                    n = 30 - 2 * k
+                for i in range(n):
+                    filas.append({"Fecha": mes + pd.Timedelta(days=i % 27), "Región": reg, "Canal": can,
+                                  "Asesor": f"{reg[:3]}-{i % 4}", "Ventas": float(rng.normal(100000, 9000)),
+                                  "Meta": 105000.0})
+    return _perfilar(filas)
+
+
+def test_los_planes_llevan_metas_calculadas():
+    """Un plan de verdad: objetivo, brecha, ritmo semanal y si es real o ruido."""
+    df, schema, d = _seis_meses()
+    g = d["gerencia"]
+    check("el cambio del total se juzga contra su variación normal",
+          g["significancia"] and g["significancia"]["nivel"] == "fuerte")
+    recuperar = next(o for o in g["oportunidades"] if o["clave"] == "recuperar")
+    casos = {c["nombre"]: c for c in recuperar["casos"]}
+    check("Barranquilla es una caída puntual", casos["Barranquilla"]["tipo"] == "puntual")
+    check("Cali es una caída sostenida", casos["Cali"]["tipo"] == "sostenida" and casos["Cali"]["racha"] >= 3)
+    b = casos["Barranquilla"]
+    check("con objetivo por encima de hoy y brecha positiva", b["objetivo"] > b["actual"] and b["brecha"] > 0)
+    check("el ritmo semanal es la brecha repartida en el mes", abs(b["semanal"] * 4.33 - b["brecha"]) < 1)
+    check("las operaciones necesarias son un número entero", isinstance(b["operaciones"], int) and b["operaciones"] > 0)
+    check("y dice si es alcanzable según su mejor mes", b["factibilidad"] in {"alta", "media"})
+    check("la cifra de la oportunidad es la suma de las metas",
+          abs(recuperar["monto"] - sum(c["brecha"] for c in recuperar["casos"] if c["tipo"] != "normal")) < 1)
+
+    r = generar(df, schema, d)
+    caida = next(p for p in r["planes"] if p["titulo"] == "Dónde se concentra la caída")
+    check("los pasos traen metas con cifra", any(p.startswith("Barranquilla: pasar de") for p in caida["pasos"]))
+    check("y separan la caída puntual de la sostenida",
+          any("puntual" in p for p in caida["pasos"]) and any("meses seguidos" in p for p in caida["pasos"]))
+    check("con control semanal y alarma", caida.get("control", "").startswith("Cada viernes")
+          and "40% del objetivo" in caida.get("alarma", ""))
+
+
 if __name__ == "__main__":
     test_encuentra_la_causa_un_nivel_abajo()
     test_separa_volumen_de_ticket()
@@ -134,4 +180,5 @@ if __name__ == "__main__":
     test_oportunidades_con_cifra_y_en_orden()
     test_planes_y_alertas_heredan_causa_y_valor()
     test_calla_con_una_metrica_que_no_se_suma()
+    test_los_planes_llevan_metas_calculadas()
     print("\nGerencia test completado sin errores.")
