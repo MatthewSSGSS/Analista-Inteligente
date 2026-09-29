@@ -596,6 +596,69 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   padding:8px 14px;color:#ffffff!important;text-shadow:0 1px 5px rgba(0,0,0,.85);font-size:13.5px;margin:10px 0}
 .hero-band-meta,.hero-band-meta *{color:#ffffff!important}
 
+/* ===== Encabezado de marca de la app (ui/layouts/hero.hero_app) =====
+   Reemplaza la franja gris plana con un emoji por logo: degradado oscuro
+   hacia el rojo de marca (el mismo de la portada de los informes HTML), el
+   isotipo, y lo que hace la herramienta en cuatro pasos. Los colores de
+   texto van con !important porque la regla genérica
+   `p,span,div,li,label{color:var(--text)}` apunta directo a esos elementos. */
+.app-hero{position:relative;overflow:hidden;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  background:linear-gradient(120deg,#111827 0%,#1c2340 55%,#5a0f22 100%);border-radius:var(--radius-lg);
+  padding:18px 24px;margin:22px 0 12px;box-shadow:var(--shadow-lg)}
+.app-hero:before{content:"";position:absolute;right:-90px;top:-130px;width:340px;height:340px;border-radius:50%;
+  background:radial-gradient(circle,rgba(228,0,43,.45),transparent 65%);pointer-events:none}
+.app-hero>*{position:relative}
+.app-hero-orb{width:48px;height:48px;border-radius:50%;flex:0 0 48px;background:var(--brand-orb);
+  box-shadow:0 0 0 5px rgba(255,255,255,.07),inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35)}
+.app-hero-txt{flex:1;min-width:240px}
+.app-hero-kicker{font-size:10.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#ff8da0!important}
+.app-hero-title{font-family:var(--font-display);font-size:25px;font-weight:800;letter-spacing:-.02em;
+  color:#ffffff!important;line-height:1.2;margin-top:2px}
+.app-hero p{margin:4px 0 0!important;font-size:13px;color:#cbd3e3!important;max-width:620px}
+.app-hero-pasos{display:flex;gap:8px;flex-wrap:wrap}
+.app-hero-pasos span{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#ffffff!important;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:5px 12px 5px 5px}
+.app-hero-pasos i{font-style:normal;width:20px;height:20px;border-radius:50%;background:#e4002b;color:#ffffff!important;
+  display:inline-grid;place-items:center;font-size:10.5px;font-weight:800}
+
+/* ===== Tarjeta «Analizando» + buscador (app.py, st.container key="app_contexto") =====
+   Antes: una etiqueta suelta, el campo y una franja gris con todo el
+   contexto en una línea. Ahora una tarjeta: qué tabla y métrica se
+   analiza, fichas con registros/periodo/hoja, el estado (archivo completo
+   en verde o vista filtrada en rojo, con su porcentaje) y el buscador. */
+.st-key-app_contexto{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius-lg);padding:14px 18px 14px 22px;box-shadow:var(--shadow-md);gap:.6rem;margin-bottom:12px}
+.st-key-app_contexto:before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
+  background:linear-gradient(180deg,#ff3b4e,#e4002b)}
+.ctx-top{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.ctx-main{flex:1;min-width:260px}
+.ctx-kicker{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--blue)!important}
+.ctx-titulo{font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--text)!important;line-height:1.3;margin:2px 0 9px}
+.ctx-fichas{display:flex;flex-wrap:wrap;gap:8px}
+.ctx-ficha{display:inline-flex;align-items:baseline;gap:6px;background:var(--panel-2);border:1px solid var(--line-soft);
+  border-radius:10px;padding:5px 11px;font-size:13px}
+.ctx-ficha small{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)!important}
+.ctx-ficha b{color:var(--text)!important;font-weight:750}
+.ctx-estado{min-width:210px;background:var(--green-soft);border:1px solid color-mix(in srgb,var(--green) 30%,transparent);
+  border-radius:12px;padding:9px 13px}
+.ctx-estado b{font-size:13px;color:var(--green-strong)!important}
+.ctx-estado.filtrado{background:var(--blue-soft);border-color:color-mix(in srgb,var(--blue) 30%,transparent)}
+.ctx-estado.filtrado b{color:var(--blue-strong)!important}
+.ctx-barra{height:6px;border-radius:999px;background:color-mix(in srgb,var(--text) 10%,transparent);margin:7px 0 4px;overflow:hidden}
+.ctx-barra i{display:block;height:100%;border-radius:999px;background:var(--green)}
+.ctx-estado.filtrado .ctx-barra i{background:var(--blue)}
+.ctx-estado small{font-size:11.5px;color:var(--muted)!important}
+.ctx-nota{font-size:12.5px;color:var(--muted)!important;margin-top:10px}
+.ctx-nota.filtrado{color:var(--text)!important}
+.ctx-nota b{color:var(--blue-strong)!important}
+.st-key-natural_query_search [data-testid="stWidgetLabel"]{display:none!important}
+.st-key-natural_query_search [data-baseweb="input"]{border-radius:999px!important;border:1.5px solid var(--line)!important;
+  background:var(--panel-2)!important;min-height:46px;transition:border-color .15s ease,box-shadow .15s ease}
+.st-key-natural_query_search [data-baseweb="input"]:focus-within{border-color:var(--blue)!important;
+  box-shadow:0 0 0 4px var(--blue-soft)!important;background:var(--panel)!important}
+.st-key-natural_query_search [data-baseweb="base-input"]{background:transparent!important}
+.st-key-natural_query_search input{font-size:14px!important;padding-left:18px!important;background:transparent!important;color:var(--text)!important}
+
 /* ===== Section headers: bold title with a quiet subtitle directly beneath =====
    Antes flotaba suelto sobre el fondo (sin caja) — con la foto detrás de
    TODA la app (no solo el header), un título de sección sin nada opaco

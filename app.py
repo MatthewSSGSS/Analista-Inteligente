@@ -2,12 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from ui.styles.theme import inject_theme
-from ui.layouts.hero import hero
+from ui.layouts.hero import hero_app
 from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_SEGUIMIENTO
 from ui.components.section import section_header
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
 from core.version import etiqueta_version
+from core.dates import format_month_year
 
 
 @st.cache_data(show_spinner=False, max_entries=12, ttl=1800)
@@ -135,7 +136,8 @@ if st.session_state.analysis_mode == "territorial":
     render_territorial_page()
     st.stop()
 
-hero("📊 Panel Analítico Universal", "De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.", band=True)
+hero_app("Panel Analítico Universal", "De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.",
+         ["Qué pasó", "Dónde pasó", "Por qué", "Qué hacer"])
 
 with st.sidebar:
     # ── Estructura del menú ───────────────────────────────────────────────
@@ -541,18 +543,21 @@ reglas_por_columna={c:r for c,r in valid_filters.items() if not str(c).startswit
 if reglas_por_columna:
     df=apply_filters(df,reglas_por_columna)
 
-query=st.text_input(
-    "🔎 Pregúntale al Excel",
-    placeholder="Ej.: mayores a 100000, Bogotá, producto X...",
-    key="natural_query_search",
-    # El campo se queda dentro de la franja de foto (.block-container:before,
-    # ver ui/styles/theme.py) — la etiqueta normal ("🔎 Pregúntale al
-    # Excel") es texto oscuro sobre la foto y quedaba casi ilegible. Se
-    # colapsa (sigue existiendo para accesibilidad, solo no se pinta) en
-    # vez de intentar volverla blanca a mano: la referencia tampoco la
-    # muestra, solo el campo con su placeholder.
-    label_visibility="collapsed",
-)
+# ── Tarjeta «Analizando»: qué se está viendo y el buscador, en una sola pieza ──
+# Antes eran tres cosas sueltas —una etiqueta, un campo y una franja gris con
+# todo el contexto en una línea de texto—. Ahora es una tarjeta: arriba qué
+# tabla y métrica se analiza (con registros, periodo y hoja en fichas), a la
+# derecha si es el archivo completo o una vista filtrada (con su porcentaje),
+# y abajo el buscador. La cabecera se dibuja al final, cuando ya se sabe
+# cuántos registros deja la búsqueda, pero queda arriba gracias al hueco.
+with st.container(key="app_contexto"):
+    _cabecera = st.empty()
+    query=st.text_input(
+        "Pregúntale al Excel",
+        placeholder="🔎  Pregúntale al Excel: mayores a 100000, Bogotá, producto X...",
+        key="natural_query_search",
+        label_visibility="collapsed",
+    )
 if query:
     df,_=natural_filter(df,query,schema)
 
@@ -565,23 +570,45 @@ if "__date__" in valid_filters:
     if len(_serie_fecha):
         _fechas_hoja=(_serie_fecha.min(),_serie_fecha.max())
 seleccion=resumen_seleccion(valid_filters,len(df),len(item["processed"]),_fechas_hoja,query)
+
+_titulo_hoja=item["profile"].get("titulo")
+_fichas=[]
+if schema.get("metrica_preferida"):
+    _fichas.append(("📊", "Métrica", str(schema["metrica_preferida"])))
+_fichas.append(("🧾", "Registros", f'{seleccion["visibles"]:,}'))
+_periodo_hoja=None
+for _col_fecha in schema.get("dates", []):
+    if _col_fecha in df.columns:
+        _f=pd.to_datetime(df[_col_fecha],errors="coerce").dropna()
+        if len(_f):
+            _periodo_hoja=f"{format_month_year(_f.min())} – {format_month_year(_f.max())}"
+            break
+if _periodo_hoja:
+    _fichas.append(("📅", "Periodo", _periodo_hoja))
+_fichas.append(("📄", "Hoja", str(sheet)))
+_fichas_html="".join(f'<span class="ctx-ficha">{i}<small>{_html.escape(k)}</small><b>{_html.escape(v)}</b></span>'
+                     for i, k, v in _fichas)
 if seleccion["filtrado"]:
     _frases=" · ".join(_html.escape(str(f)) for f in seleccion["frases"][:4])
     if len(seleccion["frases"])>4:
         _frases+=f' · y {len(seleccion["frases"])-4} más'
-    _banda=(f'<b>🎯 Vista filtrada · {seleccion["visibles"]:,} de {seleccion["total"]:,} registros '
-            f'({seleccion["porcentaje"]:.0f}%)</b>' + (f' · {_frases}' if _frases else '')
-            + ' · Todas las pestañas se recalculan sobre esta selección.')
+    _estado=(f'<div class="ctx-estado filtrado"><b>🎯 Vista filtrada</b>'
+             f'<div class="ctx-barra"><i style="width:{max(seleccion["porcentaje"], 1):.0f}%"></i></div>'
+             f'<small>{seleccion["visibles"]:,} de {seleccion["total"]:,} registros · {seleccion["porcentaje"]:.0f}%</small></div>')
+    _nota=(f'<div class="ctx-nota filtrado"><b>Filtros:</b> {_frases or "búsqueda activa"} · '
+           'Todas las vistas se recalculan sobre esta selección.</div>')
 else:
-    _banda=(f'<b>{seleccion["total"]:,} registros · archivo completo</b> · Sin filtros activos: '
-            'usa la barra lateral para acotar por región, canal, periodo o cualquier columna.')
-# El título de la tabla dice qué información es; va primero en la franja.
-_titulo_hoja=item["profile"].get("titulo")
-if schema.get("metrica_preferida"):
-    _banda=f'<b>📊 Analizando {_html.escape(str(schema["metrica_preferida"]))}</b> · '+_banda
-if _titulo_hoja:
-    _banda=f'<b>📄 {_html.escape(str(_titulo_hoja))}</b> · '+_banda
-st.markdown(f'<p class="hero-band-meta">{_banda}</p>', unsafe_allow_html=True)
+    _estado=(f'<div class="ctx-estado"><b>✅ Archivo completo</b>'
+             f'<div class="ctx-barra"><i style="width:100%"></i></div>'
+             f'<small>{seleccion["total"]:,} registros · 100%</small></div>')
+    _nota=('<div class="ctx-nota">Sin filtros activos: usa la barra lateral para acotar por región, canal, '
+           'periodo o cualquier columna, o escribe abajo lo que buscas.</div>')
+_cabecera.markdown(
+    f'<div class="ctx-top"><div class="ctx-main"><div class="ctx-kicker">Analizando</div>'
+    f'<div class="ctx-titulo">{_html.escape(str(_titulo_hoja or sheet))}</div>'
+    f'<div class="ctx-fichas">{_fichas_html}</div></div>{_estado}</div>{_nota}',
+    unsafe_allow_html=True,
+)
 
 mode_info=detect_dataset_mode(df, schema)
 dashboard=_cached_build_dashboard(df,perfil_vista)
