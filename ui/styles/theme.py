@@ -827,8 +827,9 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 
 /* ===== Barra de vistas (ui/layouts/tabs.barra_de_vistas) =====
    Reemplaza la fila de 11-16 pestañas. Queda fija arriba al bajar por una
-   vista larga, para cambiar de vista sin volver al principio. Las vistas
-   principales son un control segmentado; el resto está en «➕ Más». Fondo
+   vista larga, para cambiar de vista sin volver al principio. Cada vista
+   es un botón y la activa es un botón primario —la píldora roja—; el resto
+   de herramientas está en «➕ Más». Fondo
    de panel y texto var(--text): legible en Claro y en Oscuro, a diferencia
    de las píldoras translúcidas con texto blanco de la fila anterior, que
    sobre fondo blanco casi no se leían. */
@@ -838,22 +839,25 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 [data-testid="stLayoutWrapper"]:has(> .st-key-nav_barra){position:sticky;top:3.75rem;z-index:990}
 .st-key-nav_barra{background:var(--panel);border:1px solid var(--line);
   border-radius:var(--radius-lg);padding:6px 8px;box-shadow:var(--shadow-md);margin:4px 0 14px}
-.st-key-nav_barra [data-testid="stButtonGroup"]{flex-wrap:wrap;gap:4px}
-.st-key-nav_barra [data-testid="stButtonGroup"] button{border:none!important;border-radius:999px!important;
-  background:transparent!important;color:var(--text)!important;font-weight:650;font-size:13.5px;
-  min-height:38px;padding:0 14px;box-shadow:none!important;transition:background .15s ease}
-.st-key-nav_barra [data-testid="stButtonGroup"] button:hover{background:var(--panel-2)!important}
-.st-key-nav_barra [data-testid="stButtonGroup"] button p{color:inherit!important;font-weight:inherit!important}
-.st-key-nav_barra [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
+.st-key-nav_barra{flex-wrap:wrap!important;row-gap:4px!important;column-gap:2px!important}
+.st-key-nav_barra>[data-testid="stElementContainer"],.st-key-nav_barra>div{flex:0 0 auto!important;width:auto!important}
+/* Pestaña inactiva: texto sobre el panel, sin borde. */
+.st-key-nav_barra .stButton button{min-height:36px;padding:0 12px;border-radius:999px!important;
+  border:1px solid transparent!important;background:transparent!important;color:var(--text)!important;
+  font-weight:650;font-size:13px;box-shadow:none!important;white-space:nowrap}
+.st-key-nav_barra .stButton button p{color:inherit!important;font-weight:inherit!important;font-size:13px!important}
+.st-key-nav_barra .stButton button:hover{background:var(--panel-2)!important;transform:none}
+/* Pestaña activa: la píldora roja de siempre (botón primario del tema). */
+.st-key-nav_barra .stButton button[kind="primary"]{
   background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.35),transparent 55%),
     linear-gradient(180deg,#ff3b4e,#e4002b)!important;color:#fff!important;font-weight:800!important;
-  box-shadow:0 4px 14px rgba(228,0,43,.3)!important}
-.st-key-nav_barra [data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"] p{color:#fff!important}
-.st-key-nav_barra [data-testid="stWidgetLabel"]{display:none!important}
+  box-shadow:0 4px 14px rgba(228,0,43,.32)!important}
+.st-key-nav_barra .stButton button[kind="primary"] p{color:#fff!important}
+.st-key-nav_barra [data-testid="stPopover"]{margin-left:auto}
 .st-key-nav_barra [data-testid="stPopover"] button{border-radius:999px!important;min-height:38px;font-weight:700;
   border:1px solid var(--line)!important;background:var(--panel-2)!important;color:var(--text)!important;
-  box-shadow:none!important}
-.st-key-nav_barra [data-testid="stPopover"] button p{color:var(--text)!important}
+  box-shadow:none!important;padding:0 16px}
+.st-key-nav_barra [data-testid="stPopover"] button p{color:var(--text)!important;font-size:13px!important}
 [data-testid="stPopoverBody"] .stButton>button{justify-content:flex-start;text-align:left}
 
 /* Pestañas anidadas (una barra de pestañas que vive DENTRO de otra, p. ej.

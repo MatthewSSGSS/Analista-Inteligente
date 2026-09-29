@@ -611,31 +611,31 @@ usable_sheet_count = sum(
 multi_sheet_enabled = usable_sheet_count >= 2
 
 # ── Navegación ─────────────────────────────────────────────────────────────
-# Pocas vistas principales —lo que un gerente abre todos los días, en el orden
-# en que se usa: cómo va, qué atacar, quién va bien y quién no, canales,
-# hacia dónde va— y el resto de herramientas en «➕ Más». Solo se ejecuta la
-# vista abierta (ver ui/layouts/tabs.py): antes se ejecutaban todas en cada
-# clic y la app se sentía lenta.
+# En la barra van las vistas importantes, en el orden en que se usan: cómo va,
+# por qué y qué atacar, quién va bien y quién no, canales, hacia dónde va,
+# dónde (mapa), un caso concreto, preguntar y exportar. Las que dependen del
+# archivo (mapa, seguimiento, comparar archivos) solo aparecen si aplican. En
+# «➕ Más» quedan las herramientas de soporte. Solo se ejecuta la vista
+# abierta (ver ui/layouts/tabs.py): antes se ejecutaban todas en cada clic.
 V_INICIO, V_RESUMEN, V_ATACAR = "🏠 Inicio", "📋 Resumen", VISTA_ATACAR
 V_CUADRO, V_CANALES, V_PROYECCION, V_EXPORTAR = "📊 Cómo va cada uno", "📈 Canales", "🔮 Proyección", "⬇️ Exportar"
 
 inicio = (V_INICIO, lambda: render_home(wb, sheet, mode_info, dashboard, seleccion=seleccion))
 exportar = (V_EXPORTAR, lambda: render_exports(df,dashboard,wb["filename"],sheet,full_df=item["processed"],schema=schema,workbook=wb))
-herramientas = [
-    ("🤖 Asistente IA", lambda: render_assistant(df, schema, item["profile"], mode_info, dashboard)),
+asistente = ("🤖 Asistente IA", lambda: render_assistant(df, schema, item["profile"], mode_info, dashboard))
+geo = [("🗺️ Georreferenciación", lambda: render_georeferencing(df, schema))] if geo_enabled else []
+comparar_archivos = ([("⚖️ Comparar archivos", lambda: render_comparison(st.session_state.comparison_result))]
+                     if st.session_state.comparison_result else [])
+soporte = [
     ("🧮 Datos", lambda: render_data_table(df)),
     ("✅ Calidad del dato", lambda: render_quality(item["profile"])),
 ]
 if multi_sheet_enabled:
-    herramientas.append(("🗂️ Varias hojas", lambda: render_multi_sheet(wb)))
-if st.session_state.comparison_result:
-    herramientas.append(("⚖️ Comparar archivos", lambda: render_comparison(st.session_state.comparison_result)))
-personas = []
+    soporte.append(("🗂️ Varias hojas", lambda: render_multi_sheet(wb)))
 if profile_enabled:
-    personas.append(("⚔️ Comparar personas", lambda: render_person_compare(df, schema)))
+    soporte.append(("⚔️ Comparar personas", lambda: render_person_compare(df, schema)))
 if st.session_state.tracking_data is not None and not st.session_state.tracking_data.empty:
-    personas.append(("📍 Seguimiento consolidado", lambda: render_tracking(st.session_state.tracking_data)))
-geo = [("🗺️ Georreferenciación", lambda: render_georeferencing(df, schema))] if geo_enabled else []
+    soporte.append(("📍 Seguimiento consolidado", lambda: render_tracking(st.session_state.tracking_data)))
 seguimiento = ([(VISTA_SEGUIMIENTO, lambda: render_person_profile(df, schema, dashboard))]
                if mode_info["mode"] not in {"catalog", "reference"} and has_entity(df, schema) else [])
 
@@ -643,9 +643,9 @@ if mode_info["mode"] in {"catalog", "reference"}:
     st.markdown(f'<div class="mode-banner"><b>{mode_info["label"]}</b> · {mode_info["reason"]}</div>', unsafe_allow_html=True)
     # Un catálogo o lista de referencia no tiene desempeño que atacar ni
     # personas que comparar: su vista principal es explorar el contenido.
-    principales = [inicio, ("📚 Vista principal", lambda: render_catalog(df, schema, mode_info)),
-                   herramientas[1], exportar]
-    secundarias = [herramientas[0]] + herramientas[2:] + geo + [v for v in personas if v[0] != "⚔️ Comparar personas"]
+    principales = ([inicio, ("📚 Vista principal", lambda: render_catalog(df, schema, mode_info))] + geo
+                   + comparar_archivos + [asistente, soporte[0], exportar])
+    secundarias = [v for v in soporte[1:] if v[0] != "⚔️ Comparar personas"]
     barra_de_vistas(principales, secundarias)
 else:
     atacar = (V_ATACAR, lambda: render_planes(df, schema, dashboard))
@@ -653,20 +653,18 @@ else:
     canales = (V_CANALES, lambda: render_comercial(df, schema, dashboard))
     proyeccion = (V_PROYECCION, lambda: render_forecast(df, schema, dashboard))
     if st.session_state.get("view_mode", "Ejecutivo") == "Ejecutivo":
-        # Modo ejecutivo: lo justo para decidir, sin herramientas de análisis fino.
-        principales = [inicio, (V_RESUMEN, lambda: render_executive(df, schema, dashboard)), atacar, cuadro,
-                       canales, proyeccion, exportar]
-        secundarias = seguimiento + geo + personas + herramientas
+        principales = ([inicio, (V_RESUMEN, lambda: render_executive(df, schema, dashboard)), atacar, cuadro,
+                        canales, proyeccion] + geo + seguimiento + comparar_archivos + [asistente, exportar])
+        secundarias = soporte
     else:
         def _render_finanzas():
             st.markdown(section_header("Lectura financiera", eyebrow="ANÁLISIS", compact=True), unsafe_allow_html=True)
             st.dataframe(dashboard["statistics"],use_container_width=True,hide_index=True)
             st.caption("Esta vista utiliza las métricas detectadas automáticamente; no presupone que el archivo sea de ventas.")
 
-        # Modo analista: las mismas vistas principales más las de análisis fino.
-        principales = [inicio, ("🧾 Descripción", lambda: render_dashboard(df,dashboard)), atacar, cuadro,
-                       ("🔬 Analítica", lambda: render_explorer(df,schema)), canales, exportar]
-        secundarias = (seguimiento + [proyeccion, ("🚨 Anomalías", lambda: render_anomalies(df, schema)),
-                                      ("💵 Finanzas", _render_finanzas)]
-                       + geo + personas + herramientas)
+        # Modo analista: además, las herramientas de análisis fino.
+        principales = ([inicio, ("🧾 Descripción", lambda: render_dashboard(df,dashboard)), atacar, cuadro,
+                        ("🔬 Analítica", lambda: render_explorer(df,schema)), canales, proyeccion] + geo + seguimiento
+                       + comparar_archivos + [asistente, exportar])
+        secundarias = [("🚨 Anomalías", lambda: render_anomalies(df, schema)), ("💵 Finanzas", _render_finanzas)] + soporte
     barra_de_vistas(principales, secundarias)

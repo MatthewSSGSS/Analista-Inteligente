@@ -16,38 +16,78 @@ from ui.layouts.columns import two_column, kpi_grid
 from ui.person_profile import has_entity
 
 
-def _por_que_y_que_atacar(df, schema, dashboard) -> None:
-    """La lectura gerencial en tres frases, justo bajo el veredicto.
-
-    El veredicto dice CUÁNTO se movió el número; un gerente pregunta enseguida
-    por qué y qué hacer. Aquí va la respuesta corta (causa, palanca y lo que
-    más vale atacar) y un botón a la vista con el detalle y el plan."""
-    import html as _html
+def _gerencia(df, schema, dashboard):
     from core.gerencia import analisis_gerencial
-    g = (dashboard or {}).get("gerencia") if isinstance(dashboard, dict) else None
+    g = dashboard.get("gerencia") if isinstance(dashboard, dict) else None
     if g is None and not (isinstance(dashboard, dict) and "gerencia" in dashboard):
         try:
             g = analisis_gerencial(df, schema, dashboard)
         except Exception:
             g = None
-    if not g or not g.get("frases"):
+    return g
+
+
+def _por_que_y_que_atacar(df, schema, dashboard) -> None:
+    """La lectura gerencial en tres frases, justo bajo el veredicto, con sus
+    dos accesos directos dentro de la misma tarjeta.
+
+    El veredicto dice CUÁNTO se movió el número; un gerente pregunta enseguida
+    por qué y qué hacer. Aquí va la respuesta corta (causa, palanca y lo que
+    más vale atacar) y, a la derecha, los botones al detalle: antes quedaban
+    sueltos debajo, uno de cada ancho, y parecían mal puestos."""
+    import html as _html
+    g = _gerencia(df, schema, dashboard)
+    con_seguimiento = has_entity(df, schema)
+    frases = []
+    if g and g.get("frases"):
+        frases = [f for f in g["frases"] if not f.startswith("En sentido contrario") and not f.startswith("Le siguen")][:3]
+    if not frases and not con_seguimiento:
         return
-    frases = [f for f in g["frases"] if not f.startswith("En sentido contrario") and not f.startswith("Le siguen")][:3]
-    items = "".join(f"<li>{_html.escape(clean_display_text(f))}</li>" for f in frases)
     st.markdown(
         """<style>
-        .pq-card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--blue);
-          border-radius:var(--radius-md);padding:14px 18px;box-shadow:var(--shadow-sm);margin:6px 0 4px}
+        .st-key-pq_bloque{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--blue);
+          border-radius:var(--radius-md);padding:14px 18px;box-shadow:var(--shadow-sm);margin:6px 0 10px}
         .pq-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--blue)}
-        .pq-card ul{margin:6px 0 0;padding-left:18px}
-        .pq-card li{font-size:13.5px;color:var(--text);line-height:1.5;margin-bottom:3px}
-        </style>"""
-        f'<div class="pq-card"><div class="pq-eyebrow">Por qué y qué atacar · {_html.escape(g["mes_b"])} vs {_html.escape(g["mes_a"])}</div>'
-        f"<ul>{items}</ul></div>",
+        .pq-lista{margin:6px 0 0;padding-left:18px}
+        .pq-lista li{font-size:13.5px;color:var(--text);line-height:1.5;margin-bottom:3px}
+        .st-key-pq_bloque .stButton>button{width:100%;justify-content:center}
+        </style>""",
         unsafe_allow_html=True,
     )
-    st.button("🎯 Ver qué atacar y el plan de acción", key="ir_atacar_resumen", type="primary",
-              on_click=ir_a, args=(VISTA_ATACAR,))
+    with st.container(key="pq_bloque"):
+        if frases:
+            texto, acciones = st.columns([2.6, 1], vertical_alignment="center", gap="medium")
+            with texto:
+                items = "".join(f"<li>{_html.escape(clean_display_text(f))}</li>" for f in frases)
+                st.markdown(
+                    f'<div class="pq-eyebrow">Por qué y qué atacar · {_html.escape(g["mes_b"])} vs {_html.escape(g["mes_a"])}</div>'
+                    f'<ul class="pq-lista">{items}</ul>', unsafe_allow_html=True)
+        else:
+            acciones = st.container()
+        with acciones:
+            if frases:
+                st.button("🎯 Ver qué atacar y el plan", key="ir_atacar_resumen", type="primary",
+                          use_container_width=True, on_click=ir_a, args=(VISTA_ATACAR,))
+            if con_seguimiento:
+                # Sin `help=`: el tooltip envuelve el botón en otro div y deja de
+                # aplicarle el estilo del tema (salía negro con el texto invisible).
+                st.button("🔎 Ver un caso concreto", key="ir_seguimiento_res", use_container_width=True,
+                          on_click=ir_a, args=(VISTA_SEGUIMIENTO,))
+
+
+def _veredicto_con_meses(dashboard, g):
+    """El veredicto con los meses nombrados: «frente al periodo anterior» a
+    secas obligaba a preguntar cuál; la tarjeta de abajo ya decía los meses."""
+    if not (isinstance(dashboard, dict) and dashboard.get("executive") and g and g.get("mes_a")):
+        return dashboard
+    ex = dict(dashboard["executive"])
+    for campo in ("headline", "detail"):
+        if ex.get(campo):
+            ex[campo] = (str(ex[campo])
+                         .replace("frente al periodo anterior", f"en {g['mes_b']} frente a {g['mes_a']}")
+                         .replace("El último periodo alcanzó", f"{g['mes_b'].capitalize()} alcanzó")
+                         .replace("en el periodo anterior", f"en {g['mes_a']}"))
+    return {**dashboard, "executive": ex}
 
 
 def render_executive(df, schema, dashboard):
@@ -59,18 +99,11 @@ def render_executive(df, schema, dashboard):
     # mostraba — solo ui/dashboard.py lo usaba. Es la pieza que más
     # protagonismo merece aquí.
     if isinstance(dashboard, dict) and dashboard.get("executive"):
-        executive_headline(dashboard)
+        executive_headline(_veredicto_con_meses(dashboard, _gerencia(df, schema, dashboard)))
 
+    # Por qué y qué atacar, con los accesos a «Qué atacar» y al seguimiento de
+    # un caso dentro de la misma tarjeta.
     _por_que_y_que_atacar(df, schema, dashboard)
-
-    # El análisis de seguimiento ya no vive aquí dentro: tiene pestaña propia
-    # ("🔎 Análisis de seguimiento"). Enterrado a media página, con un botón
-    # que había que descubrir, era de las herramientas menos usadas del panel
-    # pese a responder una de las preguntas más frecuentes.
-    if has_entity(df, schema):
-        st.button("🔎 Ver un punto, asesor o código en concreto", key="ir_seguimiento_res",
-                  on_click=ir_a, args=(VISTA_SEGUIMIENTO,),
-                  help="Abre el seguimiento de un caso: sus alertas y su comparación contra el grupo.")
 
     # ── Layout de dos columnas: a la izquierda los KPIs y los gráficos
     # principales (lo que ocupa más espacio de lectura), a la derecha la

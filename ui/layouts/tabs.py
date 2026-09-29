@@ -11,9 +11,9 @@ una sola fila de `st.tabs` con 11 a 16 pestañas, y tenía dos problemas:
   todos los días quedaba mezclado con herramientas ocasionales y, al bajar
   por una vista larga, había que volver arriba para cambiar.
 
-Ahora hay unas pocas vistas principales (lo que un gerente abre todos los
-días) en una barra que queda fija arriba, y el resto en un menú «➕ Más».
-Solo se dibuja la vista activa.
+Ahora las vistas importantes van en una barra que queda fija arriba —la
+activa, en píldora roja— y las herramientas ocasionales en «➕ Más». Solo
+se dibuja la vista activa.
 
 Como Streamlit borra el estado de los widgets que no se dibujan, lo que
 tenga que sobrevivir al cambio de vista (por ejemplo, los pasos marcados de
@@ -60,6 +60,12 @@ def barra_de_vistas(principales: list[Vista], secundarias: list[Vista] | None = 
     `principales` van siempre a la vista; `secundarias`, dentro de «➕ Más».
     Si la vista guardada ya no existe (se cambió de modo o de hoja), se abre
     la primera principal.
+
+    Cada vista es un botón, y la activa es un botón primario: la píldora roja
+    de siempre. Se hizo así y no con `st.segmented_control` porque la marca de
+    "seleccionado" de ese control cambia entre versiones de Streamlit, y en la
+    versión de Streamlit Cloud la pestaña activa quedaba sin indicador; el
+    botón primario se ve igual en todas.
     """
     secundarias = [v for v in (secundarias or []) if v[0] not in {p[0] for p in principales}]
     if not principales:
@@ -71,34 +77,20 @@ def barra_de_vistas(principales: list[Vista], secundarias: list[Vista] | None = 
     if activa not in todas:
         activa = etiquetas_p[0]
         st.session_state[_CLAVE] = activa
-    # El control de las principales refleja la vista activa (o ninguna, si la
-    # activa está en «Más»). Se fija antes de dibujarlo, que es lo permitido.
-    st.session_state["nav_principal"] = activa if activa in etiquetas_p else None
 
-    def _al_elegir_principal():
-        elegida = st.session_state.get("nav_principal")
-        if elegida:
-            st.session_state[_CLAVE] = elegida
-
-    def _al_elegir_secundaria(etiqueta: str):
+    def _elegir(etiqueta: str):
         st.session_state[_CLAVE] = etiqueta
-        st.session_state["nav_principal"] = None
 
-    with st.container(key="nav_barra"):
+    with st.container(key="nav_barra", horizontal=True, gap="small", vertical_alignment="center"):
+        for i, etiqueta in enumerate(etiquetas_p):
+            st.button(etiqueta, key=f"nav_btn_{i}", type="primary" if etiqueta == activa else "secondary",
+                      on_click=_elegir, args=(etiqueta,))
         if secundarias:
-            col_p, col_s = st.columns([6, 1.15], vertical_alignment="center", gap="small")
-        else:
-            col_p, col_s = st.container(), None
-        with col_p:
-            st.segmented_control("Vista", etiquetas_p, key="nav_principal", on_change=_al_elegir_principal,
-                                 label_visibility="collapsed")
-        if col_s is not None:
-            with col_s:
-                activa_mas = activa if activa not in etiquetas_p else None
-                with st.popover(f"➕ {activa_mas}" if activa_mas else "➕ Más", use_container_width=True):
-                    for etiqueta, _ in secundarias:
-                        st.button(etiqueta, key=f"nav_mas_{etiqueta}", use_container_width=True,
-                                  type="primary" if etiqueta == activa else "secondary",
-                                  on_click=_al_elegir_secundaria, args=(etiqueta,))
+            activa_mas = activa if activa not in etiquetas_p else None
+            with st.popover(f"➕ {activa_mas}" if activa_mas else "➕ Más"):
+                for etiqueta, _ in secundarias:
+                    st.button(etiqueta, key=f"nav_mas_{etiqueta}", use_container_width=True,
+                              type="primary" if etiqueta == activa else "secondary",
+                              on_click=_elegir, args=(etiqueta,))
 
     todas[activa]()

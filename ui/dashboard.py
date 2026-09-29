@@ -842,8 +842,7 @@ def render_dashboard(df, dashboard):
     # pestaña, por encima de las cifras y de la conclusión.
     if has_entity(df, schema):
         st.button("🔎 Ver un punto, asesor o código en concreto", key="ir_seguimiento_desc",
-                  on_click=ir_a, args=(VISTA_SEGUIMIENTO,),
-                  help="Abre el seguimiento de un caso: sus alertas y su comparación contra el grupo.")
+                  on_click=ir_a, args=(VISTA_SEGUIMIENTO,))
 
     # ── Detalle progresivo: nada se elimina, solo se reorganiza en dos
     # columnas temáticas para que no sea una fila larga de acordeones y se
