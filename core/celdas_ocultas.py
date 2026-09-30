@@ -21,11 +21,13 @@ from __future__ import annotations
 
 import io
 import posixpath
+import re
 import zipfile
 import struct
 import xml.etree.ElementTree as ET
 
 from .xlsb import hojas as hojas_del_libro, registros
+from .pivot_flatten import xml_sin_celdas
 
 _S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -62,6 +64,10 @@ def _partes_xlsx(z) -> dict:
     return salida
 
 
+_FILA_OCULTA = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?row\s[^>]*?\bhidden\s*=\s*[\"'](?:1|true)[\"'][^>]*>")
+_NUMERO_FILA = re.compile(rb"\sr\s*=\s*[\"'](\d+)[\"']")
+
+
 def _xlsx(data: bytes) -> dict:
     z = zipfile.ZipFile(io.BytesIO(data))
     if "xl/workbook.xml" not in z.namelist():
@@ -70,9 +76,15 @@ def _xlsx(data: bytes) -> dict:
     for nombre, parte in _partes_xlsx(z).items():
         if parte not in z.namelist():
             continue
-        hoja = ET.fromstring(z.read(parte))
-        filas = {int(r.get("r")) - 1 for r in hoja.iter(f"{{{_S}}}row")
-                 if r.get("hidden") in ("1", "true") and (r.get("r") or "").isdigit()}
+        xml = z.read(parte)
+        # Las filas ocultas se buscan como texto (en C) y el árbol se arma sin
+        # las celdas: ver pivot_flatten.xml_sin_celdas.
+        filas = set()
+        for etiqueta in _FILA_OCULTA.finditer(xml):
+            numero = _NUMERO_FILA.search(etiqueta.group(0))
+            if numero:
+                filas.add(int(numero.group(1)) - 1)
+        hoja = ET.fromstring(xml_sin_celdas(xml))
         columnas = set()
         for col in hoja.iter(f"{{{_S}}}col"):
             try:

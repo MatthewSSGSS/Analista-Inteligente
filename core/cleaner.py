@@ -61,7 +61,9 @@ def _candidatos_con_zona(serie: pd.Series):
     sin_nulos = serie.dropna()
     if sin_nulos.empty:
         return []
-    texto = sin_nulos.astype(str)
+    # El prefiltro también corre sobre los valores distintos (en el orden en
+    # que aparecen), no sobre cada fila: mismo resultado, una fracción del costo.
+    texto = pd.Series(pd.unique(sin_nulos.to_numpy(dtype=object)), dtype=object).astype(str)
     posibles = texto[texto.str.contains(_CANDIDATO_ZONA_RE, na=False)]
     if posibles.empty:
         return []

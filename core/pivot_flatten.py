@@ -72,6 +72,29 @@ def es_total(texto) -> bool:
     return bool(_TOTAL_EXACT_RE.match(_cell_text(texto)))
 
 
+_SHEETDATA_INI = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?sheetData\b[^>]*?(/?)>")
+_SHEETDATA_FIN = re.compile(rb"</(?:[A-Za-z_][\w.-]*:)?sheetData\s*>")
+
+
+def xml_sin_celdas(xml: bytes) -> bytes:
+    """El XML de una hoja sin el bloque <sheetData> (todas sus celdas).
+
+    Lo que se lee aparte de los valores —celdas combinadas, columnas
+    ocultas o angostas— está fuera de ese bloque, y construir el árbol
+    completo de una hoja de 70.000 filas (un millón de celdas) para después
+    ignorarlas costaba ~3 s por cada lectura. Sin él, el árbol es diminuto.
+    Si el XML no tiene la forma esperada se devuelve tal cual."""
+    ini = _SHEETDATA_INI.search(xml)
+    if not ini:
+        return xml
+    if ini.group(1):  # <sheetData/>: no hay celdas que quitar
+        return xml
+    fin = _SHEETDATA_FIN.search(xml, ini.end())
+    if not fin:
+        return xml
+    return xml[:ini.start()] + xml[fin.end():]
+
+
 def _xlsx_merged_ranges_by_sheet(data: bytes) -> dict:
     """{nombre_de_hoja: [(r1,c1,r2,c2), ...]} de TODO el .xlsx/.xlsm en una
     sola pasada ligera sobre el XML interno (es un ZIP) — nunca carga el
@@ -127,7 +150,7 @@ def _xlsx_merged_ranges_by_sheet(data: bytes) -> dict:
                 sheet_path = target.lstrip("/") if target.startswith("/") else f"xl/{target}"
                 if sheet_path not in names:
                     continue
-                sheet_xml = ET.fromstring(z.read(sheet_path))
+                sheet_xml = ET.fromstring(xml_sin_celdas(z.read(sheet_path)))
                 ranges = []
                 for mc in sheet_xml.findall(f"{{{ns_main}}}mergeCells/{{{ns_main}}}mergeCell"):
                     ref = mc.get("ref")

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 
+import numpy as np
 import pandas as pd
 from .dates import a_datetime
 import streamlit as st
@@ -40,8 +41,19 @@ _TEXTOS_VACIOS = {"", "nan", "nat", "none", "<na>"}
 
 
 def es_vacio(serie: pd.Series) -> pd.Series:
-    """Celdas sin dato, contando los textos vacíos o que solo dicen "nan"."""
-    return serie.isna() | serie.astype(str).str.strip().str.lower().isin(_TEXTOS_VACIOS)
+    """Celdas sin dato, contando los textos vacíos o que solo dicen "nan".
+
+    El texto se revisa sobre los valores DISTINTOS y se reparte a cada fila:
+    pasar a texto las 70.000 celdas de cada columna costaba más de un
+    segundo al armar los filtros del menú. Los nulos (None, NaN, NaT, NA)
+    quedan con código -1 en `factorize` y cuentan como vacíos, igual que
+    con `isna()`."""
+    codigos, unicos = pd.factorize(serie, use_na_sentinel=True)
+    if not len(unicos):
+        return pd.Series(True, index=serie.index)
+    vacio_unico = (pd.Series(unicos, dtype=object).astype(str).str.strip().str.lower()
+                   .isin(_TEXTOS_VACIOS).to_numpy())
+    return pd.Series(np.where(codigos < 0, True, vacio_unico[codigos]), index=serie.index)
 
 
 def mascara_regla(serie: pd.Series, regla: dict) -> pd.Series:

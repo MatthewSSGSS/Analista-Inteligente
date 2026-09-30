@@ -32,6 +32,7 @@ import posixpath
 import re
 import unicodedata
 import zipfile
+from functools import lru_cache
 import xml.etree.ElementTree as ET
 from typing import Optional
 
@@ -48,21 +49,42 @@ _PORCENTAJE_RE = re.compile(r"cum|%|porc|tasa|part|ratio|pct|avance", re.I)
 _MES_RE = re.compile(r"(?:\d{1,2}\s*[.\-/]?\s*)?([a-z]{3,10})\.?(?:(?:\s*de\s+|\s*[\-/.\s]\s*)'?(\d{2}|\d{4}))?")
 
 
+# Estas tres funciones se llaman sobre CADA celda de cada hoja para decidir
+# si es un informe (millones de veces en una base de 70.000 filas), pero son
+# puras y los valores se repiten muchísimo (el mismo asesor, la misma ciudad).
+# Se memorizan por valor: el resultado es idéntico y una carga de 6 MB pasó
+# de ~29 s a ~2 s en este paso. Solo se memoriza texto; números y fechas
+# tienen su camino rápido propio.
+_ESPACIOS = re.compile(r"\s+")
+
+
+@lru_cache(maxsize=262_144)
+def _txt_texto(s: str) -> str:
+    return _ESPACIOS.sub(" ", s).strip()
+
+
 def _txt(v) -> str:
     if v is None:
         return ""
+    if isinstance(v, str):
+        return _txt_texto(v)
     try:
         if pd.isna(v):
             return ""
     except (TypeError, ValueError):
         pass
-    return re.sub(r"\s+", " ", str(v)).strip()
+    return _ESPACIOS.sub(" ", str(v)).strip()
+
+
+@lru_cache(maxsize=262_144)
+def _norm_texto(s: str) -> str:
+    t = unicodedata.normalize("NFKD", s)
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return t.lower().strip()
 
 
 def _norm(texto) -> str:
-    t = unicodedata.normalize("NFKD", _txt(texto))
-    t = "".join(ch for ch in t if not unicodedata.combining(ch))
-    return t.lower().strip()
+    return _norm_texto(_txt(texto))
 
 
 def _numero(v) -> float:
@@ -81,7 +103,11 @@ def periodo_de(v) -> Optional[tuple]:
         return None if pd.isna(ts) else (ts.year, ts.month)
     if isinstance(v, (int, float, np.integer, np.floating)):
         return None
-    t = _norm(v)
+    return _periodo_texto(_norm(v))
+
+
+@lru_cache(maxsize=262_144)
+def _periodo_texto(t: str) -> Optional[tuple]:
     if not t or len(t) > 25:
         return None
     m = re.fullmatch(r"(\d{4})[-/](\d{1,2})(?:[-/]\d{1,2})?(?: 00:00:00)?", t)

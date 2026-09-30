@@ -77,7 +77,14 @@ def month_number_series(s):
     puede ser uno de doce, así que el trabajo real es diminuto. El resultado
     es idéntico: mismo mapeo, calculado una vez por valor en vez de una vez
     por fila."""
-    x = s.astype("string").str.strip().str.lower()
+    # Y la limpieza (texto, sin espacios, minúsculas) también va sobre los
+    # valores distintos: aplicada a las 70.000 filas de una base costaba más
+    # que todo lo demás. `factorize` agrupa valores iguales en C; el
+    # resultado por fila es el mismo.
+    codigos, unicos = pd.factorize(s, use_na_sentinel=True)
+    if not len(unicos):
+        return pd.Series(pd.NA, index=s.index, dtype="Int64")
+    x = pd.Series(unicos).astype("string").str.strip().str.lower()
     distintos = x.dropna().unique()
     # Segundo filtro, también por costo: un nombre de mes es una palabra
     # corta y sin dígitos. Descartar por longitud y por "es alfabético"
@@ -88,7 +95,8 @@ def month_number_series(s):
     # así que cualquier valor que este filtro descarta habría dado nulo.
     posibles = [v for v in distintos if len(v) <= 12 and str(v).replace(" ", "").isalpha()]
     equivalencias = {v: MONTHS.get(_norm(v), pd.NA) for v in posibles}
-    return x.map(equivalencias).astype("Int64")
+    por_unico = x.map(equivalencias).astype("Int64").array
+    return pd.Series(por_unico.take(codigos, allow_fill=True), index=s.index)
 
 
 def is_month_name_series(s):
@@ -514,7 +522,13 @@ def detect_date(s, name):
     # La corrección de zona a hora de Colombia ya ocurrió antes, en
     # `core/cleaner.normalize_timezones`, que es el primer paso de la
     # limpieza.
-    text = solo_fecha(sin_hora(text))
+    # Quitar la hora y extraer la fecha son operaciones celda por celda: se
+    # hacen sobre los valores distintos y se reparten a cada fila. Una
+    # columna de nombres (220 distintos en 70.000 filas) pasaba por dos
+    # expresiones regulares 70.000 veces para terminar descartada.
+    codigos, unicos = pd.factorize(text)
+    limpios = solo_fecha(sin_hora(pd.Series(unicos, dtype=object)))
+    text = pd.Series(limpios.to_numpy(dtype=object)[codigos], index=text.index)
     iso_ratio = text.str.match(ISO_DATE_RE).mean() if len(text) else 0
     # Si la mayoría de los valores ya vienen en formato ISO (típico tras
     # convertir una columna datetime a texto en el pipeline de limpieza),
