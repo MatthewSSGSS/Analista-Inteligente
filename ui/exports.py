@@ -1,25 +1,12 @@
 import html as _html
-import io, re
+import re
 import pandas as pd
 import streamlit as st
 from core.dashboard_engine import build_dashboard
 from ui.components.section import section_header
+from ui.report_excel import build_excel_report, nombre_archivo as nombre_archivo_excel
 from ui.report_html import build_html_report, build_workbook_html_report
 from ui.interactive_report import build_interactive_html_report
-
-
-def _insight_text(item):
-    """Obtiene el texto de un hallazgo sin asumir una única estructura."""
-    if not isinstance(item, dict):
-        return str(item) if item is not None else ""
-    value = item.get("finding") or item.get("text") or item.get("message") or item.get("description") or item.get("title") or ""
-    return re.sub(r"<[^>]+>", "", str(value))
-
-
-def _insight_confidence(item):
-    if not isinstance(item, dict):
-        return "Media"
-    return item.get("confidence") or item.get("confidence_label") or "Media"
 
 
 def _active_filters_summary(schema=None):
@@ -222,44 +209,35 @@ def render_exports(df, dashboard, filename, sheet, full_df=None, schema=None, wo
         except Exception as exc:
             st.error(f"No se pudo preparar: {exc}")
 
-    # ── Datos: mantienen el comportamiento anterior ──────────────────────
-    st.markdown('<div class="exp-subhead">Datos para trabajar</div>', unsafe_allow_html=True)
-    csv = df.to_csv(index=False).encode("utf-8-sig")
-    x = io.BytesIO()
-    with pd.ExcelWriter(x, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Datos")
-        if not dashboard["statistics"].empty:
-            dashboard["statistics"].to_excel(writer, index=False, sheet_name="Estadistica")
-        if dashboard["insights"]:
-            pd.DataFrame([{
-                "Hallazgo": _insight_text(i),
-                "Confianza": _insight_confidence(i),
-                "Tipo": i.get("kind", "info") if isinstance(i, dict) else "info",
-                "Acción sugerida": (i.get("action", "") if isinstance(i, dict) else ""),
-            } for i in dashboard["insights"]]).to_excel(writer, index=False, sheet_name="Insights")
-
-    report = f"""EXCEL INTELLIGENCE — RESUMEN EJECUTIVO
-Archivo: {filename}
-Hoja: {sheet}
-Registros analizados: {len(df):,}
-
-{dashboard["summary"]}
-
-HALLAZGOS
-""" + "\n".join(f"- {_insight_text(i)}" for i in dashboard["insights"])
-
+    # ── Excel ejecutivo y CSV, con lo que se ve ahora ────────────────────
+    # El Excel se arma al hacer clic (data=callable): con gráficos, planes y
+    # tablas dinámicas es más pesado que un volcado, y armarlo en cada rerun
+    # de la vista la haría lenta aunque nadie lo descargue.
+    st.markdown('<div class="exp-subhead">Excel y datos</div>', unsafe_allow_html=True)
     with st.container(key="exp_datos"):
-        st.markdown(_cabecera(
-            "🗂️", "Datos filtrados",
-            f"Los {len(df):,} registros que ves ahora, para abrir en Excel o cruzar con otras fuentes.",
-        ), unsafe_allow_html=True)
-        a, b, c = st.columns(3)
-        a.download_button("CSV", csv, "datos_filtrados.csv", "text/csv", use_container_width=True, key="exp_btn_csv")
-        b.download_button("Excel (datos + estadística)", x.getvalue(), "reporte_excel_intelligence.xlsx",
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                          use_container_width=True, key="exp_btn_xlsx")
-        c.download_button("Resumen en texto", report.encode("utf-8"), "resumen_ejecutivo.txt", "text/plain",
-                          use_container_width=True, key="exp_btn_txt")
+        izquierda, derecha = st.columns([2.4, 1], vertical_alignment="center")
+        with izquierda:
+            st.markdown(_cabecera(
+                "📊", "Excel ejecutivo",
+                f"Los {len(df):,} registros que ves ahora, en un libro listo para enviar: portada con indicadores y "
+                "gráficos, plan de acción, evolución mes a mes, cómo va cada uno, matrices con mapa de calor y "
+                "tablas dinámicas de Excel sobre los datos.",
+                [("Gráficos", False), ("Tablas dinámicas", False), ("Plan de acción", False),
+                 (f"Filtros: {filters_summary}", has_active_filters)],
+            ), unsafe_allow_html=True)
+        with derecha:
+            st.download_button(
+                "⬇ Descargar Excel",
+                lambda: build_excel_report(df, schema or {}, dashboard, filename, sheet, filters_summary),
+                nombre_archivo_excel(sheet), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, type="primary", key="exp_btn_xlsx",
+                help="Se arma al hacer clic, con tus filtros actuales. Las tablas dinámicas se actualizan al abrirlo.",
+            )
+            st.download_button(
+                "CSV (solo datos)", lambda: df.to_csv(index=False).encode("utf-8-sig"), "datos_filtrados.csv",
+                "text/csv", use_container_width=True, key="exp_btn_csv",
+                help="Los datos planos, para cruzar con otras fuentes o cargarlos en otro sistema.",
+            )
 
     st.markdown(
         '<div class="exp-tip">💡 Los informes se abren en Chrome o Edge sin internet. Dentro del archivo, '
