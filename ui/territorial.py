@@ -1,7 +1,6 @@
 """Análisis Territorial: la red sobre el mapa.
 
-Tercera ruta de la app, al mismo nivel que Análisis Práctico y Análisis
-Avanzado, y construida con el mismo patrón que ellas: una función
+Segunda ruta de la app, al mismo nivel que Análisis Completo: una función
 `render_*_page()` que se llama desde `app.py` y dibuja la pantalla completa,
 con su propio CSS, su propio cargador y sus propias claves de sesión.
 
@@ -25,9 +24,9 @@ from core.geo_engine import supports_georeferencing
 from core.loader import load_workbook
 from ui.assets import image_data_uri
 
-# Claves de sesión propias, igual que `practico_*` en ui/practical.py: el
-# archivo que se analiza aquí no tiene por qué ser el mismo que el del panel
-# avanzado, y compartir la clave haría que cargar uno pisara al otro.
+# Claves de sesión propias: el archivo que se analiza aquí no tiene por qué
+# ser el mismo que el del panel completo, y compartir la clave haría que
+# cargar uno pisara al otro.
 _CLAVE_LIBRO = "territorial_workbook"
 _CLAVE_HOJA = "territorial_sheet"
 
@@ -39,8 +38,7 @@ def _inject_css():
         <style>
         @keyframes fadeUp{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:translateY(0)}}}}
 
-        /* Hero: misma estructura que .practico-hero, con el acento turquesa
-           de la tarjeta de Territorial en vez del rojo de Práctico. */
+        /* Hero con el acento turquesa de la tarjeta de Territorial. */
         .territorial-hero{{position:relative;overflow:hidden;border-radius:var(--radius-lg);
           border:1px solid var(--line);box-shadow:var(--shadow-md);padding:22px 26px;
           background-image:linear-gradient(100deg,var(--panel) 38%,rgba(15,168,160,.10) 100%),
@@ -121,11 +119,8 @@ def _cabecera():
         )
     with der:
         st.write("")
-        if st.button("⚡ Ir a Práctico", use_container_width=True, key="territorial_a_practico"):
-            st.session_state.analysis_mode = "practico"
-            st.rerun()
-        if st.button("🧭 Ir a Avanzado", use_container_width=True, key="territorial_a_avanzado"):
-            st.session_state.analysis_mode = "avanzado"
+        if st.button("🧭 Ir a Análisis Completo", use_container_width=True, key="territorial_a_completo"):
+            st.session_state.analysis_mode = "completo"
             st.rerun()
 
 
@@ -146,7 +141,7 @@ def _cargador():
                 except Exception as exc:
                     st.error(f"No pudimos procesar este archivo: {exc}")
     with columnas[1]:
-        # Si ya hay un archivo abierto en el panel avanzado, no tiene sentido
+        # Si ya hay un archivo abierto en el panel completo, no tiene sentido
         # obligar a subirlo otra vez para verlo en el mapa.
         otro = st.session_state.get("workbook")
         if otro and not st.session_state.get(_CLAVE_LIBRO):

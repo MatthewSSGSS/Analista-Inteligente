@@ -50,7 +50,6 @@ from ui.login import render_login
 import core.auth_engine as auth_engine
 from ui.mode_choice import render_mode_choice
 from ui.territorial import render_territorial_page
-from ui.practical import render_practical_page
 from ui.tracking import render_tracking
 from ui.multi_sheet import render_multi_sheet
 from core.tracking_engine import ingest_file, sources_to_long, merge_long, read_consolidated
@@ -90,8 +89,6 @@ if "comparison_error" not in st.session_state: st.session_state.comparison_error
 if "comparison_raw_files" not in st.session_state: st.session_state.comparison_raw_files=None
 if "comparison_filters" not in st.session_state: st.session_state.comparison_filters={}
 if "tracking_data" not in st.session_state: st.session_state.tracking_data=None
-if "practico_workbook" not in st.session_state: st.session_state.practico_workbook=None
-if "practico_chat" not in st.session_state: st.session_state.practico_chat=[]
 if "tracking_error" not in st.session_state: st.session_state.tracking_error=None
 
 # Si hay una base de datos compartida configurada (ver core/db_engine.py),
@@ -117,6 +114,11 @@ if not st.session_state.app_started:
 
 if "analysis_mode" not in st.session_state:
     st.session_state.analysis_mode = None
+# «Práctico» ya no existe (era una segunda puerta al mismo panel) y «avanzado»
+# pasó a llamarse «completo»: una sesión abierta con un modo viejo entra al
+# panel en vez de quedar en una pantalla que ya no está.
+if st.session_state.analysis_mode not in (None, "completo", "territorial"):
+    st.session_state.analysis_mode = "completo"
 
 if st.session_state.analysis_mode is None:
     choice = render_mode_choice()
@@ -125,13 +127,9 @@ if st.session_state.analysis_mode is None:
         st.rerun()
     st.stop()
 
-if st.session_state.analysis_mode == "practico":
-    render_practical_page()
-    st.stop()
-
-# Territorial es una ruta propia, al mismo nivel que Práctico: pantalla
-# completa, su propio cargador y su propio layout. Se detiene aquí igual que
-# Práctico para no dibujar además el panel avanzado por debajo.
+# Territorial es una ruta propia: pantalla completa, su propio cargador y su
+# propio layout. Se detiene aquí para no dibujar además el panel completo por
+# debajo.
 if st.session_state.analysis_mode == "territorial":
     render_territorial_page()
     st.stop()
@@ -152,16 +150,9 @@ with st.sidebar:
     st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
 
     st.markdown('<p class="sidebar-group-header">Datos</p>', unsafe_allow_html=True)
-    # Los dos modos, uno al lado del otro y con el nombre solo. Antes eran
-    # dos botones a todo el ancho que decían "Cambiar a Análisis Práctico" y
-    # se partían en dos líneas cada uno: cuatro renglones para dos acciones.
-    _modo_a, _modo_b = st.columns(2)
-    if _modo_a.button("⚡ Práctico", use_container_width=True, key="switch_to_practico",
-                      help="Análisis Práctico: resumen rápido y preguntas en lenguaje natural."):
-        st.session_state.analysis_mode = "practico"
-        st.rerun()
-    if _modo_b.button("🗺️ Territorial", use_container_width=True, key="switch_to_territorial",
-                      help="Análisis Territorial: el mismo archivo leído por zonas."):
+    # El otro modo, con el nombre solo (una línea, no un botón que se parta).
+    if st.button("🗺️ Ir a Análisis Territorial", use_container_width=True, key="switch_to_territorial",
+                 help="Análisis Territorial: el mismo archivo leído por zonas."):
         st.session_state.analysis_mode = "territorial"
         st.rerun()
     # Una vez hay un archivo cargado, subir uno nuevo pasa a ser la acción

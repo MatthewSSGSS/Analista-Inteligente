@@ -369,8 +369,7 @@ def _navegacion_de_modos():
 
     boton_real = _st.button
     try:
-        for clave, esperado in (("choose_practico", "practico"),
-                                ("choose_avanzado", "avanzado"),
+        for clave, esperado in (("choose_completo", "completo"),
                                 ("choose_territorial", "territorial")):
             _st.button = lambda *a, **k: k.get("key") == clave
             check(f"la tarjeta '{esperado}' devuelve su modo", render_mode_choice() == esperado)
@@ -392,11 +391,11 @@ def _navegacion_de_modos():
             rutas[derecha.value] = [n.func.id for n in ast.walk(nodo)
                                     if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
                                     and n.func.id.startswith("render_")]
-    check("la ruta de Práctico existe", "render_practical_page" in rutas.get("practico", []))
+    check("Práctico ya no existe como ruta", "practico" not in rutas)
     check("la ruta de Territorial existe", "render_territorial_page" in rutas.get("territorial", []))
-    # Avanzado no tiene un `if` propio: es el camino que sigue cuando ninguna
+    # Completo no tiene un `if` propio: es el camino que sigue cuando ninguna
     # ruta anterior corta, así que se comprueba que ninguna lo intercepte.
-    check("Avanzado sigue siendo el camino por defecto", "avanzado" not in rutas)
+    check("Completo sigue siendo el camino por defecto", "completo" not in rutas)
 
 
 if __name__ == "__main__":

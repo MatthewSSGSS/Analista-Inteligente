@@ -106,9 +106,8 @@ ui/
   labels.py                # sin cambios (ya es de responsabilidad única: traducciones)
 ```
 
-`practical.py` se mantiene como vista independiente (ya es coherente: reutiliza
-`core/query_engine` y solo añade animaciones propias sobre las variables de
-`ui/styles/theme.py`).
+(`practical.py` y `core/query_engine` se eliminaron después: el modo «Práctico» había quedado
+redundante con el panel completo, que ya trae «Pregúntale al Excel» y el Asistente IA.)
 
 ---
 
@@ -151,7 +150,7 @@ Plan:
 3. `ui/theme.py` (el módulo huérfano) y `assets/style.css.css` se retiran (ver tabla §3) — no se
    fusionan variable por variable porque tienen paletas visualmente incompatibles entre sí; migrar
    el sistema que ya se probó es la opción de menor riesgo.
-4. Los `<style>` locales de `login.py`, `landing.py`, `mode_choice.py`, `practical.py` **se
+4. Los `<style>` locales de `login.py`, `landing.py`, `mode_choice.py` **se
    mantienen** donde están (son aditivos: solo agregan clases nuevas sobre las variables del tema
    central) — no hace falta centralizarlos también; el problema de la auditoría era el tema base
    duplicado, no estos complementos.
@@ -201,7 +200,7 @@ regresión contra `FEATURES.md` antes de avanzar a la siguiente.
   etc.) se sigue leyendo/escribiendo en `views/*` y `app.py`, como hoy — no se mueve, porque
   moverlo es un cambio de comportamiento, no de estructura.
 - **`ui/styles/theme.py` es la única fuente de `<style>` de tema base.** Un `<style>` adicional en
-  un `views/*` solo puede *añadir* clases (como hoy hace `practical.py`), nunca redefinir
+  un `views/*` solo puede *añadir* clases (como hoy hace `territorial.py`), nunca redefinir
   `:root{--bg:...}`.
 - **Ninguna función de `core/` recibe objetos de Streamlit** (ya es así hoy; se mantiene como
   regla explícita).
