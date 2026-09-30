@@ -189,25 +189,25 @@ def render_exports(df, dashboard, filename, sheet, full_df=None, schema=None, wo
         else:
             st.caption("No hay hojas con datos para este informe.")
 
-    # Interactivo: lleva los datos adentro y los filtros funcionan en el archivo.
+    # Interactivo: lleva los datos adentro y todo se recalcula en el archivo.
+    # Se arma al hacer clic: además de los datos calcula el diagnóstico del
+    # archivo completo, y hacerlo en cada rerun volvía lenta la vista.
     with col_inter, st.container(key="exp_interactivo"):
         st.markdown(_cabecera(
             "🧭", "Interactivo",
-            "Quien lo abra filtra ahí mismo, sin la app ni internet: KPIs, gráficos y rankings se recalculan.",
-            [("Hasta 20.000 filas", False)],
+            "Un tablero que se usa sin la app ni internet: con cada filtro se recalculan el veredicto, qué atacar, "
+            "las alertas, los gráficos y cómo va cada uno.",
+            [("Hasta 60.000 filas", False), ("Toda la hoja", False)],
         ), unsafe_allow_html=True)
-        try:
-            html_interactivo = build_interactive_html_report(full_df if full_df is not None else df, schema or {}, filename, sheet)
-            contenido = html_interactivo.encode("utf-8")
-            st.download_button(
-                "⬇ Descargar", contenido, "informe_interactivo.html", "text/html",
-                use_container_width=True, key="exp_btn_interactivo",
-                help="Incluye todos los datos de la hoja (hasta 20,000 filas) para que los filtros funcionen sin la app.",
-            )
-            st.markdown(f'<div class="exp-size">HTML · {_mb(contenido)} · pesa más porque lleva los datos</div>',
-                        unsafe_allow_html=True)
-        except Exception as exc:
-            st.error(f"No se pudo preparar: {exc}")
+        st.download_button(
+            "⬇ Descargar",
+            lambda: build_interactive_html_report(full_df if full_df is not None else df, schema or {},
+                                                  filename, sheet).encode("utf-8"),
+            "informe_interactivo.html", "text/html", use_container_width=True, key="exp_btn_interactivo",
+            help="Incluye los datos de toda la hoja (hasta 60.000 filas) para que los filtros funcionen sin la app.",
+        )
+        st.markdown('<div class="exp-size">HTML · se arma al hacer clic · pesa más porque lleva los datos</div>',
+                    unsafe_allow_html=True)
 
     # ── Excel ejecutivo y CSV, con lo que se ve ahora ────────────────────
     # El Excel se arma al hacer clic (data=callable): con gráficos, planes y

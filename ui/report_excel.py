@@ -51,11 +51,12 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from core.cuadro_comparativo import CERCA_DE_META, cuadro_comparativo, opciones_de_comparacion
 from core.dates import a_datetime
+from core.meses_largo import meses_a_filas
 from core.explorador import PERIODO, calculo_automatico, columna_fecha, tabla_cruzada, ultimo_incompleto
 from core.numeric import numeric_valid
 from ui.labels import clean_display_text
 from ui.report_base import fecha_larga, mes
-from visualization.charts import dimension_candidates, metric_candidates, month_columns
+from visualization.charts import dimension_candidates, metric_candidates
 
 # ── Paleta ────────────────────────────────────────────────────────────────
 # Tinta y rojo de marca (ui/styles/theme.py, modo claro) para la portada; los
@@ -1365,35 +1366,6 @@ def _hoja_resumen(ws, df, schema, dashboard, ctx, plan, tendencia, ranking, indi
 
 # ── Punto de entrada ──────────────────────────────────────────────────────
 
-def _formato_largo(df: pd.DataFrame, schema: dict, filename: str, sheet: str):
-    """Una tabla ancha (Enero…Diciembre como columnas, sin fecha) se pasa a
-    formato largo —una fila por elemento y mes— para que la tendencia, el
-    ranking y las dinámicas funcionen igual que con un registro por fecha."""
-    meses = month_columns(df)
-    if len(meses) < 2 or columna_fecha(df, schema):
-        return None
-    try:
-        from core.dates import extract_year_hint
-        anio = extract_year_hint(filename, sheet) or datetime.now().year
-    except Exception:
-        anio = datetime.now().year
-    dims = [c for c in dimension_candidates(df, schema) if c in df.columns][:4]
-    cols = {c: n for n, c in meses}
-    largo = df[dims + list(cols)].melt(id_vars=dims, value_vars=list(cols), var_name="Mes", value_name="Valor")
-    largo["Fecha"] = [pd.Timestamp(int(anio), int(cols[m]), 1) for m in largo["Mes"]]
-    largo["Valor"] = numeric_valid(largo["Valor"])
-    largo = largo.dropna(subset=["Valor"])[["Fecha"] + dims + ["Valor"]]
-    if largo.empty:
-        return None
-    esquema = {
-        "dates": ["Fecha"], "metrics": ["Valor"], "categorical": dims, "ids": [], "text": [], "geography": [],
-        "semantic": {"columns": [{"column": "Valor", "semantic_type": "quantity", "display_name": "Valor"}]
-                     + [c for c in schema.get("semantic", {}).get("columns", []) if c.get("column") in dims],
-                     "metrics": ["Valor"], "dimensions": dims},
-    }
-    return largo.reset_index(drop=True), esquema
-
-
 def build_excel_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename: str, sheet: str,
                        scope_label: str = "") -> bytes:
     """El libro .xlsx completo, listo para enviar. Nunca falla por una
@@ -1407,7 +1379,8 @@ def build_excel_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename
     analisis_df, analisis_schema = df, schema
     largo = None
     try:
-        largo = _formato_largo(df, schema, filename, sheet)
+        # Tabla ancha de meses: se analiza en formato largo para tener tendencia y dinámicas.
+        largo = meses_a_filas(df, schema, filename, sheet)
     except Exception:
         largo = None
     if largo is not None:
