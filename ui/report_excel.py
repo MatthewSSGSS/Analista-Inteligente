@@ -568,7 +568,6 @@ def _hoja_tendencia(wb, df, schema, ctx, dashboard) -> dict | None:
     var_ref = Reference(ws, min_col=5, min_row=cab, max_row=ultima_dato)
     ws.add_chart(_grafico_barras(ws, "Variación % frente al mes anterior", cats, [(var_ref, SERIE)], "0%"),
                  f"{ancla}23")
-    ws.freeze_panes = ws.cell(row=cab + 1, column=3)
     if inicio_otras < len(encabezados):
         _nota(ws, ultima + 2, "Las otras métricas se suman o se promedian según lo que son (un precio o un "
                               "porcentaje se promedia, no se suma).")
@@ -698,7 +697,6 @@ def _hoja_por_dimension(wb, df, schema, ctx, dimension) -> dict | None:
         if j is not None:
             letra = get_column_letter(2 + j)
             _colorear_variacion(ws, f"{letra}{primera_dato}:{letra}{ultima_dato}", cuadro["menos_es_mejor"])
-    ws.freeze_panes = ws.cell(row=cab + 1, column=4)
     ws.auto_filter.ref = f"B{cab}:{get_column_letter(1 + len(encabezados))}{ultima_dato}"
     if n_total > len(filas):
         _nota(ws, ultima + 2, f"Se listan los {len(filas):,} primeros de {n_total:,}; el total y las referencias "
@@ -790,7 +788,6 @@ def _hoja_matriz(wb, df, schema, ctx, dims) -> None:
             ws.conditional_formatting.add(f"{letra_t}{cab + 1}:{letra_t}{cab + len(filas)}",
                                           DataBarRule(start_type="num", start_value=0, end_type="max", color=SERIE_SUAVE))
         fila = ultima + 3
-    ws.freeze_panes = "C5"
 
 
 def _hoja_plan(wb, plan: dict, ctx) -> dict | None:
@@ -817,7 +814,6 @@ def _hoja_plan(wb, plan: dict, ctx) -> dict | None:
     for i, p in enumerate(planes):
         _pintar_estado(ws.cell(row=cab + 1 + i, column=3), _ESTADO_PLAN.get(p.get("estado"), ("", "info"))[1])
         ws.cell(row=cab + 1 + i, column=4).font = Font(bold=True, color=TINTA)
-    ws.freeze_panes = ws.cell(row=cab + 1, column=5)
 
     casos = [(p, c) for p in planes for c in (p.get("casos") or [])]
     if casos:
@@ -1006,6 +1002,8 @@ def _hoja_datos(wb, df: pd.DataFrame, ctx, nombre: str = "Datos", titulo_tabla: 
     tabla = Table(displayName=titulo_tabla, ref=ref)
     tabla.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
     ws.add_table(tabla)
+    # Solo aquí se inmoviliza el encabezado: en las hojas de informe la línea
+    # partía los gráficos y escondía filas si la hoja quedaba desplazada.
     ws.freeze_panes = "A2"
     if len(df) > n:
         ws.cell(row=1, column=len(encabezados) + 2,

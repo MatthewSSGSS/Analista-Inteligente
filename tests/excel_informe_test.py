@@ -67,6 +67,10 @@ def test_libro_completo_con_fechas():
     check("los datos van como tabla de Excel", len(datos.tables) == 1)
     check("todas las filas están en Datos", datos.max_row == len(df) + 1)
     check("se agrega el periodo por mes para las dinámicas", datos.cell(row=1, column=datos.max_column).value == "Periodo (mes)")
+    # La línea de inmovilizar partía los gráficos y escondía filas en las hojas de informe.
+    check("en Datos queda fijo solo el encabezado", datos.freeze_panes == "A2")
+    check("las hojas de informe no inmovilizan paneles",
+          all(wb[n].freeze_panes is None for n in nombres if n != "Datos" and not wb[n]._pivots))
 
 
 def test_referencia_sobre_el_grupo_completo():
