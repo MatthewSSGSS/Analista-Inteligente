@@ -4,12 +4,14 @@ import numpy as np
 from ui.labels import clean_display_text
 from visualization.charts import (
     trend, ranking, donut, histogram, rangos, cascada, scatter, correlation, geo_summary_map, comparison, period_compare_bar,
+    concentracion,
     metric_candidates, dimension_candidates, _label, wide_month_chart, _base
 )
 from core.executive import UMBRAL_CAMBIO
 from core.geo_engine import geographic_summary
 from core.chart_explainer import explain_chart
-from core.universal_analysis import dynamic_kpis, drilldown_options, drilldown_table, smart_chart_questions
+from core.universal_analysis import (dynamic_kpis, drilldown_options, drilldown_table, smart_chart_questions,
+                                     cobertura_temporal, period_series)
 import plotly.graph_objects as go
 from ui.person_profile import has_entity
 from ui.components.cards import kpi_card, insight_card, finding_card, executive_headline as _shared_executive_headline, executive_signals as _shared_executive_signals
@@ -244,7 +246,12 @@ def _available_chart_types(df, schema, metric, dimension, has_date):
     if has_date and metric:
         options += [("Línea", "line"), ("Barras", "bar"), ("Área", "area")]
     if metric and dimension:
-        options += [("Barras por categoría", "ranking"), ("Barras: anterior vs actual", "period_compare"), ("Dona", "donut")]
+        # «Anterior vs actual» solo si hay dos periodos que comparar (has_date
+        # ya lo exige): con un solo corte salía una barra sin contra qué medirse.
+        options += [("Barras por categoría", "ranking")]
+        if has_date:
+            options += [("Barras: anterior vs actual", "period_compare")]
+        options += [("Dona", "donut")]
     if metric and not has_date and not dimension:
         options += [("Cómo se reparten", "rangos"), ("Histograma", "histogram")]
     metrics=metric_candidates(df,schema)
@@ -691,7 +698,7 @@ def _primary_analysis_section(df, schema, controls, m, d, available_dates):
 
     # Solo una visualización principal por elección del usuario: evitamos repetir
     # automáticamente la misma información en línea, barras, dona, etc.
-    if available_dates and m:
+    if available_dates and m and cobertura_temporal(df, schema, m)["meses"] >= 2:
         _chart_card("Comparación temporal", "Últimos periodos disponibles · detecta subidas y caídas entre periodos", comparison(df,schema,m,controls["grain"] if controls["grain"] in {"Mes","Trimestre","Año"} else "Mes"), "No hay suficientes periodos comparables.", explain=explain_chart(df,schema,"comparison",m,d,controls["grain"]), key="explain_comparison_main")
 
     return selected_kind
@@ -744,6 +751,8 @@ def _diagnostic_and_smart_charts_section(df, schema, controls, m, d, available_d
         rendered=[]
         for title,q,kind in smart_specs:
             if kind=="trend": fig=trend(df,schema,m,controls["grain"],controls["agg"],controls["comparison"])
+            elif kind=="trend_dia": fig=trend(df,schema,m,"Día",controls["agg"],False)
+            elif kind=="concentracion" and d: fig=concentracion(df,schema,m,d)
             elif kind=="period_compare" and d: fig=period_compare_bar(df,schema,m,d,controls["grain"],controls["agg"],controls["top_n"])
             elif kind=="ranking" and d: fig=ranking(df,schema,m,d,controls["top_n"],controls["agg"])
             elif kind=="donut" and d: fig=donut(df,schema,m,d,controls["top_n"])
@@ -936,7 +945,12 @@ def render_dashboard(df, dashboard):
     if d is not None and d not in df.columns:
         d = None
 
-    available_dates = bool(schema.get("dates"))
+    # Hay evolución solo si la métrica tiene al menos dos periodos con dato en
+    # el grano elegido. Antes bastaba con que existiera una columna de fecha,
+    # y un corte mensual (todas las filas con la misma fecha) abría el panel
+    # con una «línea» de un solo punto y una «Comparación temporal» vacía.
+    available_dates = bool(schema.get("dates")) and m is not None and len(
+        period_series(df, schema, m, controls["grain"], "Automático")) >= 2
 
     # ── Área de análisis: antes era una única sección larga (visión
     # general + comparación individual + diagnóstico + gráficos

@@ -398,10 +398,17 @@ def adaptive_chart_specs(df, schema):
     dims = dimension_candidates(df, schema)
     dates = [d for d in schema.get("dates", []) if d in df.columns]
     specs = []
+    # La evolución solo si hay historia (core/universal_analysis.cobertura_temporal):
+    # un corte de un solo mes la dibujaba como un punto suelto.
     if dates and metrics:
-        specs.append(("Evolución del indicador", "Cómo cambia el resultado en el tiempo", "trend"))
-        if len(metrics) >= 2:
-            specs.append(("Comparación de indicadores", "Dos métricas sobre el mismo periodo para ver brechas y evolución", "multi_trend"))
+        from core.universal_analysis import cobertura_temporal
+        cobertura = cobertura_temporal(df, schema, metrics[0])
+        if cobertura["meses"] >= 2:
+            specs.append(("Evolución del indicador", "Cómo cambia el resultado en el tiempo", "trend"))
+            if len(metrics) >= 2:
+                specs.append(("Comparación de indicadores", "Dos métricas sobre el mismo periodo para ver brechas y evolución", "multi_trend"))
+        elif cobertura["dias"] >= 3:
+            specs.append(("Evolución día a día", f"Cómo se movió el resultado dentro de {cobertura['mes']}", "trend_dia"))
     if dims and metrics:
         specs.append(("Distribución por categoría", "Dónde se concentra el resultado", "donut"))
         specs.append(("Ranking de resultados", "Qué categorías lideran y cuáles quedan atrás", "ranking"))
@@ -578,7 +585,8 @@ def trend(df, schema, metric=None, grain="Mes", agg="Suma", comparison=False):
         line=dict(color=PRIMARY, width=3.5, shape="linear"),
         marker=dict(size=7, color="#FFFFFF", line=dict(width=2.5, color=PRIMARY)),
         fill="tozeroy", fillcolor="rgba(47,128,237,0.10)",
-        hovertemplate="<b>%{x|%b %Y}</b><br>" + _label(schema, m) + ": <b>%{y:" + fmt + "}</b><extra></extra>",
+        hovertemplate="<b>%{x|" + ("%d %b %Y" if grain in {"Día", "Semana"} else "%Y" if grain == "Año" else "%b %Y")
+                      + "}</b><br>" + _label(schema, m) + ": <b>%{y:" + fmt + "}</b><extra></extra>",
     ))
     if len(y) >= 2:
         last = y.iloc[-1]
@@ -851,6 +859,71 @@ def donut(df, schema, metric=None, dimension=None, top_n=6):
         margin=dict(l=10, r=10, t=18, b=70),
     )
     return _base(fig, 410)
+
+def concentracion(df, schema, metric=None, dimension=None, max_nombres=15):
+    """Cuánto del total suman los primeros: «3 de 11 hacen el 80%».
+
+    Es el gráfico que reemplaza a la evolución cuando el archivo es un solo
+    corte (una fecha o un mes): sin historia no se puede decir si algo
+    mejora, pero sí cuánto depende el resultado de unos pocos, que es lo que
+    decide dónde poner la atención. Curva acumulada de mayor a menor, con la
+    línea del 80% y cuántos hacen falta para llegar a ella.
+
+    Solo para métricas que se suman y sin valores negativos (con negativos el
+    acumulado sube y baja y deja de leerse como "parte del total"). None si
+    hay menos de tres grupos.
+    """
+    dims = dimension_candidates(df, schema)
+    metrics = metric_candidates(df, schema)
+    if not dims or not metrics:
+        return None
+    c, m = dimension or dims[0], metric or metrics[0]
+    if c not in df.columns or m not in df.columns:
+        return None
+    x = df[[c, m]].copy()
+    x[m] = numeric_series(x[m])
+    x = x.dropna(subset=[m])
+    if x.empty or (x[m] < 0).any():
+        return None
+    x[c] = x[c].map(_clean_label)
+    totales = x.groupby(c)[m].sum().sort_values(ascending=False)
+    totales = totales[totales > 0]
+    total = float(totales.sum())
+    n = len(totales)
+    if n < 3 or total <= 0:
+        return None
+    acumulado = totales.cumsum() / total * 100
+    posicion = list(range(1, n + 1))
+    hacen_80 = int((acumulado.to_numpy() >= 80).argmax()) + 1
+    # Con pocos elementos el eje lleva sus nombres; con muchos, la posición
+    # (los nombres no caben y el dato que importa es "cuántos").
+    con_nombres = n <= max_nombres
+    eje_x = list(totales.index) if con_nombres else posicion
+    texto = [f"Los {k} primeros (hasta {nombre}) suman {v:.0f}% del total" if k > 1
+             else f"{nombre} solo suma {v:.0f}% del total"
+             for k, (nombre, v) in zip(posicion, acumulado.items())]
+    fig = go.Figure(go.Scatter(
+        x=eje_x, y=acumulado.to_numpy(), mode="lines+markers",
+        line=dict(color=PRIMARY, width=3), marker=dict(size=8, color="#FFFFFF", line=dict(width=2.5, color=PRIMARY)),
+        fill="tozeroy", fillcolor="rgba(228,0,43,0.08)", text=texto,
+        hovertemplate="%{text}<extra></extra>",
+    ))
+    fig.add_hline(y=80, line=dict(color=MUTED, width=1.5, dash="dot"))
+    punto = eje_x[hacen_80 - 1]
+    fig.add_annotation(
+        x=punto, y=float(acumulado.iloc[hacen_80 - 1]),
+        text=f"<b>{hacen_80} de {n}</b> hacen el 80%", showarrow=True, arrowhead=2, ax=40, ay=-34,
+        bgcolor="#FFFFFF", bordercolor=PRIMARY, borderwidth=1, font=dict(color=TEXT, size=11),
+    )
+    fig.update_yaxes(range=[0, 105], ticksuffix="%", title=None)
+    # Medio paso de aire a cada lado: si no, el primer y el último punto
+    # quedan cortados contra el borde del gráfico.
+    fig.update_xaxes(title=None if con_nombres else f"{_label(schema, c)} (de mayor a menor)",
+                     tickangle=-35 if con_nombres and n > 6 else 0,
+                     range=[-0.5, n - 0.5] if con_nombres else [0.5, n + 0.5])
+    fig.update_layout(showlegend=False)
+    return _base(fig, 360, show_xgrid=False)
+
 
 def histogram(df, schema, metric=None, bins=24):
     metrics = metric_candidates(df, schema)

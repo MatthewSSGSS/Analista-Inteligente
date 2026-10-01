@@ -397,7 +397,7 @@ def _chart_block(title: str, subtitle: str, fig, chart_number: int, include_js: 
 
 # Orden en que se muestran los gráficos universales: los dos primeros van
 # arriba (la evolución y quién pesa más); el resto queda en el anexo.
-_PRIORIDAD_GRAFICO = {"trend": 0, "ranking": 1, "cascada": 2, "periodo": 3, "donut": 4,
+_PRIORIDAD_GRAFICO = {"trend": 0, "trend_dia": 0, "ranking": 1, "cascada": 2, "periodo": 3, "donut": 4,
                       "multi_trend": 5, "ranking2": 6, "rangos": 7, "histogram": 8,
                       "scatter": 9, "correlacion": 10, "mapa": 11}
 
@@ -416,6 +416,8 @@ def _build_charts(df: pd.DataFrame, schema: dict, dashboard: dict, include_geo: 
         fig = None
         if kind == "trend":
             fig = trend(df, schema, primary, "Mes", "Suma", False)
+        elif kind == "trend_dia":
+            fig = trend(df, schema, primary, "Día", "Suma", False)
         elif kind == "multi_trend":
             fig = multi_trend(df, schema, metrics[:3], "Mes", "Suma")
         elif kind == "ranking" and dims:
@@ -511,6 +513,8 @@ def _titulo_grafico(kind, title, subtitle, schema, dashboard, metrics, dims, pri
     if kind == "trend":
         return (f"{m} mes a mes",
                 "Cada punto es el resultado de un mes. La etiqueta del último punto es su variación frente al mes anterior.")
+    if kind == "trend_dia":
+        return (f"{m} día a día", "El archivo trae un solo mes: cada punto es un día de ese mes.")
     if kind == "multi_trend":
         nombres = " y ".join(_label(schema, x) for x in metrics[:3])
         return (f"{nombres} mes a mes", "Una línea por indicador, para ver si se mueven juntos o por separado.")

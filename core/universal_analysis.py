@@ -177,14 +177,56 @@ def person_stats(df, schema, person_col, person_name, metric):
     return stats
 
 
+_MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+             "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def cobertura_temporal(df, schema, metric) -> dict:
+    """Cuánta historia trae la métrica: meses y días CON DATO, y el último mes.
+
+    Que exista una columna de fecha no basta para dibujar una evolución: un
+    corte mensual trae todas las filas con la misma fecha y la «Evolución»
+    salía como un punto suelto en medio de un eje vacío, que no responde si
+    algo mejora o empeora. Con esto cada vista decide qué mostrar en su lugar.
+    """
+    vacio = {"meses": 0, "dias": 0, "mes": None}
+    if not metric or metric not in df.columns:
+        return vacio
+    meses = period_series(df, schema, metric, "Mes", "Automático")
+    if meses.empty:
+        return vacio
+    ultimo = pd.Timestamp(meses["period"].iloc[-1])
+    return {"meses": len(meses), "dias": len(period_series(df, schema, metric, "Día", "Automático")),
+            "mes": f"{_MESES_ES[ultimo.month - 1]} de {ultimo.year}"}
+
+
+def _se_suma(df, schema, metric) -> bool:
+    try:
+        from .explorador import calculo_automatico
+        return calculo_automatico(df, schema, metric) == "Suma"
+    except Exception:
+        return semantic_map(schema).get(metric) in ADDITIVE
+
+
 def smart_chart_questions(df, schema, metric, dimension=None):
     dates=bool([d for d in schema.get("dates",[]) if d in df.columns])
     metrics=[m for m in (schema.get("semantic",{}).get("metrics") or schema.get("metrics",[])) if m in df.columns]
     specs=[]
-    if dates and metric: specs.append(("Evolución","¿Está mejorando o empeorando?","trend"))
-    if dates and dimension and metric: specs.append(("Cambio por segmento","¿Quién explica la subida o caída?","period_compare"))
+    # La evolución solo se pide si hay historia de verdad (ver
+    # cobertura_temporal): con dos meses o más, mes a mes; con un solo mes
+    # pero varios días, día a día dentro de ese mes; con un único corte, no
+    # hay evolución que mostrar y su lugar lo toma la concentración.
+    cobertura = cobertura_temporal(df, schema, metric) if dates and metric else {"meses": 0, "dias": 0, "mes": None}
+    hay_historia = cobertura["meses"] >= 2
+    if hay_historia:
+        specs.append(("Evolución","¿Está mejorando o empeorando?","trend"))
+        if dimension: specs.append(("Cambio por segmento","¿Quién explica la subida o caída?","period_compare"))
+    elif cobertura["dias"] >= 3:
+        specs.append(("Evolución día a día",f"¿Cómo se movió dentro de {cobertura['mes']}?","trend_dia"))
     if dimension and metric: specs.append(("Contribución","¿Quién aporta más al resultado?","ranking"))
     if dimension and metric: specs.append(("Participación","¿Cómo se reparte el total?","donut"))
+    if not hay_historia and dimension and metric and _se_suma(df, schema, metric):
+        specs.append(("Concentración","¿Cuántos explican la mayor parte del total?","concentracion"))
     # "¿Hay valores concentrados o dispersos?" describía la FORMA de la
     # distribución, que es una pregunta de analista. La que se hace en una
     # reunión es cuántos casos caen en cada grupo y si eso está bien; ver
