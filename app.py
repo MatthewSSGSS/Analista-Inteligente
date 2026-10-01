@@ -50,6 +50,7 @@ from ui.login import render_login
 import core.auth_engine as auth_engine
 from ui.mode_choice import render_mode_choice
 from ui.territorial import render_territorial_page
+from ui.logistica import render_logistica_page
 from ui.tracking import render_tracking
 from ui.multi_sheet import render_multi_sheet
 from core.tracking_engine import ingest_file, sources_to_long, merge_long, read_consolidated
@@ -117,7 +118,7 @@ if "analysis_mode" not in st.session_state:
 # «Práctico» ya no existe (era una segunda puerta al mismo panel) y «avanzado»
 # pasó a llamarse «completo»: una sesión abierta con un modo viejo entra al
 # panel en vez de quedar en una pantalla que ya no está.
-if st.session_state.analysis_mode not in (None, "completo", "territorial"):
+if st.session_state.analysis_mode not in (None, "completo", "territorial", "logistica"):
     st.session_state.analysis_mode = "completo"
 
 if st.session_state.analysis_mode is None:
@@ -127,9 +128,13 @@ if st.session_state.analysis_mode is None:
         st.rerun()
     st.stop()
 
-# Territorial es una ruta propia: pantalla completa, su propio cargador y su
-# propio layout. Se detiene aquí para no dibujar además el panel completo por
-# debajo.
+# Territorial y Logística son rutas propias: pantalla completa, su propio
+# cargador y su propio layout. Se detienen aquí para no dibujar además el
+# panel completo por debajo.
+if st.session_state.analysis_mode == "logistica":
+    render_logistica_page()
+    st.stop()
+
 if st.session_state.analysis_mode == "territorial":
     render_territorial_page()
     st.stop()
@@ -150,10 +155,16 @@ with st.sidebar:
     st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
 
     st.markdown('<p class="sidebar-group-header">Datos</p>', unsafe_allow_html=True)
-    # El otro modo, con el nombre solo (una línea, no un botón que se parta).
-    if st.button("🗺️ Ir a Análisis Territorial", use_container_width=True, key="switch_to_territorial",
-                 help="Análisis Territorial: el mismo archivo leído por zonas."):
+    # Los otros modos, uno al lado del otro y con el nombre corto (un botón
+    # largo se partía en dos renglones).
+    _modo_a, _modo_b = st.columns(2)
+    if _modo_a.button("🗺️ Territorial", use_container_width=True, key="switch_to_territorial",
+                      help="Análisis Territorial: el mismo archivo leído por zonas."):
         st.session_state.analysis_mode = "territorial"
+        st.rerun()
+    if _modo_b.button("🚚 Logística", use_container_width=True, key="switch_to_logistica",
+                      help="Seguimiento de Logística: una sección propia, con su propio archivo."):
+        st.session_state.analysis_mode = "logistica"
         st.rerun()
     # Una vez hay un archivo cargado, subir uno nuevo pasa a ser la acción
     # menos frecuente de esta sección (se hace una vez, luego se trabaja

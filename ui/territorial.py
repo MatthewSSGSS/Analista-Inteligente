@@ -1,6 +1,6 @@
 """Análisis Territorial: la red sobre el mapa.
 
-Segunda ruta de la app, al mismo nivel que Análisis Completo: una función
+Una de las rutas de la app, al mismo nivel que Análisis Completo y Seguimiento de Logística: una función
 `render_*_page()` que se llama desde `app.py` y dibuja la pantalla completa,
 con su propio CSS, su propio cargador y sus propias claves de sesión.
 
@@ -121,6 +121,9 @@ def _cabecera():
         st.write("")
         if st.button("🧭 Ir a Análisis Completo", use_container_width=True, key="territorial_a_completo"):
             st.session_state.analysis_mode = "completo"
+            st.rerun()
+        if st.button("🚚 Ir a Logística", use_container_width=True, key="territorial_a_logistica"):
+            st.session_state.analysis_mode = "logistica"
             st.rerun()
 
 

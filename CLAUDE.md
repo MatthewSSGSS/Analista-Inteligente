@@ -102,11 +102,14 @@ The resulting `{df, schema}` (called `item["processed"]`
 aggregate step (KPIs, insights, alerts, anomalies, performance, growth) and is wrapped in
 `st.cache_data` in `app.py` because Streamlit reruns the whole script on every interaction.
 
-The mode-choice screen (`ui/mode_choice.py`) offers two routes: **Análisis Completo** (the main
-panel above; `analysis_mode == "completo"`, the default path with no `if` of its own) and
-**Territorial** (`ui/territorial.py`, geography-first view), which runs as a standalone full-screen
-page, stopping the main script with `st.stop()`, with its own file uploader and `session_state`
-keys so it doesn't collide with the main workbook state. A former third route, **Práctico**
+The mode-choice screen (`ui/mode_choice.py`) offers three routes: **Análisis Completo** (the main
+panel above; `analysis_mode == "completo"`, the default path with no `if` of its own),
+**Territorial** (`ui/territorial.py`, geography-first view) and **Seguimiento de Logística**
+(`ui/logistica.py`, `analysis_mode == "logistica"`; still a scaffold — upload + data preview — whose
+analysis is being defined incrementally). Territorial and Logística run as standalone full-screen
+pages, stopping the main script with `st.stop()`, each with its own file uploader and
+`session_state` keys (`territorial_*`, `logistica_*`) so they don't collide with the main workbook
+state. A former third route, **Práctico**
 (quick summary + Q&A), was removed as redundant with the main panel's «Pregúntale al Excel» and
 Asistente IA; `app.py` maps any stale `analysis_mode` value to `"completo"`.
 

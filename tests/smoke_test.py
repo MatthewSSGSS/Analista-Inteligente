@@ -370,7 +370,8 @@ def _navegacion_de_modos():
     boton_real = _st.button
     try:
         for clave, esperado in (("choose_completo", "completo"),
-                                ("choose_territorial", "territorial")):
+                                ("choose_territorial", "territorial"),
+                                ("choose_logistica", "logistica")):
             _st.button = lambda *a, **k: k.get("key") == clave
             check(f"la tarjeta '{esperado}' devuelve su modo", render_mode_choice() == esperado)
         _st.button = lambda *a, **k: False
@@ -393,6 +394,7 @@ def _navegacion_de_modos():
                                     and n.func.id.startswith("render_")]
     check("Práctico ya no existe como ruta", "practico" not in rutas)
     check("la ruta de Territorial existe", "render_territorial_page" in rutas.get("territorial", []))
+    check("la ruta de Logística existe", "render_logistica_page" in rutas.get("logistica", []))
     # Completo no tiene un `if` propio: es el camino que sigue cuando ninguna
     # ruta anterior corta, así que se comprueba que ninguna lo intercepte.
     check("Completo sigue siendo el camino por defecto", "completo" not in rutas)
