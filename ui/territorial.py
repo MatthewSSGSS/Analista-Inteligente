@@ -124,22 +124,39 @@ def _inject_css():
         .terr-chip.oport{color:#a855f7;border-color:rgba(168,85,247,.45);background:rgba(168,85,247,.10)}
         .terr-label{font-size:12px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
 
-        /* Consola: panel de 300px + mapa. Usa los colores del tema, así que
-           se ve bien en claro y en oscuro. */
+        /* Consola: panel 320 px · mapa · riel 360 px. Usa los colores del
+           tema, así que se ve bien en claro y en oscuro.
+
+           Los anchos llevan !important y el mapa min-width:0 porque Streamlit
+           le da a cada columna un ancho mínimo proporcional (el mapa pedía
+           ~62% de la fila): sumado a los 680 px fijos de los lados no cabía y
+           el riel se caía SOLO a la fila de abajo, pegado a la izquierda.
+           Los cortes se miden sobre la propia consola (consultas de
+           contenedor), no sobre la ventana: así el zoom del navegador y la
+           barra lateral no los engañan. */
         .st-key-terr_consola{background:var(--panel-2);border:1px solid var(--line);border-radius:20px;padding:16px;
-          box-shadow:var(--shadow-md);margin-top:6px}
-        .st-key-terr_consola div[data-testid="stHorizontalBlock"]{align-items:flex-start}
+          box-shadow:var(--shadow-md);margin-top:6px;container-type:inline-size;container-name:consola}
+        .st-key-terr_consola div[data-testid="stHorizontalBlock"]{align-items:flex-start;flex-wrap:nowrap!important}
         .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:first-child{
-          flex:0 0 320px;min-width:320px;max-width:320px;width:320px}
-        .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){flex:1 1 auto;min-width:0}
+          flex:0 0 320px!important;min-width:320px!important;max-width:320px!important;width:320px!important}
+        .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){
+          flex:1 1 0!important;min-width:0!important;max-width:none!important;width:auto!important}
         .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(3){
-          flex:0 0 360px;min-width:360px;max-width:360px;width:360px}
-        @media(max-width:1450px){.st-key-terr_consola div[data-testid="stHorizontalBlock"]{flex-wrap:wrap}
-          .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){flex:1 1 calc(100% - 350px)}
+          flex:0 0 360px!important;min-width:360px!important;max-width:360px!important;width:360px!important}
+        /* Sin espacio para las tres: el riel baja, pero a TODO el ancho y con
+           sus tarjetas repartidas en columnas (zona elegida, Top 10,
+           alertas lado a lado), no como una tira angosta sola a la izquierda. */
+        @container consola (max-width:1320px){
+          .st-key-terr_consola div[data-testid="stHorizontalBlock"]{flex-wrap:wrap!important;row-gap:16px}
+          .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){
+            flex:1 1 calc(100% - 352px)!important}
           .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(3){
-            flex:1 1 100%;max-width:none;width:auto}}
-        @media(max-width:900px){.st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{
-          flex:1 1 100%!important;min-width:0!important;max-width:none!important;width:auto!important}}
+            flex:1 1 100%!important;min-width:0!important;max-width:none!important;width:100%!important}
+          .st-key-terr_riel{display:block!important;columns:3 300px;column-gap:16px}
+          .st-key-terr_riel>div{break-inside:avoid;margin-bottom:14px}}
+        @container consola (max-width:860px){
+          .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{
+            flex:1 1 100%!important;min-width:0!important;max-width:none!important;width:100%!important}}
 
         /* Barra de indicadores sobre el mapa */
         .terr-hud{display:grid;grid-template-columns:minmax(280px,1.5fr) repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
