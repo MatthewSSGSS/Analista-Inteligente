@@ -71,14 +71,28 @@ def _json(obj) -> str:
             .replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
 
 
+def _es_nulo(v) -> bool:
+    """¿Celda vacía? Reconoce todos los vacíos de pandas: None, NaN, NaT y
+    `pd.NA` (el de las columnas Int64/string con faltantes). Solo comparar con
+    None y NaN dejaba pasar `pd.NA`: `float(pd.NA)` tumbaba el interactivo de
+    un archivo real y `str(pd.NA)` creaba un grupo llamado «<NA>»."""
+    try:
+        return bool(pd.isna(v))
+    except (TypeError, ValueError):
+        return False  # una lista u otro objeto: no es un vacío
+
+
 def _numeros(serie: pd.Series) -> list:
     valores = numeric_valid(serie)
     salida = []
     for v in valores.tolist():
-        if v is None or (isinstance(v, float) and not math.isfinite(v)):
+        if _es_nulo(v) or (isinstance(v, float) and not math.isfinite(v)):
             salida.append(None)
         else:
             f = float(v)
+            if not math.isfinite(f):
+                salida.append(None)
+                continue
             salida.append(int(f) if f.is_integer() and abs(f) < 2**53 else round(f, 6))
     return salida
 
@@ -86,7 +100,7 @@ def _numeros(serie: pd.Series) -> list:
 def _codificar(serie: pd.Series) -> dict:
     """Columna de texto por diccionario: los valores distintos una vez y un
     código por fila (-1 = vacío)."""
-    texto = serie.map(lambda v: None if v is None or (isinstance(v, float) and math.isnan(v)) else str(v).strip())
+    texto = serie.astype(object).map(lambda v: None if _es_nulo(v) else str(v).strip())
     texto = texto.where(texto.astype(str).str.len() > 0)
     codigos, valores = pd.factorize(texto, sort=True)
     return {"v": [str(v) for v in valores.tolist()], "c": codigos.astype(int).tolist()}

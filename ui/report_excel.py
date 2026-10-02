@@ -107,8 +107,19 @@ def _label(schema: dict, columna) -> str:
     return str(columna)
 
 
+def _es_nulo(v) -> bool:
+    """¿Celda vacía? Reconoce todos los vacíos de pandas: None, NaN, NaT y
+    `pd.NA` (el de las columnas Int64/string con faltantes). Solo comparar con
+    None y NaN dejaba pasar `pd.NA`: `float(pd.NA)` tumbaba el interactivo de
+    un archivo real y `str(pd.NA)` creaba un grupo llamado «<NA>»."""
+    try:
+        return bool(pd.isna(v))
+    except (TypeError, ValueError):
+        return False  # una lista u otro objeto: no es un vacío
+
+
 def _compacto(valor) -> str:
-    if valor is None or (isinstance(valor, float) and not math.isfinite(valor)):
+    if _es_nulo(valor) or (isinstance(valor, float) and not math.isfinite(valor)):
         return "—"
     v = float(valor)
     a = abs(v)
@@ -942,7 +953,7 @@ def _columna_para_celdas(serie: pd.Series) -> tuple[list, str | None]:
         return valores, _formato_valores(v for v in valores if v is not None)
     salida = []
     for v in serie:
-        if v is None or (isinstance(v, float) and math.isnan(v)) or v is pd.NaT:
+        if _es_nulo(v):
             salida.append(None)
         elif isinstance(v, (int, float, np.integer, np.floating)) and not isinstance(v, bool):
             salida.append(_num(v))

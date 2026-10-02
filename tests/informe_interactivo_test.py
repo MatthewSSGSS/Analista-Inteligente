@@ -124,7 +124,25 @@ def test_tabla_ancha_de_meses():
     check("una fila por región y mes", data["n"] == 12)
 
 
+def test_vacios_de_pandas():
+    """Un archivo real tumbaba el interactivo: la métrica llegaba como Int64
+    con `pd.NA` y `float(pd.NA)` lanza TypeError. Y un texto con `pd.NA` se
+    volvía el grupo «<NA>»."""
+    item = profile_sheet(_otts(), {"sheet_name": "OTTS", "workbook_name": "a.xlsx"})
+    df = item["processed"].copy()
+    df["Altas"] = df["Altas"].astype("Int64")
+    df.loc[[2, 7], "Altas"] = pd.NA
+    df["Productos"] = df["Productos"].astype("string")
+    df.loc[5, "Productos"] = pd.NA
+    _, data = _datos(build_interactive_html_report(df, item["profile"]["schema"], "a.xlsx", "OTTS"))
+    check("una métrica Int64 con pd.NA no tumba el interactivo y viaja vacía",
+          data["met"]["Altas"][2] is None and data["met"]["Altas"][7] is None)
+    check("un texto con pd.NA queda vacío, no como el grupo «<NA>»",
+          "<NA>" not in data["dims"]["Productos"]["v"] and data["dims"]["Productos"]["c"][5] == -1)
+
+
 def main():
+    test_vacios_de_pandas()
     test_secciones_de_decision()
     test_una_sola_dimension_es_la_del_cuadro()
     test_meta_como_dato_y_texto_seguro()

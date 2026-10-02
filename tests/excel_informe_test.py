@@ -112,7 +112,25 @@ def test_sin_fechas_tabla_ancha_y_una_fila():
     check("con una sola fila el libro igual se arma", wb.sheetnames[0] == "Resumen" and "Datos" in wb.sheetnames)
 
 
+def test_vacios_de_pandas():
+    """Columnas Int64/string con `pd.NA` (como llegan de un informe tipo tabla):
+    el libro se arma y esas celdas quedan vacías, no con el texto «<NA>»."""
+    from core.dashboard_engine import build_dashboard
+    item = profile_sheet(_ventas(), {"sheet_name": "Ventas", "workbook_name": "v.xlsx"})
+    df = item["processed"].copy()
+    df["Ventas"] = df["Ventas"].astype("Int64")
+    df.loc[[1, 4], "Ventas"] = pd.NA
+    df["Región"] = df["Región"].astype("string")
+    df.loc[3, "Región"] = pd.NA
+    contenido = build_excel_report(df, item["profile"]["schema"], build_dashboard(df, item["profile"]),
+                                   "v.xlsx", "Ventas", "")
+    ws = load_workbook(io.BytesIO(contenido))["Datos"]
+    textos = [c.value for fila in ws.iter_rows() for c in fila if c.value == "<NA>"]
+    check("con pd.NA el Excel se arma y no escribe «<NA>»", not textos)
+
+
 def main():
+    test_vacios_de_pandas()
     test_libro_completo_con_fechas()
     test_referencia_sobre_el_grupo_completo()
     test_texto_con_igual_no_es_formula()
