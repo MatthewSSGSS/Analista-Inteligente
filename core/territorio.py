@@ -22,7 +22,15 @@ Qué hace:
 3. `donde_crecer`: municipios grandes sin presencia en los departamentos
    donde ya se opera, y municipios con presencia muy por debajo de la
    penetración típica, con lo que valdría cerrar la mitad de esa brecha.
-4. `lectura`: las conclusiones en frases con nombre y cifra.
+4. `motivos`: por qué subió o bajó una zona (o todo el territorio): la
+   columna que concentra el movimiento —municipio, canal, asesor…— y los
+   nombres que lo explican, y lo que se movió en contra.
+5. `lectura`: las conclusiones en frases con nombre y cifra.
+
+Mes a medias: si el último mes llega hasta un día bastante anterior al que
+suelen llegar los demás meses del archivo, se compara contra el mes anterior
+HASTA ESE MISMO DÍA (`corte_dia`). Sin eso, un mes cargado hasta el día 7
+pinta todo el mapa de rojo con caídas del 80%.
 
 No depende de Streamlit (ver CLAUDE.md): la vista cachea los resultados.
 """
@@ -45,6 +53,7 @@ _RUTA = Path(__file__).resolve().parent.parent / "assets" / "geo"
 # municipio aunque haya uno "más cercano".
 _COLOMBIA = (-4.5, 13.6, -82.0, -66.7)  # lat mín, lat máx, lon mín, lon máx
 _DISTANCIA_MAXIMA_KM = 40.0             # más lejos que esto del centro del municipio, no se asigna
+UMBRAL_ESTABLE = 0.05                  # ±5%: el semáforo lo deja en amarillo
 _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
           "septiembre", "octubre", "noviembre", "diciembre"]
 
@@ -297,6 +306,23 @@ def etiqueta_mes(clave: Optional[str], corta: bool = False) -> str:
     return f"{nombre[:3]} {anio}" if corta else f"{nombre} de {anio}"
 
 
+def _dia_de_corte(datos: pd.DataFrame, fecha_col: str, mes_b: str) -> Optional[int]:
+    """Hasta qué día llega `mes_b` si está a medias; None si está completo.
+
+    Misma regla que `core/diagnostics._periodo_parcial`: no se compara con
+    el fin de mes del calendario (hay archivos que nunca registran los
+    últimos días) sino con hasta dónde suelen llegar los demás meses del
+    propio archivo.
+    """
+    f = pd.to_datetime(datos[fecha_col], errors="coerce")
+    ultimo = f.groupby(f.dt.strftime("%Y-%m")).max().dt.day
+    if mes_b not in ultimo.index or len(ultimo) < 2:
+        return None
+    tipico = float(ultimo.drop(mes_b).median())
+    dia = int(ultimo[mes_b])
+    return dia if dia < tipico - 5 else None
+
+
 def _agregar(serie: pd.Series, calculo: str) -> float:
     if calculo == "Conteo":
         return float(len(serie))
@@ -311,13 +337,19 @@ def zonas(ub: pd.DataFrame, metrica: Optional[str], calculo: str = "Suma", nivel
     """El resultado de cada zona en el periodo elegido.
 
     `mes` = "YYYY-MM" o None (todo el periodo). La variación es siempre el mes
-    elegido (o el último con datos) frente al anterior. La posición, la
-    participación y el promedio de referencia se calculan sobre TODAS las
+    elegido (o el último con datos) frente al anterior; si ese mes está a
+    medias, el anterior se corta en el mismo día (`corte_dia`). La posición,
+    la participación y el promedio de referencia se calculan sobre TODAS las
     zonas visibles (regla del dominio), y se dice sobre cuántas.
+
+    `estado` es el semáforo de cada zona: "subio" / "estable" / "bajo"
+    (±`UMBRAL_ESTABLE`). En una métrica que se suma, una zona que aparece o
+    desaparece entre los dos meses también cuenta (`tendencia` ±1).
     """
     m = municipios()
     datos = ub[ub["_t_ok"]].copy()
-    vacio = {"tabla": pd.DataFrame(), "mes_a": None, "mes_b": None, "n": 0, "total": 0.0, "promedio": None}
+    vacio = {"tabla": pd.DataFrame(), "mes_a": None, "mes_b": None, "n": 0, "total": 0.0, "promedio": None,
+             "corte_dia": None, "total_a": None, "total_b": None}
     if datos.empty:
         return vacio
     datos["_v"] = 1.0 if (metrica is None or calculo == "Conteo") else numeric_valid(datos[metrica])
@@ -325,9 +357,14 @@ def zonas(ub: pd.DataFrame, metrica: Optional[str], calculo: str = "Suma", nivel
         datos["_meta"] = numeric_valid(datos[meta_col])
     meses = meses_disponibles(datos, fecha_col)
     if meses:
-        datos["_mes"] = pd.to_datetime(datos[fecha_col], errors="coerce").dt.strftime("%Y-%m")
+        fechas = pd.to_datetime(datos[fecha_col], errors="coerce")
+        datos["_mes"] = fechas.dt.strftime("%Y-%m")
+        datos["_dia"] = fechas.dt.day
     mes_b = mes if mes in meses else (meses[-1] if meses else None)
     mes_a = meses[meses.index(mes_b) - 1] if mes_b and meses.index(mes_b) > 0 else None
+    corte = _dia_de_corte(datos, fecha_col, mes_b) if (mes_a and mes_b == meses[-1]) else None
+    en_a = ((datos["_mes"] == mes_a) & ((datos["_dia"] <= corte) if corte else True)) if mes_a else None
+    en_b = (datos["_mes"] == mes_b) if mes_a else None
     periodo = datos[datos["_mes"] == mes] if (mes and meses) else datos
 
     if nivel == "departamento":
@@ -343,6 +380,9 @@ def zonas(ub: pd.DataFrame, metrica: Optional[str], calculo: str = "Suma", nivel
     periodo = periodo.dropna(subset=["_zona"])
     if periodo.empty:
         return vacio
+    # Totales de los dos meses comparados, sobre las mismas filas que las zonas.
+    total_a = _agregar(datos.loc[en_a.reindex(datos.index, fill_value=False), "_v"], calculo) if mes_a else None
+    total_b = _agregar(datos.loc[en_b.reindex(datos.index, fill_value=False), "_v"], calculo) if mes_a else None
 
     g = periodo.groupby("_zona")
     tabla = pd.DataFrame({"valor": g["_v"].agg(lambda s: _agregar(s, calculo)), "registros": g.size(),
@@ -350,15 +390,26 @@ def zonas(ub: pd.DataFrame, metrica: Optional[str], calculo: str = "Suma", nivel
     if "_meta" in periodo.columns:
         tabla["meta"] = g["_meta"].agg(lambda s: _agregar(s, "Promedio" if calculo == "Promedio" else "Suma"))
     if mes_a and mes_b:
-        def del_mes(clave):
-            x = datos[datos["_mes"] == clave].groupby("_zona")["_v"]
+        def del_mes(mascara):
+            x = datos[mascara.reindex(datos.index, fill_value=False)].groupby("_zona")["_v"]
             return x.agg(lambda s: _agregar(s, calculo))
-        tabla["mes_b"] = del_mes(mes_b).reindex(tabla.index)
-        tabla["mes_a"] = del_mes(mes_a).reindex(tabla.index)
+        tabla["mes_b"] = del_mes(en_b).reindex(tabla.index)
+        tabla["mes_a"] = del_mes(en_a).reindex(tabla.index)
         a, b = tabla["mes_a"], tabla["mes_b"]
         tabla["variacion"] = np.where(a.notna() & (a != 0) & b.notna(), (b - a) / a.abs(), np.nan)
         # En una suma, no aparecer un mes es no aportar: el cambio cuenta como 0.
         tabla["cambio"] = (b.fillna(0) - a.fillna(0)) if calculo != "Promedio" else (b - a)
+        tendencia = tabla["variacion"].astype(float).copy()
+        if calculo != "Promedio":
+            # Apareció o desapareció entre un mes y otro: ±100% para el semáforo.
+            sin = tendencia.isna() & tabla["cambio"].fillna(0).ne(0)
+            tendencia[sin] = np.sign(tabla.loc[sin, "cambio"]).astype(float)
+        estado = pd.Series(None, index=tabla.index, dtype=object)
+        estado[tendencia.notna()] = "estable"
+        estado[tendencia < -UMBRAL_ESTABLE] = "bajo"
+        estado[tendencia >= UMBRAL_ESTABLE] = "subio"
+        tabla["tendencia"] = tendencia
+        tabla["estado"] = estado
 
     # Nombres, departamento y población.
     if nivel == "departamento":
@@ -397,7 +448,8 @@ def zonas(ub: pd.DataFrame, metrica: Optional[str], calculo: str = "Suma", nivel
     tabla["posicion"] = np.arange(1, len(tabla) + 1)
     tabla.index.name = "zona"
     return {"tabla": tabla.reset_index(), "mes_a": mes_a, "mes_b": mes_b, "n": len(tabla),
-            "total": total, "promedio": promedio, "sumable": sumable, "nivel": nivel, "meses": meses}
+            "total": total, "promedio": promedio, "sumable": sumable, "nivel": nivel, "meses": meses,
+            "corte_dia": corte, "total_a": total_a, "total_b": total_b}
 
 
 def serie_total(ub: pd.DataFrame, metrica: Optional[str], calculo: str, fecha_col: Optional[str]) -> pd.DataFrame:
@@ -539,7 +591,160 @@ def cobertura(z: dict) -> dict:
             "pct_deptos": pob_activos / pob_deptos if pob_deptos else None}
 
 
-# ── 4. Lectura ────────────────────────────────────────────────────────────
+# ── 4. Semáforo y por qué se movió ────────────────────────────────────────
+
+def semaforo(z: dict) -> dict:
+    """Cuántas zonas subieron, se quedaron estables o bajaron, y cuánto movieron.
+
+    {"subio": {"n", "cambio", "tabla"}, "estable": {...}, "bajo": {...}, "con_dato": n}
+    o {} si no hay mes anterior con qué comparar.
+    """
+    tabla = z.get("tabla")
+    if tabla is None or tabla.empty or "estado" not in tabla.columns:
+        return {}
+    salida = {"con_dato": int(tabla["estado"].notna().sum())}
+    if not salida["con_dato"]:
+        return {}
+    for clave in ("subio", "estable", "bajo"):
+        parte = tabla[tabla["estado"] == clave]
+        orden = parte.sort_values("cambio", ascending=clave == "bajo") if "cambio" in parte.columns else parte
+        salida[clave] = {"n": int(len(parte)), "cambio": float(parte["cambio"].sum()) if "cambio" in parte.columns else 0.0,
+                         "tabla": orden}
+    return salida
+
+
+def _filas_zona(ub: pd.DataFrame, zona, nivel: str) -> pd.DataFrame:
+    datos = ub[ub["_t_ok"]]
+    if zona is None:
+        return datos
+    if nivel == "departamento":
+        return datos[datos["_t_cod_dpto"] == str(zona)]
+    if nivel == "punto":
+        clave = datos["_t_lat"].round(5).astype(str) + "," + datos["_t_lon"].round(5).astype(str)
+        return datos[clave == str(zona)]
+    try:
+        return datos[datos["_t_idx"] == int(float(zona))]
+    except (TypeError, ValueError):
+        return datos.iloc[0:0]
+
+
+def motivos(ub: pd.DataFrame, metrica: Optional[str], calculo: str, fecha_col: Optional[str], z: dict,
+            dims: list, zona=None, nivel: str = "municipio", geografia: bool = False, maximo: int = 3) -> Optional[dict]:
+    """Por qué subió o bajó una zona (o todo el territorio, con `zona=None`).
+
+    Compara los mismos dos meses que `zonas` (`z["mes_a"]` → `z["mes_b"]`,
+    con el mismo corte de día si el último mes va a medias). Entre las
+    columnas candidatas —`dims` y, con `geografia=True`, el municipio y el
+    departamento de cada fila— elige la que concentra el movimiento en menos
+    nombres: la parte del movimiento que explican sus dos mayores segmentos,
+    menos la que explicarían si todo estuviera repartido parejo (2 de N).
+    Con 4 canales, que 2 expliquen el 60% no dice nada; con 30 asesores, sí.
+
+    Solo en métricas que se suman: en un promedio, el cambio de cada
+    segmento no se suma al del total y la explicación sería falsa.
+    """
+    if not (fecha_col and z.get("mes_a") and z.get("sumable")):
+        return None
+    datos = _filas_zona(ub, zona, nivel)
+    if datos.empty or fecha_col not in datos.columns:
+        return None
+    v = 1.0 if (metrica is None or calculo == "Conteo") else numeric_valid(datos[metrica]).fillna(0.0)
+    datos = datos.assign(_v=v)
+    fechas = pd.to_datetime(datos[fecha_col], errors="coerce")
+    mes = fechas.dt.strftime("%Y-%m")
+    en_b = mes == z["mes_b"]
+    en_a = mes == z["mes_a"]
+    if z.get("corte_dia"):
+        en_a &= fechas.dt.day <= z["corte_dia"]
+    antes, ahora = float(datos.loc[en_a, "_v"].sum()), float(datos.loc[en_b, "_v"].sum())
+    delta = ahora - antes
+    if not delta:
+        return None
+
+    candidatas = {}
+    if geografia:
+        m = municipios()
+        if zona is None or nivel == "departamento":
+            idx = datos["_t_idx"].fillna(-1).astype(int)
+            nombres = m["municipio"].reindex(idx.clip(lower=0).to_numpy()).to_numpy()
+            candidatas["Municipio"] = pd.Series(np.where(idx.to_numpy() >= 0, nombres, None), index=datos.index)
+        if zona is None:
+            candidatas["Departamento"] = datos["_t_cod_dpto"].map(departamentos().set_index("cod_dpto")["departamento"])
+    for c in dims:
+        if c in datos.columns and c not in candidatas:
+            candidatas[c] = datos[c]
+
+    signo = 1 if delta > 0 else -1
+    mejor = None
+    for orden, (columna, serie) in enumerate(candidatas.items()):
+        texto = serie.astype(str).str.strip()
+        valido = serie.notna() & texto.ne("") & texto.str.lower().ne("nan")
+        a = datos.loc[en_a & valido, "_v"].groupby(texto[en_a & valido]).sum()
+        b = datos.loc[en_b & valido, "_v"].groupby(texto[en_b & valido]).sum()
+        mov = pd.DataFrame({"antes": a, "ahora": b}).fillna(0.0)
+        if len(mov) < 2 or len(mov) > 80:
+            continue
+        mov["delta"] = mov["ahora"] - mov["antes"]
+        mismo = mov["delta"][mov["delta"] * signo > 0].abs().sort_values(ascending=False)
+        bruto = float(mismo.sum())
+        if bruto <= 0:
+            continue
+        n = len(mov)
+        concentracion = (float(mismo.head(1).sum()) / bruto - 1 / n + float(mismo.head(2).sum()) / bruto - min(2, n) / n) / 2
+        # Ruido: una columna cuyos segmentos suben y bajan mucho entre sí (los
+        # asesores se reparten clientes de un mes a otro) mueve mucho en bruto
+        # y poco en neto; no explica el cambio de la zona. Se pondera por la
+        # parte neta del movimiento.
+        neto = abs(delta) / float(mov["delta"].abs().sum())
+        puntaje = concentracion * min(neto, 1.0)
+        clave = (round(puntaje, 3), -orden)
+        if mejor is None or clave > mejor[0]:
+            mejor = (clave, columna, mov)
+    if mejor is None:
+        return None
+    _, columna, mov = mejor
+    principales = mov[mov["delta"] * signo > 0].sort_values("delta", ascending=signo < 0).head(maximo)
+    contrarios = mov[mov["delta"] * signo < 0].sort_values("delta", ascending=signo > 0).head(2)
+
+    def _seg(nombre, f):
+        return {"nombre": str(nombre), "antes": float(f["antes"]), "ahora": float(f["ahora"]), "delta": float(f["delta"]),
+                "pct": float(f["delta"] / f["antes"]) if f["antes"] else None,
+                "peso": float(f["delta"] / delta), "nuevo": bool(not f["antes"] and f["ahora"] > 0),
+                "perdido": bool(f["antes"] > 0 and not f["ahora"])}
+
+    segmentos = [_seg(n, f) for n, f in principales.iterrows()]
+    return {"dimension": columna, "antes": antes, "ahora": ahora, "delta": delta,
+            "pct": delta / abs(antes) if antes else None, "segmentos": segmentos,
+            "compensaron": [_seg(n, f) for n, f in contrarios.iterrows()],
+            "explicado": sum(s["delta"] for s in segmentos) / delta, "n_segmentos": int(len(mov)),
+            "movimiento": mov.sort_values("delta")}
+
+
+def cifra_signo(v) -> str:
+    """+12 mil / −9 mil (con el signo menos tipográfico)."""
+    if v is None or (isinstance(v, float) and not math.isfinite(v)):
+        return "—"
+    return ("+" if v > 0 else "−" if v < 0 else "") + cifra(abs(v))
+
+
+def frase_motivo(m: Optional[dict], etiqueta: str, corta: bool = False) -> str:
+    """«por canal: **Tienda** (−90 mil) y **Online** (−30 mil); en contra fue **Calle** (+5 mil)»."""
+    if not m or not m.get("segmentos"):
+        return ""
+
+    def _uno(s):
+        extra = " · nuevo" if s["nuevo"] else " · dejó de vender" if s["perdido"] else ""
+        return f"**{s['nombre']}** ({cifra_signo(s['delta'])}{extra})"
+
+    segs = m["segmentos"][:2] if corta else m["segmentos"]
+    nombres = [_uno(s) for s in segs]
+    texto = f"por {etiqueta.lower()}: " + (", ".join(nombres[:-1]) + " y " + nombres[-1] if len(nombres) > 1 else nombres[0])
+    if not corta and m.get("compensaron"):
+        texto += f"; en contra fue {_uno(m['compensaron'][0])}"
+    return texto
+
+
+# ── 5. Lectura ────────────────────────────────────────────────────────────
 
 def cifra(v) -> str:
     """Cifra corta en español: 1,2 M · 609 mil · 4.300."""
@@ -564,6 +769,14 @@ def lectura(z: dict, crecer: dict, cob: dict, metrica_label: str) -> list[str]:
     n = z["n"]
     zona = "departamentos" if z.get("nivel") == "departamento" else "municipios"
     articulo = "Los"
+    if z.get("corte_dia"):
+        frases.append(f"**{etiqueta_mes(z['mes_b']).capitalize()}** va hasta el día {z['corte_dia']}: se compara contra "
+                      f"{etiqueta_mes(z['mes_a'])} hasta ese mismo día, para no confundir un mes a medias con una caída.")
+    sem = semaforo(z)
+    if sem:
+        frases.append(f"Semáforo de {etiqueta_mes(z['mes_b'])} frente a {etiqueta_mes(z['mes_a'])}: "
+                      f"**{sem['subio']['n']} {zona} subieron**, {sem['estable']['n']} se mantuvieron (±5%) y "
+                      f"**{sem['bajo']['n']} bajaron**.")
     if z.get("sumable") and n >= 3:
         top = tabla.head(3)
         pct = float(top["valor"].sum() / tabla["valor"].sum()) if tabla["valor"].sum() else 0

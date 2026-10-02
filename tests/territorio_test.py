@@ -15,6 +15,16 @@ Qué se protege:
 - `hexagonos` reparte cada punto en un solo hexágono: la suma de los
   hexágonos es la suma de los datos.
 - `donde_crecer` valora la mitad del camino a la penetración típica.
+- Mes a medias: si el último mes llega al día 7 y los demás al 30, se
+  compara contra el mes anterior HASTA EL DÍA 7 (`corte_dia`). Sin eso, en
+  un archivo real todo el mapa salió en rojo con caídas del 80%.
+- Semáforo (`estado`): subió / estable (±5%) / bajó; una zona que deja de
+  vender cuenta como roja y una que empieza, como verde.
+- `motivos`: la razón de cada subida o caída es la columna que concentra
+  el movimiento NETO. Una columna que solo rota (asesores que se reparten
+  clientes) mueve mucho en bruto y poco en neto y no debe ganarle al canal
+  que de verdad cayó; con la regla anterior, además, una columna de dos
+  valores siempre puntuaba 0 y nunca podía ser la razón.
 
 PYTHONPATH=. python tests/territorio_test.py
 """
@@ -132,11 +142,86 @@ def test_hexagonos_y_donde_crecer():
     check("la lectura nombra la mayor caída", any("Montería" in f for f in frases))
 
 
+def _diario():
+    """Ventas diarias jul–sep; septiembre cargado solo hasta el día 7.
+
+    Barranquilla cae a la mitad en septiembre, y TODA la caída está en el
+    canal «Calle»; Soledad sube por el canal «Online»; Malambo deja de vender
+    en septiembre y Cartagena empieza a vender en septiembre."""
+    filas = []
+    for dia in pd.date_range("2026-07-01", "2026-09-07", freq="D"):
+        sep = dia.month == 9
+        for i, (ciudad, canal, valor) in enumerate([
+                ("BARRANQUILLA", "Tienda", 100.0), ("BARRANQUILLA", "Calle", 0.0 if sep else 100.0),
+                ("SOLEDAD", "Tienda", 50.0), ("SOLEDAD", "Online", 150.0 if sep else 50.0),
+                ("SANTA MARTA", "Tienda", 80.0), ("SANTA MARTA", "Calle", 80.0)]):
+            # Los asesores rotan de un mes a otro: mucho movimiento en bruto, poco neto.
+            filas.append({"Fecha": dia, "Ciudad": ciudad, "Canal": canal, "Ventas": valor,
+                          "Asesor": f"A{(dia.day * 3 + i + (2 if sep else 0)) % 5}"})
+        if not sep:
+            filas.append({"Fecha": dia, "Ciudad": "MALAMBO", "Canal": "Tienda", "Ventas": 30.0})
+        else:
+            filas.append({"Fecha": dia, "Ciudad": "CARTAGENA", "Canal": "Tienda", "Ventas": 40.0})
+    return pd.DataFrame(filas)
+
+
+def test_mes_a_medias_y_semaforo():
+    df, schema = _perfil(_diario())
+    ub, _ = T.ubicar(df, schema)
+    z = T.zonas(ub, "Ventas", "Suma", "municipio", "Fecha", None)
+    check("septiembre va al día 7: se corta agosto en el día 7", z["corte_dia"] == 7)
+    t = z["tabla"].set_index("nombre")
+    check("Santa Marta, igual todos los días, queda estable (sin el corte caería 77%)",
+          abs(t.loc["Santa Marta", "variacion"]) < 1e-9 and t.loc["Santa Marta", "estado"] == "estable")
+    check("Barranquilla bajó 50% y está en rojo",
+          abs(t.loc["Barranquilla", "variacion"] + 0.5) < 1e-9 and t.loc["Barranquilla", "estado"] == "bajo")
+    check("Soledad subió y está en verde", t.loc["Soledad", "estado"] == "subio")
+    check("Malambo dejó de vender: rojo aunque no tenga variación", t.loc["Malambo", "estado"] == "bajo")
+    check("Cartagena empezó a vender: verde", t.loc["Cartagena de Indias", "estado"] == "subio")
+    sem = T.semaforo(z)
+    check("semáforo: 2 subieron, 1 estable, 2 bajaron",
+          (sem["subio"]["n"], sem["estable"]["n"], sem["bajo"]["n"]) == (2, 1, 2))
+    check("totales de los dos meses con el mismo corte", z["total_a"] == 7 * (100 + 100 + 50 + 50 + 80 + 80 + 30))
+    check("la lectura avisa del mes a medias", any("día 7" in f for f in T.lectura(z, {}, {}, "Ventas")))
+
+    # Un mes completo (diciembre llega al 31 como los demás) no se corta.
+    z_todo = T.zonas(ub, "Ventas", "Suma", "municipio", "Fecha", "2026-08")
+    check("un mes completo elegido a mano no se corta", z_todo["corte_dia"] is None)
+
+
+def test_motivos():
+    df, schema = _perfil(_diario())
+    ub, _ = T.ubicar(df, schema)
+    z = T.zonas(ub, "Ventas", "Suma", "municipio", "Fecha", None)
+    baq = int(z["tabla"].set_index("nombre").loc["Barranquilla", "zona"])
+    m = T.motivos(ub, "Ventas", "Suma", "Fecha", z, ["Asesor", "Canal"], zona=baq)
+    check("Barranquilla bajó por el canal «Calle», que explica toda la caída (no por los asesores, que solo rotan)",
+          m["dimension"] == "Canal" and m["segmentos"][0]["nombre"] == "Calle" and abs(m["explicado"] - 1) < 1e-9)
+    check("y se marca que ese canal dejó de vender", m["segmentos"][0]["perdido"])
+    check("la frase nombra el canal", "Calle" in T.frase_motivo(m, "Canal"))
+    total = T.motivos(ub, "Ventas", "Suma", "Fecha", z, [], geografia=True)
+    nombres = {s["nombre"] for s in total["segmentos"]}
+    # Al día 7: agosto 490 diarios, septiembre 500 → el total sube +70. Por
+    # municipio el movimiento es casi todo ruido (Barranquilla −700 y Soledad
+    # +700 se anulan dentro de Atlántico); por departamento es neto: Bolívar
+    # (Cartagena) sube y Atlántico frena.
+    check("el total se explica por departamento: Bolívar empuja la subida",
+          total["delta"] > 0 and total["dimension"] == "Departamento" and nombres == {"Bolívar"})
+    check("y Atlántico aparece en contra", total["compensaron"][0]["nombre"] == "Atlántico")
+    zd = T.zonas(ub, "Ventas", "Suma", "departamento", "Fecha", None)
+    atl = T.motivos(ub, "Ventas", "Suma", "Fecha", zd, [], zona="08", nivel="departamento", geografia=True)
+    check("Atlántico se explica por sus municipios", atl["dimension"] == "Municipio")
+    check("en un promedio no se inventa una explicación",
+          T.motivos(ub, "Ventas", "Promedio", "Fecha", T.zonas(ub, "Ventas", "Promedio", "municipio", "Fecha", None), ["Canal"]) is None)
+
+
 def main():
     test_datos_de_colombia()
     test_ubicar_las_cuatro_formas()
     test_zonas_sobre_el_grupo_completo()
     test_hexagonos_y_donde_crecer()
+    test_mes_a_medias_y_semaforo()
+    test_motivos()
 
 
 if __name__ == "__main__":
