@@ -488,6 +488,37 @@ def serie_zona(ub: pd.DataFrame, zona, nivel: str, metrica: Optional[str], calcu
     return pd.DataFrame({"mes": por.index, "zona": por[zona].to_numpy(), "promedio": por.mean(axis=1).to_numpy()})
 
 
+def mes_a_mes(ub: pd.DataFrame, metrica: Optional[str], calculo: str, fecha_col: Optional[str],
+              nivel: str = "municipio") -> pd.DataFrame:
+    """Cada zona (filas, con su nombre) por mes (columnas "YYYY-MM"), ordenadas por su total.
+
+    Para la hoja «Mes a mes» del informe. En una suma, un mes sin registros
+    es 0 (no aportó); en un promedio queda vacío (no se midió)."""
+    datos = ub[ub["_t_ok"]].copy()
+    if not fecha_col or fecha_col not in datos.columns or datos.empty or nivel == "punto":
+        return pd.DataFrame()
+    datos["_v"] = 1.0 if (metrica is None or calculo == "Conteo") else numeric_valid(datos[metrica])
+    datos["_mes"] = pd.to_datetime(datos[fecha_col], errors="coerce").dt.strftime("%Y-%m")
+    if nivel == "departamento":
+        nombres = departamentos().set_index("cod_dpto")["departamento"]
+        datos["_zona"] = datos["_t_cod_dpto"].map(nombres)
+    else:
+        m = municipios()
+        nombres = (m["municipio"] + " (" + m["departamento"] + ")").to_numpy()
+        idx = datos["_t_idx"].fillna(-1).astype(int).to_numpy()
+        datos["_zona"] = np.where(idx >= 0, nombres[np.clip(idx, 0, None)], None)
+    datos = datos.dropna(subset=["_mes", "_zona"])
+    if datos.empty:
+        return pd.DataFrame()
+    tabla = datos.groupby(["_zona", "_mes"])["_v"].agg(lambda s: _agregar(s, calculo)).unstack()
+    if calculo != "Promedio":
+        tabla = tabla.fillna(0.0)
+    orden = tabla.sum(axis=1) if calculo != "Promedio" else tabla.mean(axis=1)
+    tabla = tabla.loc[orden.sort_values(ascending=False).index]
+    tabla.index.name, tabla.columns.name = "Zona", None
+    return tabla
+
+
 def hexagonos(ub: pd.DataFrame, metrica: Optional[str], calculo: str, radio_km: float,
               fecha_col: Optional[str] = None, mes: Optional[str] = None) -> pd.DataFrame:
     """Agrupa los puntos en hexágonos de `radio_km` y suma (o promedia) cada uno.
@@ -742,6 +773,96 @@ def frase_motivo(m: Optional[dict], etiqueta: str, corta: bool = False) -> str:
     if not corta and m.get("compensaron"):
         texto += f"; en contra fue {_uno(m['compensaron'][0])}"
     return texto
+
+
+def _razon_departamento(tabla_mpios: pd.DataFrame, depto: str, cambio: float) -> str:
+    """«por municipio: **Malambo** (−24 M) y **Barranquilla** (−10 M); en contra fue **Soledad** (+2 M)».
+
+    Sale de la tabla de municipios (mismo corte de día que el resto), no de
+    `motivos`: así también se explica un departamento con un solo municipio
+    activo, donde no hay dos segmentos que comparar."""
+    if tabla_mpios is None or tabla_mpios.empty or "cambio" not in tabla_mpios.columns:
+        return ""
+    dentro = tabla_mpios[(tabla_mpios["departamento"] == depto) & tabla_mpios["cambio"].fillna(0).ne(0)]
+    signo = 1 if cambio >= 0 else -1
+
+    def _seg(f):
+        sin_var = pd.isna(f.get("variacion"))
+        return {"nombre": str(f["nombre"]), "delta": float(f["cambio"]),
+                "nuevo": bool(sin_var and f.get("tendencia") == 1), "perdido": bool(sin_var and f.get("tendencia") == -1)}
+    mismos = dentro[dentro["cambio"] * signo > 0].sort_values("cambio", ascending=signo < 0).head(2)
+    contra = dentro[dentro["cambio"] * signo < 0].sort_values("cambio", ascending=signo > 0).head(1)
+    return frase_motivo({"segmentos": [_seg(f) for _, f in mismos.iterrows()],
+                         "compensaron": [_seg(f) for _, f in contra.iterrows()]}, "municipio")
+
+
+def informe(ub: pd.DataFrame, metrica: Optional[str], calculo: str, fecha_col: Optional[str], z: dict,
+            zd: Optional[dict] = None, dims: Optional[list] = None, etiquetas: Optional[dict] = None,
+            crecer: Optional[dict] = None, cob: Optional[dict] = None, metrica_label: str = "Valor",
+            max_razones: int = 25, max_deptos: Optional[int] = None) -> dict:
+    """Todo el análisis del territorio en un solo diccionario.
+
+    Es lo que dibuja el tablero del semáforo en la pantalla y lo que llevan
+    el Excel y el HTML descargables: así los tres dicen exactamente lo mismo.
+    `max_razones` = cuántas de las mayores subidas y caídas llevan su «por
+    qué» (cada una es un cálculo aparte: la pantalla pide pocas, el informe
+    muchas). `etiquetas` = nombre visible de cada columna de `dims`.
+    """
+    etiquetas = etiquetas or {}
+    dims = list(dims or [])
+    crecer, cob = crecer or {}, cob or {}
+    nivel = z.get("nivel", "municipio")
+    tabla = z.get("tabla") if z.get("tabla") is not None else pd.DataFrame()
+    salida = {
+        "metrica": metrica_label, "nivel": nivel, "n": z.get("n", 0), "total": z.get("total"),
+        "sumable": z.get("sumable"), "mes_a": z.get("mes_a"), "mes_b": z.get("mes_b"), "corte_dia": z.get("corte_dia"),
+        "meses": z.get("meses", []), "tabla": tabla, "semaforo": semaforo(z), "comparacion": "",
+        "cambio_total": None, "por_donde": None, "por_que": None, "razones": {}, "departamentos": [],
+        "crecer": crecer, "cobertura": cob, "lectura": lectura(z, crecer, cob, metrica_label),
+    }
+    if z.get("mes_a"):
+        salida["comparacion"] = (f"{etiqueta_mes(z['mes_b'])} frente a {etiqueta_mes(z['mes_a'])}"
+                                 + (f" · los dos hasta el día {z['corte_dia']}" if z.get("corte_dia") else ""))
+    ta, tb = z.get("total_a"), z.get("total_b")
+    if ta is not None and tb is not None and np.isfinite(ta) and np.isfinite(tb):
+        salida["cambio_total"] = {"antes": float(ta), "ahora": float(tb), "delta": float(tb - ta),
+                                  "pct": float((tb - ta) / abs(ta)) if ta else None}
+    if not (z.get("sumable") and z.get("mes_a")):
+        return salida
+
+    def _con_frase(m, corta=False):
+        if not m:
+            return None
+        etiqueta = etiquetas.get(m["dimension"], m["dimension"])
+        return {"motivo": m, "dimension": etiqueta, "frase": frase_motivo(m, etiqueta, corta=corta)}
+
+    if nivel != "punto":
+        salida["por_donde"] = _con_frase(motivos(ub, metrica, calculo, fecha_col, z, [], geografia=True))
+    salida["por_que"] = _con_frase(motivos(ub, metrica, calculo, fecha_col, z, dims))
+
+    if not tabla.empty and "cambio" in tabla.columns and max_razones:
+        movidas = pd.concat([tabla[tabla["cambio"] < 0].nsmallest(max_razones, "cambio"),
+                             tabla[tabla["cambio"] > 0].nlargest(max_razones, "cambio")])
+        for r in movidas.itertuples():
+            m = motivos(ub, metrica, calculo, fecha_col, z, dims, zona=r.zona, nivel=nivel,
+                        geografia=nivel == "departamento")
+            if m:
+                salida["razones"][str(r.zona)] = {**_con_frase(m, corta=True), "frase_larga": _con_frase(m)["frase"]}
+
+    td = zd.get("tabla") if zd else None
+    if nivel == "municipio" and td is not None and not td.empty and "estado" in td.columns and len(td) >= 2:
+        orden = td.assign(_abs=td["cambio"].abs()).sort_values("_abs", ascending=False)
+        if max_deptos:
+            orden = orden.head(max_deptos)
+        for r in orden.itertuples():
+            salida["departamentos"].append({
+                "zona": str(r.zona), "nombre": str(r.nombre), "valor": float(r.valor),
+                "antes": float(r.mes_a) if pd.notna(r.mes_a) else None, "ahora": float(r.mes_b) if pd.notna(r.mes_b) else None,
+                "cambio": float(r.cambio), "variacion": float(r.variacion) if pd.notna(r.variacion) else None,
+                "tendencia": float(r.tendencia) if pd.notna(r.tendencia) else None, "estado": r.estado,
+                "frase": _razon_departamento(tabla, str(r.nombre), float(r.cambio))})
+        salida["n_departamentos"] = int(len(td))
+    return salida
 
 
 # ── 5. Lectura ────────────────────────────────────────────────────────────

@@ -66,7 +66,8 @@ Inside `ui/`:
 - `ui/styles/theme.py` — the **only** source of injected `<style>`/theme tokens (light/dark). Never
   add a second theme system; a view-local `<style>` block may only *add* classes on top of these
   tokens, never redefine `:root` colors.
-- `ui/components/` — pure, reusable render helpers (`cards.py`, `charts.py`, `section.py`). No
+- `ui/components/` — pure, reusable render helpers (`cards.py`, `charts.py`, `section.py`, `descarga.py` →
+  `preparar_y_descargar`, the two-step «Preparar → Descargar» used by Exportar and Territorial). No
   business logic, no reading `core/` directly, no reading business `session_state` keys.
 - `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
   Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a
@@ -108,7 +109,9 @@ panel above; `analysis_mode == "completo"`, the default path with no `if` of its
 extruded departments, hexagons, heatmap, points — colored by volume/variation/goal/penetration, laid out as a three-column console — layer panel ·
 HUD + map · reading rail with selected zone, Top 10 and alerts — with zone detail on click (fly-to + highlight),
 a green/amber/red traffic light by default and «why it rose/fell» per zone (`core/territorio.motivos`; a
-half-loaded last month is compared against the previous month cut at the same day, `corte_dia`), timeline playback and «Dónde crecer»; the engine is
+half-loaded last month is compared against the previous month cut at the same day, `corte_dia`), downloadable
+Excel/HTML reports (`ui/report_territorial.py`, both built from `core/territorio.informe`, the same dict the
+on-screen traffic-light board uses), timeline playback and «Dónde crecer»; the engine is
 `core/territorio.py` over the bundled Colombia data in `assets/geo/`: DIVIPOLA's 1,122 municipios
 with coordinates and DANE 2026 population, plus the 33 department polygons) and **Seguimiento de Logística**
 (`ui/logistica.py`, `analysis_mode == "logistica"`; still a scaffold — upload + data preview — whose

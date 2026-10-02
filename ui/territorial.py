@@ -42,6 +42,8 @@ import streamlit as st
 from core import territorio as T
 from core.filter_engine import apply_filters
 from core.loader import load_workbook
+from ui.components.descarga import preparar_y_descargar
+from ui.report_territorial import build_territorial_excel, build_territorial_html, nombre_archivo
 
 # Claves de sesión propias: el archivo que se analiza aquí no tiene por qué
 # ser el mismo que el del panel completo, y compartir la clave haría que
@@ -83,6 +85,7 @@ _CORTES_META = [0.90, 1.00]
 # Los mismos tres estados para bordes de etiquetas, anillos y tarjetas.
 _ESTADO_RGB = {"bajo": (239, 68, 68), "estable": (250, 204, 21), "subio": (34, 197, 94)}
 _ESTADO_ICONO = {"bajo": "🔴", "estable": "🟡", "subio": "🟢"}
+_ALTO_MAPA = 900   # px; el panel y el riel se desplazan por dentro para no pasarse de esto
 _MAPAS = {"Oscuro": "CARTO_DARK", "Oscuro sin nombres": "CARTO_DARK_NO_LABELS",
           "Claro": "CARTO_LIGHT", "Claro sin nombres": "CARTO_LIGHT_NO_LABELS", "Calles": "CARTO_ROAD"}
 _COLORES = {"variacion": "🚦 Semáforo: subió · estable · bajó", "meta": "🚦 Semáforo de meta",
@@ -119,175 +122,180 @@ def _inject_css():
         .terr-chip.dato{color:var(--teal);border-color:rgba(15,168,160,.45);background:rgba(15,168,160,.10)}
         .terr-chip.dane{color:var(--purple);border-color:rgba(106,91,216,.45);background:rgba(106,91,216,.10)}
         .terr-chip.oport{color:#a855f7;border-color:rgba(168,85,247,.45);background:rgba(168,85,247,.10)}
-        .terr-label{font-size:10.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+        .terr-label{font-size:12px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
 
         /* Consola: panel de 300px + mapa. Usa los colores del tema, así que
            se ve bien en claro y en oscuro. */
-        .st-key-terr_consola{background:var(--panel-2);border:1px solid var(--line);border-radius:18px;padding:14px;
+        .st-key-terr_consola{background:var(--panel-2);border:1px solid var(--line);border-radius:20px;padding:16px;
           box-shadow:var(--shadow-md);margin-top:6px}
         .st-key-terr_consola div[data-testid="stHorizontalBlock"]{align-items:flex-start}
         .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:first-child{
-          flex:0 0 300px;min-width:300px;max-width:300px;width:300px}
+          flex:0 0 320px;min-width:320px;max-width:320px;width:320px}
         .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){flex:1 1 auto;min-width:0}
         .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(3){
-          flex:0 0 300px;min-width:300px;max-width:300px;width:300px}
-        @media(max-width:1350px){.st-key-terr_consola div[data-testid="stHorizontalBlock"]{flex-wrap:wrap}
-          .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){flex:1 1 calc(100% - 330px)}
+          flex:0 0 360px;min-width:360px;max-width:360px;width:360px}
+        @media(max-width:1450px){.st-key-terr_consola div[data-testid="stHorizontalBlock"]{flex-wrap:wrap}
+          .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){flex:1 1 calc(100% - 350px)}
           .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(3){
             flex:1 1 100%;max-width:none;width:auto}}
         @media(max-width:900px){.st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{
           flex:1 1 100%!important;min-width:0!important;max-width:none!important;width:auto!important}}
 
         /* Barra de indicadores sobre el mapa */
-        .terr-hud{display:grid;grid-template-columns:1.6fr repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
-        .terr-hud-tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 12px;min-width:0;
+        .terr-hud{display:grid;grid-template-columns:minmax(280px,1.5fr) repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+        .terr-hud-tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 18px;min-width:0;
           box-shadow:var(--shadow-sm);position:relative;overflow:hidden;animation:fadeUp .35s ease both}
-        .terr-hud-tile:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--teal)}
+        .terr-hud-tile:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--teal)}
         .terr-hud-tile.neg:before{background:var(--red)} .terr-hud-tile.anillo:before{background:var(--purple)}
         .terr-hud-tile.principal{background:linear-gradient(135deg,rgba(15,168,160,.13),transparent 70%),var(--panel)}
-        .terr-hud-tile>span{display:block;font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
-        .terr-hud-tile .fila{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px}
-        .terr-hud-tile b{font-size:19px;font-family:'Sora','Inter',sans-serif;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .terr-hud-tile.principal b{font-size:24px}
-        .terr-hud-tile small{display:block;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .terr-hud-tile>span{display:block;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+        .terr-hud-tile .fila{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:5px}
+        .terr-hud-tile b{font-size:25px;font-family:'Sora','Inter',sans-serif;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .terr-hud-tile.principal b{font-size:32px;overflow:visible;flex:0 0 auto}
+        .terr-hud-tile.principal .fila{flex-wrap:wrap;row-gap:2px}
+        .terr-hud-tile small{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .terr-hud-tile.neg small{color:var(--red)}
         .terr-hud-tile.anillo .fila{justify-content:flex-start}
         .terr-hud-tile.anillo small{white-space:normal;line-height:1.3}
-        .terr-delta{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;padding:1px 7px;border-radius:99px}
+        .terr-delta{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:800;padding:2px 9px;margin-top:4px;border-radius:99px}
         .terr-delta.pos{color:var(--green);background:var(--green-soft)} .terr-delta.neg{color:var(--red);background:var(--red-soft)}
         .terr-delta small{display:inline;color:inherit;opacity:.8;font-weight:600}
         .terr-spark{flex:0 0 auto}
-        @media(max-width:1500px){.terr-hud{grid-template-columns:repeat(3,minmax(0,1fr))}}
+        @media(max-width:1750px){.terr-hud{grid-template-columns:repeat(3,minmax(0,1fr))}}
 
         /* Riel derecho */
-        .st-key-terr_riel{gap:.6rem}
-        .terr-rail-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 13px;box-shadow:var(--shadow-sm);
+        .st-key-terr_riel{gap:.8rem}
+        .terr-rail-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 18px;box-shadow:var(--shadow-sm);
           animation:fadeUp .35s ease both}
-        .terr-rail-card .eyebrow{display:block;font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);margin-bottom:6px}
+        .terr-rail-card .eyebrow{display:block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);margin-bottom:6px}
         .terr-rail-card.sel{border:1px solid rgba(15,168,160,.55);box-shadow:0 0 0 3px rgba(15,168,160,.12),var(--shadow-sm)}
         .terr-rail-card.oport{border-color:rgba(168,85,247,.55);box-shadow:0 0 0 3px rgba(168,85,247,.14)}
         .terr-rail-card.oport .eyebrow{color:#a855f7}
-        .terr-rail-card h4{margin:0;padding:0;border:0;background:none;box-shadow:none;font-size:18px;font-family:'Sora','Inter',sans-serif;color:var(--text);letter-spacing:-.01em}
-        .terr-rail-card .sub{font-size:11.5px;color:var(--muted);margin-bottom:6px}
-        .terr-rail-card .pista{font-size:10.5px;color:var(--muted);margin-top:8px}
-        .terr-mini{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
-        .terr-mini div{background:var(--panel-2);border-radius:8px;padding:5px 8px}
-        .terr-mini span{display:block;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
-        .terr-mini b{font-size:14px;color:var(--text)}
-        .terr-top-fila{display:flex;gap:9px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line-soft)}
+        .terr-rail-card h4{margin:0;padding:0;border:0;background:none;box-shadow:none;font-size:23px;font-family:'Sora','Inter',sans-serif;color:var(--text);letter-spacing:-.01em}
+        .terr-rail-card .sub{font-size:13px;color:var(--muted);margin-bottom:6px}
+        .terr-rail-card .pista{font-size:12px;color:var(--muted);margin-top:8px}
+        .terr-mini{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+        .terr-mini div{background:var(--panel-2);border-radius:10px;padding:8px 11px}
+        .terr-mini span{display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+        .terr-mini b{font-size:18px;color:var(--text)}
+        .terr-top-fila{display:flex;gap:11px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line-soft)}
         .terr-top-fila:last-child{border-bottom:0}
-        .terr-top-fila .num{flex:0 0 22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:800;
+        .terr-top-fila .num{flex:0 0 28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:13px;font-weight:800;
           background:var(--panel-2);color:var(--muted)}
         .terr-top-fila:nth-child(2) .num{background:var(--teal);color:#fff}
         .terr-top-fila .cuerpo{flex:1;min-width:0}
-        .terr-top-fila .nom{display:flex;align-items:baseline;gap:6px;font-size:12px}
+        .terr-top-fila .nom{display:flex;align-items:baseline;gap:8px;font-size:14.5px}
         .terr-top-fila .nom b{flex:1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .terr-top-fila .nom i{font-style:normal;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
-        .terr-top-fila .nom em{font-style:normal;font-size:10.5px;font-weight:800}
+        .terr-top-fila .nom em{font-style:normal;font-size:12px;font-weight:800}
         .terr-top-fila em.pos{color:var(--green)} .terr-top-fila em.neg{color:var(--red)}
-        .terr-top-fila .barra{height:5px;border-radius:99px;background:var(--panel-2);margin-top:4px;overflow:hidden}
+        .terr-top-fila .barra{height:7px;border-radius:99px;background:var(--panel-2);margin-top:4px;overflow:hidden}
         .terr-top-fila .barra u{display:block;height:100%;border-radius:99px;text-decoration:none}
-        .terr-alerta{border-left:3px solid var(--muted);padding:6px 9px;margin:6px 0;border-radius:0 8px 8px 0;background:var(--panel-2)}
-        .terr-alerta b{display:block;font-size:12px;color:var(--text)}
-        .terr-alerta small{font-size:11px;color:var(--muted)}
+        .terr-alerta{border-left:4px solid var(--muted);padding:9px 12px;margin:8px 0;border-radius:0 8px 8px 0;background:var(--panel-2)}
+        .terr-alerta b{display:block;font-size:14px;color:var(--text)}
+        .terr-alerta small{font-size:12.5px;color:var(--muted)}
         .terr-alerta.neg{border-left-color:var(--red)} .terr-alerta.warn{border-left-color:var(--amber)}
         .terr-alerta.oport{border-left-color:#a855f7}
         .st-key-terr_panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 12px 4px;
-          gap:.45rem;max-height:860px;overflow-y:auto}
+          gap:.5rem;max-height:1140px;overflow-y:auto}
         /* Periodo, capas y estilo se desplazan dentro del panel: así el panel
            no se estira más que el mapa y no deja un hueco debajo. */
-        .st-key-terr_panel_2{max-height:620px;overflow-y:auto;padding-right:4px;scrollbar-width:thin}
+        .st-key-terr_panel_2{max-height:900px;overflow-y:auto;padding-right:4px;scrollbar-width:thin}
         .terr-sec{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);
           margin:8px 0 2px;display:flex;align-items:center;gap:8px}
         .terr-sec:after{content:"";flex:1;height:1px;background:var(--line)}
-        .terr-capa{font-size:11px;color:var(--muted);margin:-6px 0 6px 2px;line-height:1.45}
+        .terr-capa{font-size:12px;color:var(--muted);margin:-6px 0 6px 2px;line-height:1.45}
         .terr-ley{display:grid;gap:3px;margin:4px 0 2px}
-        .terr-ley div{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text)}
-        .terr-ley i{width:22px;height:10px;border-radius:3px;flex:0 0 22px;border:1px solid rgba(0,0,0,.08)}
+        .terr-ley div{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text)}
+        .terr-ley i{width:26px;height:12px;border-radius:3px;flex:0 0 22px;border:1px solid rgba(0,0,0,.08)}
 
         .terr-mapa-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
-          padding:10px 14px 24px;background:var(--panel);border:1px solid var(--line);border-radius:14px 14px 0 0;margin-bottom:-1rem}
-        .terr-mapa-head b{font-size:14px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
-        .terr-mapa-head .per{font-size:11.5px;font-weight:800;color:var(--teal);letter-spacing:.04em}
+          padding:14px 18px 26px;background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;margin-bottom:-1rem}
+        .terr-mapa-head b{font-size:17px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
+        .terr-mapa-head .per{font-size:13px;font-weight:800;color:var(--teal);letter-spacing:.04em}
         .terr-mapa-head .capas{display:flex;flex-wrap:wrap;gap:5px}
-        div[data-testid="stDeckGlJsonChart"]{border-radius:0 0 14px 14px;overflow:hidden;border:1px solid var(--line);border-top:0}
+        div[data-testid="stDeckGlJsonChart"]{border-radius:0 0 16px 16px;overflow:hidden;border:1px solid var(--line);border-top:0}
 
         /* Semáforo: rojo · amarillo · verde con los tonos del tema */
-        .terr-mapa-head .corte{display:block;font-size:11px;font-weight:700;color:var(--amber-strong);margin-top:2px}
+        .terr-mapa-head .corte{display:block;font-size:12.5px;font-weight:700;color:var(--amber-strong);margin-top:2px}
         .terr-mapa-head .corte.suave{color:var(--muted);font-weight:600}
-        .terr-sem-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;padding:3px 10px;
+        .terr-sem-chip{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:800;padding:5px 13px;
           border-radius:999px;border:1px solid}
         .terr-sem-chip.subio{color:var(--green);background:var(--green-soft);border-color:color-mix(in srgb,var(--green) 40%,transparent)}
         .terr-sem-chip.estable{color:var(--amber-strong);background:var(--amber-soft);border-color:color-mix(in srgb,var(--amber) 45%,transparent)}
         .terr-sem-chip.bajo{color:var(--red);background:var(--red-soft);border-color:color-mix(in srgb,var(--red) 40%,transparent)}
         .terr-hud-tile.sem:before{background:linear-gradient(180deg,#22c55e,#eab308,#ef4444)}
         .terr-hud-tile.sem .fila,.terr-hud-tile.mov .fila{display:block}
-        .terr-sem-cuenta{display:flex;gap:10px;font-family:'Sora','Inter',sans-serif;font-size:18px;font-weight:800;margin:1px 0 5px}
+        .terr-sem-cuenta{display:flex;gap:14px;white-space:nowrap;font-family:'Sora','Inter',sans-serif;font-size:24px;font-weight:800;margin:2px 0 7px}
         .terr-sem-cuenta .subio{color:var(--green)} .terr-sem-cuenta .estable{color:var(--amber)} .terr-sem-cuenta .bajo{color:var(--red)}
-        .terr-sem-barra{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--panel-2);gap:2px}
+        .terr-sem-barra{display:flex;height:11px;border-radius:99px;overflow:hidden;background:var(--panel-2);gap:2px}
         .terr-sem-barra i{display:block;height:100%}
         .terr-sem-barra i.subio{background:#22c55e} .terr-sem-barra i.estable{background:#eab308} .terr-sem-barra i.bajo{background:#ef4444}
         .terr-hud-tile.mov:before{background:linear-gradient(180deg,#22c55e,#ef4444)}
-        .terr-mov{display:flex;align-items:baseline;gap:6px;font-size:12.5px;margin-top:3px;min-width:0}
+        .terr-mov{display:flex;align-items:baseline;gap:8px;font-size:14.5px;margin-top:5px;min-width:0}
         .terr-mov em{font-style:normal;font-weight:900;font-size:11px}
-        .terr-mov b{flex:1;min-width:0;font-size:13px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .terr-mov b{flex:1;min-width:0;font-size:16px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .terr-mov i{font-style:normal;font-weight:800;font-variant-numeric:tabular-nums}
         .terr-mov.subio em,.terr-mov.subio i{color:var(--green)} .terr-mov.bajo em,.terr-mov.bajo i{color:var(--red)}
         .terr-rail-card.sel.subio{border-color:color-mix(in srgb,var(--green) 60%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 14%,transparent)}
         .terr-rail-card.sel.bajo{border-color:color-mix(in srgb,var(--red) 60%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--red) 14%,transparent)}
         .terr-rail-card.sel.estable{border-color:color-mix(in srgb,var(--amber) 60%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--amber) 14%,transparent)}
-        .terr-porque-mini{margin-top:8px;padding:7px 9px;border-radius:9px;font-size:11.5px;line-height:1.45;color:var(--text)}
-        .terr-porque-mini span{display:block;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px}
+        .terr-porque-mini{margin-top:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;line-height:1.45;color:var(--text)}
+        .terr-porque-mini span{display:block;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px}
         .terr-porque-mini.subio{background:var(--green-soft)} .terr-porque-mini.subio span{color:var(--green)}
         .terr-porque-mini.bajo{background:var(--red-soft)} .terr-porque-mini.bajo span{color:var(--red)}
-        .terr-porque{font-size:13px;line-height:1.5;padding:9px 12px;border-radius:10px;margin:6px 0 4px;color:var(--text)}
+        .terr-porque{font-size:14.5px;line-height:1.5;padding:9px 12px;border-radius:10px;margin:6px 0 4px;color:var(--text)}
         .terr-porque.subio{background:var(--green-soft);border-left:4px solid var(--green)}
         .terr-porque.bajo{background:var(--red-soft);border-left:4px solid var(--red)}
-        .terr-total{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 18px;margin:4px 0 12px;
+        .terr-total{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px 24px;margin:4px 0 12px;
           box-shadow:var(--shadow-sm);display:grid;grid-template-columns:minmax(220px,.8fr) 1.6fr 1.6fr;gap:18px;align-items:center;
           animation:fadeUp .35s ease both}
         .terr-total .cab{display:flex;gap:12px;align-items:center}
-        .terr-total .cab>span{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:20px;font-weight:900;color:#fff}
+        .terr-total .cab>span{width:56px;height:56px;border-radius:14px;display:grid;place-items:center;font-size:26px;font-weight:900;color:#fff}
         .terr-total.subio .cab>span{background:linear-gradient(135deg,#22c55e,#15803d)}
         .terr-total.bajo .cab>span{background:linear-gradient(135deg,#ef4444,#b91c1c)}
-        .terr-total .cab b{display:block;font-size:21px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
-        .terr-total .cab small{display:block;font-size:11px;color:var(--muted)}
-        .terr-total .razon span{display:block;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-        .terr-total .razon p{margin:2px 0 0;font-size:13px;line-height:1.5;color:var(--text)}
+        .terr-total .cab b{display:block;font-size:27px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
+        .terr-total .cab small{display:block;font-size:12.5px;color:var(--muted)}
+        .terr-total .razon span{display:block;font-size:11.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+        .terr-total .razon p{margin:4px 0 0;font-size:15px;line-height:1.5;color:var(--text)}
         @media(max-width:1100px){.terr-total{grid-template-columns:1fr}}
-        .terr-sem-col{background:var(--panel);border:1px solid var(--line);border-top:4px solid;border-radius:14px;padding:11px 13px;
+        .terr-sem-col{background:var(--panel);border:1px solid var(--line);border-top:5px solid;border-radius:16px;padding:16px 18px;
           box-shadow:var(--shadow-sm);animation:fadeUp .35s ease both;min-height:120px}
         .terr-sem-col.bajo{border-top-color:#ef4444} .terr-sem-col.estable{border-top-color:#eab308} .terr-sem-col.subio{border-top-color:#22c55e}
         .terr-sem-col .cab{display:flex;justify-content:space-between;align-items:center}
-        .terr-sem-col .cab span{font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--text)}
-        .terr-sem-col .cab b{font-size:24px;font-family:'Sora','Inter',sans-serif}
+        .terr-sem-col .cab span{font-size:14px;font-weight:800;letter-spacing:.04em;color:var(--text)}
+        .terr-sem-col .cab b{font-size:32px;font-family:'Sora','Inter',sans-serif}
         .terr-sem-col.bajo .cab b{color:var(--red)} .terr-sem-col.estable .cab b{color:var(--amber)} .terr-sem-col.subio .cab b{color:var(--green)}
-        .terr-sem-col .suma{font-size:11px;color:var(--muted);margin:-2px 0 6px}
-        .terr-sem-col .vacio,.terr-sem-col .mas{font-size:11px;color:var(--muted);margin-top:6px}
-        .terr-sem-fila{padding:6px 0;border-top:1px dashed var(--line-soft)}
-        .terr-sem-fila .l1{display:flex;align-items:baseline;gap:7px;font-size:12.5px}
+        .terr-sem-col .suma{font-size:12.5px;color:var(--muted);margin:-2px 0 6px}
+        .terr-sem-col .vacio,.terr-sem-col .mas{font-size:12.5px;color:var(--muted);margin-top:6px}
+        .terr-sem-fila{padding:9px 0;border-top:1px dashed var(--line-soft)}
+        .terr-sem-fila .l1{display:flex;align-items:baseline;gap:9px;font-size:15px}
         .terr-sem-fila .l1 b{flex:1;min-width:0;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .terr-sem-fila .l1 i{font-style:normal;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text)}
-        .terr-sem-fila .l1 em{font-style:normal;font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:99px}
+        .terr-sem-fila .l1 em{font-style:normal;font-size:12px;font-weight:800;padding:2px 8px;border-radius:99px}
         .terr-sem-col.bajo em{color:var(--red);background:var(--red-soft)} .terr-sem-col.subio em{color:var(--green);background:var(--green-soft)}
         .terr-sem-col.estable em{color:var(--amber-strong);background:var(--amber-soft)}
-        .terr-sem-fila small{display:block;font-size:11px;line-height:1.4;color:var(--muted);margin-top:2px}
+        .terr-sem-fila small{display:block;font-size:13px;line-height:1.45;color:var(--muted);margin-top:2px}
         .terr-sem-fila small b{color:var(--text)}
         .terr-deps{margin-top:12px}
-        .terr-dep-fila{display:grid;grid-template-columns:12px minmax(120px,1.1fr) 90px 70px 3fr;gap:10px;align-items:center;
-          padding:7px 0;border-top:1px dashed var(--line-soft);font-size:12.5px}
-        .terr-dep-fila>i{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+        .terr-dep-fila{display:grid;grid-template-columns:14px minmax(140px,1.1fr) 110px 80px 3fr;gap:12px;align-items:center;
+          padding:10px 0;border-top:1px dashed var(--line-soft);font-size:15px}
+        .terr-dep-fila>i{width:12px;height:12px;border-radius:50%;background:var(--muted)}
         .terr-dep-fila.subio>i{background:#22c55e;box-shadow:0 0 8px #22c55e} .terr-dep-fila.bajo>i{background:#ef4444;box-shadow:0 0 8px #ef4444}
         .terr-dep-fila.estable>i{background:#eab308;box-shadow:0 0 8px #eab308}
         .terr-dep-fila b{color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .terr-dep-fila .cifra{font-weight:800;font-variant-numeric:tabular-nums;text-align:right;color:var(--text)}
-        .terr-dep-fila em{font-style:normal;font-size:10.5px;font-weight:800;text-align:center;padding:1px 6px;border-radius:99px}
+        .terr-dep-fila em{font-style:normal;font-size:12px;font-weight:800;text-align:center;padding:1px 6px;border-radius:99px}
         .terr-dep-fila.subio em{color:var(--green);background:var(--green-soft)} .terr-dep-fila.bajo em{color:var(--red);background:var(--red-soft)}
         .terr-dep-fila.estable em{color:var(--amber-strong);background:var(--amber-soft)}
-        .terr-dep-fila small{font-size:11.5px;color:var(--muted);line-height:1.4} .terr-dep-fila small b{color:var(--text)}
+        .terr-dep-fila small{font-size:13.5px;color:var(--muted);line-height:1.4} .terr-dep-fila small b{color:var(--text)}
         @media(max-width:900px){.terr-dep-fila{grid-template-columns:12px 1fr 80px 60px}.terr-dep-fila small{grid-column:2/-1}}
 
-        .terr-estado{font-size:12px;color:var(--muted);margin:4px 2px 8px}
+        .terr-desc{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:10px;
+          box-shadow:var(--shadow-sm)}
+        .terr-desc b{display:block;font-size:17px;font-family:'Sora','Inter',sans-serif;color:var(--text);margin-bottom:4px}
+        .terr-desc span{font-size:13.5px;color:var(--muted);line-height:1.5}
+        .terr-estado{font-size:13.5px;color:var(--muted);margin:4px 2px 8px}
         .terr-estado b{color:var(--text)}
         .terr-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
         .terr-kpi{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--teal);border-radius:12px;
@@ -546,7 +554,8 @@ def _vista(lat, lon, inclinacion: float):
         return pdk.ViewState(latitude=float(puntos["lat"].mean()), longitude=float(puntos["lon"].mean()),
                              zoom=5.5, pitch=inclinacion, bearing=giro)
     vista.pitch, vista.bearing = inclinacion, giro
-    vista.zoom = min(max(float(vista.zoom) + 0.35, 4.4), 11.5)
+    # compute_view encuadra para un lienzo chico; el mapa mide ~1100×900 px: se acerca un poco más.
+    vista.zoom = min(max(float(vista.zoom) + 0.8, 4.6), 11.5)
     return vista
 
 
@@ -597,11 +606,13 @@ def _etiquetas_sin_choque(tabla: pd.DataFrame, maximo: int = 10) -> pd.DataFrame
 
 def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd.DataFrame, puntos: pd.DataFrame,
                     crecer: dict, color: str, paleta: str, fondo: str, escala: float, radio_km: float, unidad: str,
-                    seleccion: Optional[dict] = None, inclinada: bool = False):
+                    seleccion: Optional[dict] = None, inclinada: bool = False, ligero: bool = False):
     """El objeto pydeck y las leyendas de cada capa activa.
 
     `seleccion` = la zona abierta en la ficha: se resalta con un borde neón y
-    la vista vuela hacia ella. `inclinada` inclina también las capas planas."""
+    la vista vuela hacia ella. `inclinada` inclina también las capas planas.
+    `ligero` = para el informe HTML: sin los municipios que no tienen dato
+    (con todos, el archivo pasa de ~1 a ~5 MB)."""
     import pydeck as pdk
     oscuro = fondo.startswith("Oscuro")
     capas, leyendas = [], {}
@@ -651,7 +662,7 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
             i = f["properties"]["idx"]
             dato = por_idx.get(i)
             if dato is None:
-                if not capas_on.get("poblacion"):
+                if not capas_on.get("poblacion") and not ligero:
                     r = mpios.iloc[i] if i >= 0 else None
                     feats.append(_feature(f["geometry"], {
                         "color": sin_dato, "linea": linea_vacia, "altura": 0, "nombre": r["municipio"] if r is not None else "",
@@ -805,7 +816,7 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
             top["borde"] = [list(_ESTADO_RGB[e]) + [255] if e in _ESTADO_RGB else neutro for e in estados]
             capas.append(pdk.Layer("TextLayer", data=top[["lon", "lat", "texto", "borde"]], id="etiquetas",
                                    get_position=["lon", "lat"], get_text="texto",
-                                   get_size=12, get_color=[236, 241, 246] if oscuro else [19, 24, 38],
+                                   get_size=14, get_color=[236, 241, 246] if oscuro else [19, 24, 38],
                                    get_pixel_offset=[0, -18], billboard=True, background=True,
                                    get_background_color=[13, 18, 28, 230] if oscuro else [255, 255, 255, 240],
                                    background_padding=[8, 4, 8, 4], get_border_color="borde",
@@ -879,7 +890,7 @@ def _sin_mes_a_medias(serie: pd.DataFrame, z: dict) -> pd.DataFrame:
     return serie[serie["mes"] != z.get("mes_b")]
 
 
-def _sparkline(valores, color: str = "#0fa8a0", ancho: int = 132, alto: int = 34) -> str:
+def _sparkline(valores, color: str = "#0fa8a0", ancho: int = 170, alto: int = 46) -> str:
     """Mini-gráfico de tendencia en SVG (línea con área degradada y punto final)."""
     v = [float(x) for x in valores if x is not None and np.isfinite(x)]
     if len(v) < 2:
@@ -897,7 +908,7 @@ def _sparkline(valores, color: str = "#0fa8a0", ancho: int = 132, alto: int = 34
             f'<circle cx="{pts[-1][0]:.1f}" cy="{pts[-1][1]:.1f}" r="3.2" fill="{color}"/></svg>')
 
 
-def _anillo(fraccion, color: str = "#0fa8a0", tam: int = 46) -> str:
+def _anillo(fraccion, color: str = "#0fa8a0", tam: int = 60) -> str:
     """Anillo de progreso con el porcentaje en el centro."""
     f = max(0.0, min(1.0, float(fraccion or 0)))
     r = tam / 2 - 5
@@ -906,7 +917,7 @@ def _anillo(fraccion, color: str = "#0fa8a0", tam: int = 46) -> str:
             f'<circle cx="{tam / 2}" cy="{tam / 2}" r="{r}" fill="none" stroke="var(--line)" stroke-width="5"/>'
             f'<circle cx="{tam / 2}" cy="{tam / 2}" r="{r}" fill="none" stroke="{color}" stroke-width="5" stroke-linecap="round" '
             f'stroke-dasharray="{largo * f:.1f} {largo:.1f}" transform="rotate(-90 {tam / 2} {tam / 2})"/>'
-            f'<text x="50%" y="54%" text-anchor="middle" font-size="11" font-weight="800" fill="var(--text)">{f:.0%}</text></svg>')
+            f'<text x="50%" y="54%" text-anchor="middle" font-size="14" font-weight="800" fill="var(--text)">{f:.0%}</text></svg>')
 
 
 def _barra_semaforo(sem: dict) -> str:
@@ -935,7 +946,7 @@ def _hud(z: dict, serie: pd.DataFrame, metrica_label: str, cob: dict) -> str:
         delta = (f'<span class="terr-delta {"pos" if cambio >= 0 else "neg"}">{"▲" if cambio >= 0 else "▼"} '
                  f'{abs(cambio):.1%} <small>{html.escape(_cuando(z))}</small></span>')
     tiles.append(("principal", f"{'Total' if z.get('sumable') else 'Promedio'} · {metrica_label}", T.cifra(z["total"]),
-                  delta, _sparkline(_sin_mes_a_medias(serie, z)["valor"]) if len(serie) >= 3 else ""))
+                  delta, _sparkline(_sin_mes_a_medias(serie, z)["valor"], ancho=124, alto=42) if len(serie) >= 3 else ""))
     sem = T.semaforo(z)
     if sem:
         cuerpo = (f'<div class="terr-sem-cuenta"><span class="subio">▲ {sem["subio"]["n"]}</span>'
@@ -1055,7 +1066,7 @@ def _riel(z: dict, colores: list, seleccion: Optional[dict], zm: dict, zd: dict,
                 f'<div class="terr-rail-card sel {estado or ""}"><span class="eyebrow">Zona seleccionada'
                 + (f' · {_ESTADO_ICONO[estado]} {dict(subio="subió", estable="estable", bajo="bajó")[estado]}' if estado in _ESTADO_ICONO else "")
                 + f'</span><h4>{html.escape(str(f["nombre"]))}</h4><div class="sub">{html.escape(str(f.get("departamento", "")))}</div>'
-                + (_sparkline(_sin_mes_a_medias(serie, z_sel)["zona"], ancho=250, alto=46) if len(serie) >= 3 else "")
+                + (_sparkline(_sin_mes_a_medias(serie, z_sel)["zona"], ancho=320, alto=60) if len(serie) >= 3 else "")
                 + '<div class="terr-mini">' + "".join(f"<div><span>{html.escape(a)}</span><b>{html.escape(b)}</b></div>"
                                                       for a, b in datos)
                 + "</div>" + porque + '<div class="pista">La ficha completa está debajo del mapa ↓</div></div>',
@@ -1128,49 +1139,42 @@ def _negritas(texto: str) -> str:
     return "".join(f"<b>{p}</b>" if i % 2 else p for i, p in enumerate(partes))
 
 
-def _var_corta(r) -> str:
-    v, td = getattr(r, "variacion", np.nan), getattr(r, "tendencia", np.nan)
-    if pd.notna(v):
+def _var_txt(v, td) -> str:
+    """+12% · «nuevo» si empezó a tener actividad · «sin actividad» si dejó de tenerla."""
+    if v is not None and pd.notna(v):
         return f"{v:+.0%}"
     return "nuevo" if td == 1 else "sin actividad" if td == -1 else ""
 
 
-def _tablero_semaforo(z: dict, zd: dict, ub, metrica, calculo, fecha_col, dims_neg: list, etiquetas: dict,
-                      metrica_label: str) -> None:
+def _var_corta(r) -> str:
+    return _var_txt(getattr(r, "variacion", np.nan), getattr(r, "tendencia", np.nan))
+
+
+def _tablero_semaforo(inf: dict) -> None:
     """🚦 Qué pasó en el territorio: el total, quién subió, quién bajó y por qué.
 
-    Las razones salen de `core/territorio.motivos`: en cada zona, la columna
-    que concentra el movimiento (canal, asesor, producto… o el municipio,
-    dentro de un departamento) y los nombres que lo explican."""
-    sem = T.semaforo(z)
+    Todo sale de `core/territorio.informe` (lo mismo que llevan el Excel y
+    el HTML): en cada zona, la columna que concentra el movimiento (canal,
+    asesor, producto… o el municipio, dentro de un departamento)."""
+    sem = inf["semaforo"]
     if not sem:
         return
-    metrica_calc = None if metrica == _CONTEO else metrica
-    nivel_z = z.get("nivel", "municipio")
+    nivel_z = inf["nivel"]
     zona_txt = "departamentos" if nivel_z == "departamento" else "municipios" if nivel_z == "municipio" else "zonas"
-    comparacion = (f"{T.etiqueta_mes(z['mes_b'])} frente a {T.etiqueta_mes(z['mes_a'])}"
-                   + (f" · los dos hasta el día {z['corte_dia']}" if z.get("corte_dia") else ""))
     st.markdown(f'<div class="terr-label">🚦 Semáforo del territorio · qué subió, qué bajó y por qué</div>'
-                f'<div class="terr-estado">{html.escape(comparacion)}. Verde: subió más de 5% · amarillo: se mantuvo '
+                f'<div class="terr-estado">{html.escape(inf["comparacion"])}. Verde: subió más de 5% · amarillo: se mantuvo '
                 f'(±5%) · rojo: bajó más de 5%.</div>', unsafe_allow_html=True)
 
     # 1) El total, por dónde y por qué.
-    ta, tb = z.get("total_a"), z.get("total_b")
-    if ta is not None and tb is not None and np.isfinite(ta) and np.isfinite(tb) and z.get("sumable"):
-        delta = tb - ta
-        sube = delta >= 0
-        pct = f" ({delta / abs(ta):+.1%})" if ta else ""
-        puntos = []
-        geo = T.motivos(ub, metrica_calc, calculo, fecha_col, z, [], geografia=True) if nivel_z != "punto" else None
-        neg = T.motivos(ub, metrica_calc, calculo, fecha_col, z, dims_neg)
-        if geo:
-            puntos.append(("📍 Por dónde", T.frase_motivo(geo, geo["dimension"])))
-        if neg:
-            puntos.append(("🔎 Por qué", T.frase_motivo(neg, etiquetas.get(neg["dimension"], neg["dimension"]))))
+    ct = inf["cambio_total"]
+    if ct and inf["sumable"]:
+        sube = ct["delta"] >= 0
+        pct = f" ({ct['pct']:+.1%})" if ct["pct"] is not None else ""
+        puntos = [(t, inf[c]["frase"]) for t, c in (("📍 Por dónde", "por_donde"), ("🔎 Por qué", "por_que")) if inf.get(c)]
         st.markdown(
             f'<div class="terr-total {"subio" if sube else "bajo"}"><div class="cab"><span>{"▲" if sube else "▼"}</span>'
-            f'<div><small>Total de {html.escape(metrica_label.lower())}</small><b>{"Subió" if sube else "Bajó"} '
-            f'{T.cifra(abs(delta))}{pct}</b><small>{T.cifra(ta)} → {T.cifra(tb)}</small></div></div>'
+            f'<div><small>Total de {html.escape(inf["metrica"].lower())}</small><b>{"Subió" if sube else "Bajó"} '
+            f'{T.cifra(abs(ct["delta"]))}{pct}</b><small>{T.cifra(ct["antes"])} → {T.cifra(ct["ahora"])}</small></div></div>'
             + "".join(f'<div class="razon"><span>{a}</span><p>{_negritas(b)}</p></div>' for a, b in puntos)
             + "</div>", unsafe_allow_html=True)
 
@@ -1179,13 +1183,8 @@ def _tablero_semaforo(z: dict, zd: dict, ub, metrica, calculo, fecha_col, dims_n
     for col, clave, titulo in zip(columnas, ("bajo", "estable", "subio"), ("Bajaron", "Se mantuvieron (±5%)", "Subieron")):
         parte = sem[clave]
         filas = []
-        for k, r in enumerate(parte["tabla"].head(6).itertuples()):
-            razon = ""
-            if clave != "estable" and k < 3:
-                m = T.motivos(ub, metrica_calc, calculo, fecha_col, z, dims_neg, zona=r.zona, nivel=nivel_z,
-                              geografia=nivel_z == "departamento")
-                if m:
-                    razon = T.frase_motivo(m, etiquetas.get(m["dimension"], m["dimension"]), corta=True)
+        for r in parte["tabla"].head(6).itertuples():
+            razon = inf["razones"].get(str(r.zona), {}).get("frase", "") if clave != "estable" else ""
             filas.append(f'<div class="terr-sem-fila"><div class="l1"><b title="{html.escape(str(r.nombre))}">'
                          f'{html.escape(str(r.nombre))}</b><i>{T.cifra_signo(getattr(r, "cambio", np.nan))}</i>'
                          f'<em>{_var_corta(r)}</em></div>' + (f"<small>{_negritas(razon)}</small>" if razon else "") + "</div>")
@@ -1199,32 +1198,62 @@ def _tablero_semaforo(z: dict, zd: dict, ub, metrica, calculo, fecha_col, dims_n
                 + (f'<div class="mas">y {resto} más en el ranking ↓</div>' if resto > 0 else "") + "</div>",
                 unsafe_allow_html=True)
 
-    # 3) Por departamento: quién lo empujó adentro.
-    td = zd.get("tabla") if zd else None
-    if nivel_z == "municipio" and td is not None and not td.empty and "estado" in td.columns and len(td) >= 2:
-        orden = td.assign(_abs=td["cambio"].abs()).sort_values("_abs", ascending=False).head(8)
-        tm = z["tabla"]
-        filas = []
-        for r in orden.itertuples():
-            # Los municipios del departamento que se movieron en su mismo
-            # sentido (y el mayor en contra): sale también cuando el
-            # departamento tiene un solo municipio activo.
-            dentro = tm[(tm["departamento"] == r.nombre) & tm["cambio"].fillna(0).ne(0)]
-            signo = 1 if r.cambio >= 0 else -1
-
-            def _seg(f):
-                return {"nombre": str(f["nombre"]), "delta": float(f["cambio"]),
-                        "nuevo": f.get("tendencia") == 1 and pd.isna(f.get("variacion")),
-                        "perdido": f.get("tendencia") == -1 and pd.isna(f.get("variacion"))}
-            mismos = dentro[dentro["cambio"] * signo > 0].sort_values("cambio", ascending=signo < 0).head(2)
-            contra = dentro[dentro["cambio"] * signo < 0].sort_values("cambio", ascending=signo > 0).head(1)
-            m = {"segmentos": [_seg(f) for _, f in mismos.iterrows()], "compensaron": [_seg(f) for _, f in contra.iterrows()]}
-            razon = T.frase_motivo(m, "municipio")
-            filas.append(f'<div class="terr-dep-fila {r.estado or ""}"><i></i><b>{html.escape(str(r.nombre))}</b>'
-                         f'<span class="cifra">{T.cifra_signo(r.cambio)}</span><em>{_var_corta(r)}</em>'
-                         f'<small>{_negritas(razon) if razon else "&nbsp;"}</small></div>')
+    # 3) Por departamento: qué municipios lo empujaron.
+    if inf["departamentos"]:
+        filas = [f'<div class="terr-dep-fila {d["estado"] or ""}"><i></i><b>{html.escape(d["nombre"])}</b>'
+                 f'<span class="cifra">{T.cifra_signo(d["cambio"])}</span>'
+                 f'<em>{_var_txt(d["variacion"], d["tendencia"])}</em>'
+                 f'<small>{_negritas(d["frase"]) if d["frase"] else "&nbsp;"}</small></div>' for d in inf["departamentos"]]
         st.markdown(f'<div class="terr-rail-card terr-deps"><span class="eyebrow">Por departamento · qué municipios '
-                    f'lo empujaron (de {len(td)} departamentos)</span>' + "".join(filas) + "</div>", unsafe_allow_html=True)
+                    f'lo empujaron (de {inf.get("n_departamentos", len(filas))} departamentos)</span>' + "".join(filas)
+                    + "</div>", unsafe_allow_html=True)
+
+
+def _descargas(ub, metrica, calculo, fecha_col, z: dict, zd: dict, dims_neg: list, etiquetas: dict, crecer: dict,
+               cob: dict, metrica_label: str, archivo: str, hoja: str, filtros: dict, registros: int,
+               serie_total: pd.DataFrame, mapa) -> None:
+    """📥 El análisis para enviar: Excel ejecutivo y HTML con el mapa.
+
+    Se arman a pedido (dos pasos, `ui/components/descarga`): el informe
+    calcula la razón de muchas zonas y el HTML lleva el mapa entero, así que
+    no se hace en cada clic de la pantalla. Llevan los filtros, el periodo y
+    las capas que estén puestos al momento de prepararlos."""
+    filtros_txt = "; ".join(f"{etiquetas.get(k, k)}: {', '.join(map(str, v.get('value', [])))}" for k, v in filtros.items())
+    firma = (archivo, hoja, metrica_label, calculo, z.get("mes_b"), z.get("n"), round(float(z.get("total") or 0), 4),
+             filtros_txt, tuple(dims_neg))
+    ctx = {"archivo": archivo, "hoja": hoja, "registros": registros, "filtros": filtros_txt}
+
+    def _informe():
+        # Para el archivo, la razón de hasta 150 subidas y 150 caídas y todos los departamentos.
+        return T.informe(ub, metrica, calculo, fecha_col, z, zd, dims_neg, etiquetas, crecer, cob, metrica_label,
+                         max_razones=150)
+
+    st.markdown('<div class="terr-label">📥 Descargar el análisis para enviarlo</div>', unsafe_allow_html=True)
+    a, b = st.columns(2, gap="medium")
+    with a:
+        st.markdown('<div class="terr-desc"><b>📊 Excel ejecutivo</b><span>Resumen con indicadores, semáforo, por qué subió o '
+                    'bajó y gráficos · todas las zonas con su razón (con filtros) · departamentos · mes a mes · dónde '
+                    'crecer · notas de cálculo.</span></div>', unsafe_allow_html=True)
+        preparar_y_descargar(
+            "territorial_desc_xlsx", firma,
+            lambda: build_territorial_excel(_informe(), ctx, serie_total, T.mes_a_mes(
+                ub, metrica, calculo, fecha_col, "departamento" if z.get("nivel") == "departamento" else z.get("nivel", "municipio"))),
+            nombre_archivo(hoja or archivo, "xlsx"),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            preparar="⚙️ Preparar Excel", descargar="⬇️ Descargar Excel", primario=True,
+            ayuda="Arma el libro con los filtros y el periodo actuales.")
+    with b:
+        st.markdown('<div class="terr-desc"><b>🌐 Informe HTML con mapa</b><span>Una página que se abre en cualquier navegador '
+                    'y se puede reenviar o imprimir a PDF: el mapa interactivo como lo ves ahora, el semáforo, las razones, '
+                    'la tabla completa con buscador y la evolución.</span></div>', unsafe_allow_html=True)
+        preparar_y_descargar(
+            "territorial_desc_html", firma + (str(st.session_state.get("territorial_color")),
+                                             str(st.session_state.get("territorial_paleta")),
+                                             str(st.session_state.get("territorial_mapa_fondo"))),
+            lambda: build_territorial_html(_informe(), ctx, serie_total, mapa()),
+            nombre_archivo(hoja or archivo, "html"), "text/html",
+            preparar="⚙️ Preparar informe HTML", descargar="⬇️ Descargar informe HTML",
+            ayuda="Incluye el mapa con las capas, el color y el fondo que tienes puestos.")
 
 
 def _ranking(z: dict, metrica_label: str):
@@ -1472,7 +1501,7 @@ def render_territorial_page():
     metricas = [m for m in metric_candidates(df_hoja, schema) if m in df_hoja.columns]
 
     with st.container(key="terr_consola"):
-        panel, principal, riel = st.columns([300, 720, 300], gap="medium")
+        panel, principal, riel = st.columns([320, 1100, 360], gap="medium")
 
     with panel, st.container(key="terr_panel"):
         st.markdown('<div class="terr-sec">Datos</div>', unsafe_allow_html=True)
@@ -1639,9 +1668,9 @@ def render_territorial_page():
             st.info("Prende al menos una capa en el panel de la izquierda.")
             return None
         if clave_evento:
-            return st.pydeck_chart(deck, height=700, use_container_width=True, on_select="rerun",
+            return st.pydeck_chart(deck, height=_ALTO_MAPA, use_container_width=True, on_select="rerun",
                                    selection_mode="single-object", key=clave_evento)
-        st.pydeck_chart(deck, height=700, use_container_width=True)
+        st.pydeck_chart(deck, height=_ALTO_MAPA, use_container_width=True)
         return None
 
     with principal:
@@ -1674,11 +1703,30 @@ def render_territorial_page():
         colores_top, _ = _clasificar(z["tabla"], color, paleta, fondo.startswith("Oscuro")) if not z["tabla"].empty else ([], [])
         _riel(z, colores_top, seleccion, zm, zd, ub, metrica, calculo, fecha_col, crecer, nivel_mpio, dims_neg, etiquetas)
 
+    def _mapa_para_informe() -> Optional[str]:
+        """El mapa como se ve ahora (mismas capas, color, paleta y fondo), en HTML para el informe."""
+        try:
+            hex_t = T.hexagonos(ub, metrica_calc, calculo, radio_km, fecha_col, periodo) if capas_on.get("hex") else pd.DataFrame()
+            deck, _ = _construir_mapa(capas_on, zm["tabla"], zd["tabla"], hex_t,
+                                      _puntos(periodo) if (capas_on.get("calor") or capas_on.get("puntos")) else pd.DataFrame(),
+                                      crecer, color, paleta, fondo, escala, radio_km, metrica_label, inclinada=inclinada,
+                                      ligero=True)
+            return deck.to_html(as_string=True, notebook_display=False) if deck is not None else None
+        except Exception:
+            return None  # sin mapa, el informe sale igual
+
+    _descargas(ub, metrica_calc, calculo, fecha_col, z, zd, dims_neg, etiquetas, crecer, cob, metrica_label,
+               libro["filename"], hoja, filtros, len(df), T.serie_total(ub, metrica_calc, calculo, fecha_col),
+               _mapa_para_informe)
+
     if seleccion:
         _ficha(ub, seleccion, zd if seleccion["nivel"] == "departamento" else zm, crecer, metrica, metrica_label,
                calculo, fecha_col, dims, dims_neg, etiquetas)
 
-    _tablero_semaforo(z, zd, ub, metrica, calculo, fecha_col, dims_neg, etiquetas, metrica_label)
+    # Pocas razones en pantalla (se ven 3 por columna); el informe descargable pide muchas más.
+    inf = T.informe(ub, metrica_calc, calculo, fecha_col, z, zd, dims_neg, etiquetas, crecer, cob, metrica_label,
+                    max_razones=3, max_deptos=8)
+    _tablero_semaforo(inf)
 
     izq, der = st.columns([1.4, 1])
     with izq:

@@ -1,9 +1,9 @@
 import html as _html
 import re
-import traceback
 import pandas as pd
 import streamlit as st
 from core.dashboard_engine import build_dashboard
+from ui.components.descarga import preparar_y_descargar as _preparar_y_descargar, tamano_mb as _mb
 from ui.components.section import section_header
 from ui.report_excel import build_excel_report, nombre_archivo as nombre_archivo_excel
 from ui.report_html import build_html_report, build_workbook_html_report
@@ -62,55 +62,6 @@ _CSS = """
 .exp-tip b{color:var(--text)}
 </style>
 """
-
-
-def _preparar_y_descargar(clave: str, firma: tuple, construir, nombre: str, mime: str, *,
-                          preparar: str, descargar: str, ayuda: str, primario: bool = False, nota: str = "") -> None:
-    """Un archivo pesado en dos pasos: «Preparar» lo arma aquí, a la vista, y
-    después «Descargar» entrega lo que ya está listo.
-
-    Antes se le pasaba a `st.download_button` una función que Streamlit
-    ejecutaba en segundo plano al hacer clic. Si fallaba, Streamlit se tragaba
-    el error (solo queda en el registro del servidor) y el navegador mostraba
-    un genérico «Failed to generate file» o nada; además, el navegador deja de
-    esperar a los 3 minutos. Con un Excel grande no había forma de saber por
-    qué «no dejaba». Así se ve el progreso, el error real con su detalle, y no
-    hay límite de espera.
-
-    `firma` dice con qué datos se armó (archivo, hoja, filtros…): si cambia, lo
-    preparado deja de servir y se vuelve a pedir «Preparar»."""
-    # Lo preparado se guarda con otro nombre que el botón: Streamlit no deja
-    # escribir en session_state la clave de un widget.
-    almacen = f"_preparado__{clave}"
-    guardado = st.session_state.get(almacen)
-    if guardado and guardado.get("firma") == firma:
-        st.download_button(descargar, guardado["datos"], nombre, mime, use_container_width=True,
-                           type="primary" if primario else "secondary", key=clave, help=ayuda)
-        st.markdown(f'<div class="exp-size">{nota}{" · " if nota else ""}{_mb(guardado["datos"])} · listo</div>',
-                    unsafe_allow_html=True)
-        return
-    if not st.button(preparar, use_container_width=True, type="primary" if primario else "secondary",
-                     key=f"{clave}__preparar", help=ayuda):
-        if nota:
-            st.markdown(f'<div class="exp-size">{nota}</div>', unsafe_allow_html=True)
-        return
-    datos, error = None, None
-    with st.spinner("Preparando el archivo… con archivos grandes puede tardar un minuto."):
-        try:
-            datos = construir()
-        except Exception as exc:
-            error = (exc, traceback.format_exc())
-    if error is not None:
-        st.error(f"No se pudo preparar: {error[0]}")
-        with st.expander("Detalle técnico (cópialo si necesitas ayuda)"):
-            st.code(error[1], language=None)
-        return
-    st.session_state[almacen] = {"firma": firma, "datos": datos}
-    st.rerun()
-
-
-def _mb(contenido: bytes) -> str:
-    return f"{len(contenido) / 1_000_000:.1f} MB"
 
 
 def _cabecera(icono: str, titulo: str, descripcion: str, chips: list = (), eyebrow: str = "") -> str:

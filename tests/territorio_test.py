@@ -26,6 +26,9 @@ Qué se protege:
   que de verdad cayó; con la regla anterior, además, una columna de dos
   valores siempre puntuaba 0 y nunca podía ser la razón.
 
+- Informes descargables (`ui/report_territorial`): el Excel y el HTML salen
+  de `informe`, lo mismo que el tablero; las frases van sin las marcas **.
+
 PYTHONPATH=. python tests/territorio_test.py
 """
 import json
@@ -215,6 +218,36 @@ def test_motivos():
           T.motivos(ub, "Ventas", "Promedio", "Fecha", T.zonas(ub, "Ventas", "Promedio", "municipio", "Fecha", None), ["Canal"]) is None)
 
 
+def test_informes_descargables():
+    import io
+    from openpyxl import load_workbook
+    from ui.report_territorial import build_territorial_excel, build_territorial_html
+
+    df, schema = _perfil(_diario())
+    ub, _ = T.ubicar(df, schema)
+    z = T.zonas(ub, "Ventas", "Suma", "municipio", "Fecha", None)
+    zd = T.zonas(ub, "Ventas", "Suma", "departamento", "Fecha", None)
+    inf = T.informe(ub, "Ventas", "Suma", "Fecha", z, zd, ["Canal", "Asesor"], {"Canal": "Canal"}, metrica_label="Ventas")
+    check("el informe trae el semáforo, el total y la razón de Barranquilla",
+          inf["semaforo"]["bajo"]["n"] == 2 and inf["cambio_total"]["delta"] == 70
+          and "Calle" in inf["razones"][str(z["tabla"].set_index("nombre").loc["Barranquilla", "zona"])]["frase"])
+    check("y Atlántico, explicado por sus municipios",
+          any(d["nombre"] == "Atlántico" and "Barranquilla" in d["frase"] for d in inf["departamentos"]))
+    ctx = {"archivo": "x.xlsx", "hoja": "Hoja1", "registros": len(df), "filtros": ""}
+    serie = T.serie_total(ub, "Ventas", "Suma", "Fecha")
+    libro = load_workbook(io.BytesIO(build_territorial_excel(inf, ctx, serie, T.mes_a_mes(ub, "Ventas", "Suma", "Fecha"))))
+    check("el Excel tiene sus hojas", {"Resumen", "Semáforo", "Departamentos", "Mes a mes", "Notas"} <= set(libro.sheetnames))
+    ws = libro["Semáforo"]
+    textos = [str(c.value) for fila in ws.iter_rows() for c in fila if c.value is not None]
+    check("la hoja Semáforo dice por qué bajó Barranquilla, sin marcas **",
+          any("Calle" in s and "dejó de vender" in s for s in textos) and not any("**" in s for s in textos))
+    check("los cortes de mes van en el encabezado", any("al día 7" in s for s in textos))
+    pagina = build_territorial_html(inf, ctx, serie).decode("utf-8")
+    check("el HTML trae el semáforo, las razones y la tabla completa",
+          "Qué pasó y por qué" in pagina and "<b>Calle</b>" in pagina and 'id="tabla-zonas"' in pagina
+          and "va hasta el día 7" in pagina)
+
+
 def main():
     test_datos_de_colombia()
     test_ubicar_las_cuatro_formas()
@@ -222,6 +255,7 @@ def main():
     test_hexagonos_y_donde_crecer()
     test_mes_a_medias_y_semaforo()
     test_motivos()
+    test_informes_descargables()
 
 
 if __name__ == "__main__":
