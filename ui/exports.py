@@ -1,5 +1,6 @@
 import html as _html
 import re
+import traceback
 import pandas as pd
 import streamlit as st
 from core.dashboard_engine import build_dashboard
@@ -61,6 +62,51 @@ _CSS = """
 .exp-tip b{color:var(--text)}
 </style>
 """
+
+
+def _preparar_y_descargar(clave: str, firma: tuple, construir, nombre: str, mime: str, *,
+                          preparar: str, descargar: str, ayuda: str, primario: bool = False, nota: str = "") -> None:
+    """Un archivo pesado en dos pasos: «Preparar» lo arma aquí, a la vista, y
+    después «Descargar» entrega lo que ya está listo.
+
+    Antes se le pasaba a `st.download_button` una función que Streamlit
+    ejecutaba en segundo plano al hacer clic. Si fallaba, Streamlit se tragaba
+    el error (solo queda en el registro del servidor) y el navegador mostraba
+    un genérico «Failed to generate file» o nada; además, el navegador deja de
+    esperar a los 3 minutos. Con un Excel grande no había forma de saber por
+    qué «no dejaba». Así se ve el progreso, el error real con su detalle, y no
+    hay límite de espera.
+
+    `firma` dice con qué datos se armó (archivo, hoja, filtros…): si cambia, lo
+    preparado deja de servir y se vuelve a pedir «Preparar»."""
+    # Lo preparado se guarda con otro nombre que el botón: Streamlit no deja
+    # escribir en session_state la clave de un widget.
+    almacen = f"_preparado__{clave}"
+    guardado = st.session_state.get(almacen)
+    if guardado and guardado.get("firma") == firma:
+        st.download_button(descargar, guardado["datos"], nombre, mime, use_container_width=True,
+                           type="primary" if primario else "secondary", key=clave, help=ayuda)
+        st.markdown(f'<div class="exp-size">{nota}{" · " if nota else ""}{_mb(guardado["datos"])} · listo</div>',
+                    unsafe_allow_html=True)
+        return
+    if not st.button(preparar, use_container_width=True, type="primary" if primario else "secondary",
+                     key=f"{clave}__preparar", help=ayuda):
+        if nota:
+            st.markdown(f'<div class="exp-size">{nota}</div>', unsafe_allow_html=True)
+        return
+    datos, error = None, None
+    with st.spinner("Preparando el archivo… con archivos grandes puede tardar un minuto."):
+        try:
+            datos = construir()
+        except Exception as exc:
+            error = (exc, traceback.format_exc())
+    if error is not None:
+        st.error(f"No se pudo preparar: {error[0]}")
+        with st.expander("Detalle técnico (cópialo si necesitas ayuda)"):
+            st.code(error[1], language=None)
+        return
+    st.session_state[almacen] = {"firma": firma, "datos": datos}
+    st.rerun()
 
 
 def _mb(contenido: bytes) -> str:
@@ -190,8 +236,9 @@ def render_exports(df, dashboard, filename, sheet, full_df=None, schema=None, wo
             st.caption("No hay hojas con datos para este informe.")
 
     # Interactivo: lleva los datos adentro y todo se recalcula en el archivo.
-    # Se arma al hacer clic: además de los datos calcula el diagnóstico del
-    # archivo completo, y hacerlo en cada rerun volvía lenta la vista.
+    # Se prepara a pedido (ver _preparar_y_descargar): además de los datos
+    # calcula el diagnóstico del archivo completo, y hacerlo en cada rerun
+    # volvía lenta la vista.
     with col_inter, st.container(key="exp_interactivo"):
         st.markdown(_cabecera(
             "🧭", "Interactivo",
@@ -199,20 +246,25 @@ def render_exports(df, dashboard, filename, sheet, full_df=None, schema=None, wo
             "las alertas, los gráficos y cómo va cada uno.",
             [("Hasta 60.000 filas", False), ("Toda la hoja", False)],
         ), unsafe_allow_html=True)
-        st.download_button(
-            "⬇ Descargar",
-            lambda: build_interactive_html_report(full_df if full_df is not None else df, schema or {},
-                                                  filename, sheet).encode("utf-8"),
-            "informe_interactivo.html", "text/html", use_container_width=True, key="exp_btn_interactivo",
-            help="Incluye los datos de toda la hoja (hasta 60.000 filas) para que los filtros funcionen sin la app.",
+        hoja_completa = full_df if full_df is not None else df
+        # Sin filtros, el análisis de la hoja completa es el mismo que ya está
+        # calculado (y en caché): pasarlo evita repetirlo, que era la parte
+        # más lenta del interactivo.
+        analisis = dashboard if not has_active_filters and len(hoja_completa) == len(df) else None
+        _preparar_y_descargar(
+            "exp_btn_interactivo", (filename, sheet, len(hoja_completa), tuple(map(str, hoja_completa.columns))),
+            lambda: build_interactive_html_report(hoja_completa, schema or {}, filename, sheet,
+                                                  dashboard=analisis).encode("utf-8"),
+            "informe_interactivo.html", "text/html",
+            preparar="⚙️ Preparar", descargar="⬇ Descargar",
+            ayuda="Incluye los datos de toda la hoja (hasta 60.000 filas) para que los filtros funcionen sin la app.",
+            nota="HTML · pesa más porque lleva los datos",
         )
-        st.markdown('<div class="exp-size">HTML · se arma al hacer clic · pesa más porque lleva los datos</div>',
-                    unsafe_allow_html=True)
 
     # ── Excel ejecutivo y CSV, con lo que se ve ahora ────────────────────
-    # El Excel se arma al hacer clic (data=callable): con gráficos, planes y
-    # tablas dinámicas es más pesado que un volcado, y armarlo en cada rerun
-    # de la vista la haría lenta aunque nadie lo descargue.
+    # El Excel se prepara a pedido (ver _preparar_y_descargar): con gráficos,
+    # planes y tablas dinámicas es más pesado que un volcado, y armarlo en
+    # cada rerun de la vista la haría lenta aunque nadie lo descargue.
     st.markdown('<div class="exp-subhead">Excel y datos</div>', unsafe_allow_html=True)
     with st.container(key="exp_datos"):
         izquierda, derecha = st.columns([2.4, 1], vertical_alignment="center")
@@ -226,12 +278,12 @@ def render_exports(df, dashboard, filename, sheet, full_df=None, schema=None, wo
                  (f"Filtros: {filters_summary}", has_active_filters)],
             ), unsafe_allow_html=True)
         with derecha:
-            st.download_button(
-                "⬇ Descargar Excel",
+            _preparar_y_descargar(
+                "exp_btn_xlsx", (filename, sheet, filters_summary, len(df), tuple(map(str, df.columns))),
                 lambda: build_excel_report(df, schema or {}, dashboard, filename, sheet, filters_summary),
                 nombre_archivo_excel(sheet), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True, type="primary", key="exp_btn_xlsx",
-                help="Se arma al hacer clic, con tus filtros actuales. Las tablas dinámicas se actualizan al abrirlo.",
+                preparar="⚙️ Preparar Excel", descargar="⬇ Descargar Excel", primario=True,
+                ayuda="Se arma con tus filtros actuales. Las tablas dinámicas se actualizan al abrirlo.",
             )
             st.download_button(
                 "CSV (solo datos)", lambda: df.to_csv(index=False).encode("utf-8-sig"), "datos_filtrados.csv",
