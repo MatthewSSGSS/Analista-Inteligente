@@ -400,6 +400,18 @@ def zonas(ub: pd.DataFrame, metrica: Optional[str], calculo: str = "Suma", nivel
             "total": total, "promedio": promedio, "sumable": sumable, "nivel": nivel, "meses": meses}
 
 
+def serie_total(ub: pd.DataFrame, metrica: Optional[str], calculo: str, fecha_col: Optional[str]) -> pd.DataFrame:
+    """Mes a mes del total de los registros ubicados (para los mini-gráficos)."""
+    datos = ub[ub["_t_ok"]]
+    if not fecha_col or fecha_col not in datos.columns or datos.empty:
+        return pd.DataFrame()
+    v = 1.0 if (metrica is None or calculo == "Conteo") else numeric_valid(datos[metrica])
+    tabla = pd.DataFrame({"mes": pd.to_datetime(datos[fecha_col], errors="coerce").dt.strftime("%Y-%m"), "_v": v})
+    tabla = tabla.dropna(subset=["mes"])
+    serie = tabla.groupby("mes")["_v"].agg(lambda s: _agregar(s, calculo)).sort_index()
+    return serie.rename("valor").reset_index()
+
+
 def serie_zona(ub: pd.DataFrame, zona, nivel: str, metrica: Optional[str], calculo: str,
                fecha_col: Optional[str]) -> pd.DataFrame:
     """Mes a mes de una zona y el promedio de todas las zonas ese mes."""

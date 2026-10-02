@@ -117,9 +117,70 @@ def _inject_css():
         .st-key-terr_consola div[data-testid="stHorizontalBlock"]{align-items:flex-start}
         .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:first-child{
           flex:0 0 300px;min-width:300px;max-width:300px;width:300px}
-        .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:last-child{flex:1 1 auto;min-width:0}
-        @media(max-width:900px){.st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:first-child{
-          flex:1 1 100%;min-width:0;max-width:none;width:auto}}
+        .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){flex:1 1 auto;min-width:0}
+        .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(3){
+          flex:0 0 300px;min-width:300px;max-width:300px;width:300px}
+        @media(max-width:1350px){.st-key-terr_consola div[data-testid="stHorizontalBlock"]{flex-wrap:wrap}
+          .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(2){flex:1 1 calc(100% - 330px)}
+          .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(3){
+            flex:1 1 100%;max-width:none;width:auto}}
+        @media(max-width:900px){.st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{
+          flex:1 1 100%!important;min-width:0!important;max-width:none!important;width:auto!important}}
+
+        /* Barra de indicadores sobre el mapa */
+        .terr-hud{display:grid;grid-template-columns:1.6fr repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
+        .terr-hud-tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 12px;min-width:0;
+          box-shadow:var(--shadow-sm);position:relative;overflow:hidden;animation:fadeUp .35s ease both}
+        .terr-hud-tile:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--teal)}
+        .terr-hud-tile.neg:before{background:var(--red)} .terr-hud-tile.anillo:before{background:var(--purple)}
+        .terr-hud-tile.principal{background:linear-gradient(135deg,rgba(15,168,160,.13),transparent 70%),var(--panel)}
+        .terr-hud-tile>span{display:block;font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+        .terr-hud-tile .fila{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px}
+        .terr-hud-tile b{font-size:19px;font-family:'Sora','Inter',sans-serif;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .terr-hud-tile.principal b{font-size:24px}
+        .terr-hud-tile small{display:block;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .terr-hud-tile.neg small{color:var(--red)}
+        .terr-hud-tile.anillo .fila{justify-content:flex-start}
+        .terr-hud-tile.anillo small{white-space:normal;line-height:1.3}
+        .terr-delta{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;padding:1px 7px;border-radius:99px}
+        .terr-delta.pos{color:var(--green);background:var(--green-soft)} .terr-delta.neg{color:var(--red);background:var(--red-soft)}
+        .terr-delta small{display:inline;color:inherit;opacity:.8;font-weight:600}
+        .terr-spark{flex:0 0 auto}
+        @media(max-width:1500px){.terr-hud{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+        /* Riel derecho */
+        .st-key-terr_riel{gap:.6rem}
+        .terr-rail-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 13px;box-shadow:var(--shadow-sm);
+          animation:fadeUp .35s ease both}
+        .terr-rail-card .eyebrow{display:block;font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);margin-bottom:6px}
+        .terr-rail-card.sel{border:1px solid rgba(15,168,160,.55);box-shadow:0 0 0 3px rgba(15,168,160,.12),var(--shadow-sm)}
+        .terr-rail-card.oport{border-color:rgba(200,121,10,.55);box-shadow:0 0 0 3px rgba(200,121,10,.12)}
+        .terr-rail-card.oport .eyebrow{color:var(--amber-strong)}
+        .terr-rail-card h4{margin:0;padding:0;border:0;background:none;box-shadow:none;font-size:18px;font-family:'Sora','Inter',sans-serif;color:var(--text);letter-spacing:-.01em}
+        .terr-rail-card .sub{font-size:11.5px;color:var(--muted);margin-bottom:6px}
+        .terr-rail-card .pista{font-size:10.5px;color:var(--muted);margin-top:8px}
+        .terr-mini{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+        .terr-mini div{background:var(--panel-2);border-radius:8px;padding:5px 8px}
+        .terr-mini span{display:block;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+        .terr-mini b{font-size:14px;color:var(--text)}
+        .terr-top-fila{display:flex;gap:9px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line-soft)}
+        .terr-top-fila:last-child{border-bottom:0}
+        .terr-top-fila .num{flex:0 0 22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:800;
+          background:var(--panel-2);color:var(--muted)}
+        .terr-top-fila:nth-child(2) .num{background:var(--teal);color:#fff}
+        .terr-top-fila .cuerpo{flex:1;min-width:0}
+        .terr-top-fila .nom{display:flex;align-items:baseline;gap:6px;font-size:12px}
+        .terr-top-fila .nom b{flex:1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .terr-top-fila .nom i{font-style:normal;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+        .terr-top-fila .nom em{font-style:normal;font-size:10.5px;font-weight:800}
+        .terr-top-fila em.pos{color:var(--green)} .terr-top-fila em.neg{color:var(--red)}
+        .terr-top-fila .barra{height:5px;border-radius:99px;background:var(--panel-2);margin-top:4px;overflow:hidden}
+        .terr-top-fila .barra u{display:block;height:100%;border-radius:99px;text-decoration:none}
+        .terr-alerta{border-left:3px solid var(--muted);padding:6px 9px;margin:6px 0;border-radius:0 8px 8px 0;background:var(--panel-2)}
+        .terr-alerta b{display:block;font-size:12px;color:var(--text)}
+        .terr-alerta small{font-size:11px;color:var(--muted)}
+        .terr-alerta.neg{border-left-color:var(--red)} .terr-alerta.warn{border-left-color:var(--amber)}
+        .terr-alerta.oport{border-left-color:var(--amber-strong)}
         .st-key-terr_panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 12px 4px;
           gap:.45rem;max-height:860px;overflow-y:auto}
         .terr-sec{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);
@@ -131,7 +192,7 @@ def _inject_css():
         .terr-ley i{width:22px;height:10px;border-radius:3px;flex:0 0 22px;border:1px solid rgba(0,0,0,.08)}
 
         .terr-mapa-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
-          padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:14px 14px 0 0;margin-bottom:-1rem}
+          padding:10px 14px 24px;background:var(--panel);border:1px solid var(--line);border-radius:14px 14px 0 0;margin-bottom:-1rem}
         .terr-mapa-head b{font-size:14px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
         .terr-mapa-head .per{font-size:11.5px;font-weight:800;color:var(--teal);letter-spacing:.04em}
         .terr-mapa-head .capas{display:flex;flex-wrap:wrap;gap:5px}
@@ -394,8 +455,12 @@ def _feature(geom, props) -> dict:
 
 
 def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd.DataFrame, puntos: pd.DataFrame,
-                    crecer: dict, color: str, paleta: str, fondo: str, escala: float, radio_km: float, unidad: str):
-    """El objeto pydeck y las leyendas de cada capa activa."""
+                    crecer: dict, color: str, paleta: str, fondo: str, escala: float, radio_km: float, unidad: str,
+                    seleccion: Optional[dict] = None, inclinada: bool = False):
+    """El objeto pydeck y las leyendas de cada capa activa.
+
+    `seleccion` = la zona abierta en la ficha: se resalta con un borde neón y
+    la vista vuela hacia ella. `inclinada` inclina también las capas planas."""
     import pydeck as pdk
     oscuro = fondo.startswith("Oscuro")
     capas, leyendas = [], {}
@@ -489,9 +554,14 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
         vistas_lat += list(t["lat"]); vistas_lon += list(t["lon"])
         inclinacion = max(inclinacion, 48)
     else:
-        # Contornos de departamento siempre, finos: dan contexto a cualquier capa.
+        # Contornos de departamento siempre, con brillo: una línea ancha y
+        # transparente debajo de una fina y nítida.
+        capas.append(pdk.Layer("GeoJsonLayer", data=T.departamentos_geojson(), id="contornos_brillo", stroked=True,
+                               filled=False, get_line_color=linea[:3] + [40 if oscuro else 30],
+                               line_width_min_pixels=6, pickable=False))
         capas.append(pdk.Layer("GeoJsonLayer", data=T.departamentos_geojson(), id="contornos", stroked=True,
-                               filled=False, get_line_color=linea[:3] + [130], line_width_min_pixels=1, pickable=False))
+                               filled=False, get_line_color=([140, 255, 240, 200] if oscuro else [15, 110, 105, 170]),
+                               line_width_min_pixels=1.1, pickable=False))
 
     # 4) Columnas 3D por municipio.
     if capas_on.get("columnas") and not zm.empty:
@@ -577,14 +647,49 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
             # una lista o un texto de caracteres se interpretan como código).
             # Tooltips, ficha y ranking sí llevan los nombres completos.
             top["texto"] = top["nombre"].map(_sin_tildes) + "  " + top["valor"].map(T.cifra)
+            # Píldoras: fondo y borde propios, legibles sobre cualquier capa.
             capas.append(pdk.Layer("TextLayer", data=top, id="etiquetas", get_position=["lon", "lat"], get_text="texto",
-                                   get_size=14, get_color=[235, 240, 245] if oscuro else [20, 24, 38],
-                                   get_pixel_offset=[0, -12], billboard=True, font_settings={"sdf": True},
-                                   outline_width=3, outline_color=[10, 14, 22, 230] if oscuro else [255, 255, 255, 235]))
+                                   get_size=12, get_color=[236, 241, 246] if oscuro else [19, 24, 38],
+                                   get_pixel_offset=[0, -16], billboard=True, background=True,
+                                   get_background_color=[13, 18, 28, 225] if oscuro else [255, 255, 255, 235],
+                                   background_padding=[7, 3, 7, 3], get_border_color=[94, 224, 212, 210] if oscuro else [15, 120, 115, 200],
+                                   get_border_width=1))
+
+    # 10) La zona abierta en la ficha: borde neón con brillo y la vista va hacia ella.
+    foco = None
+    if seleccion:
+        geom, nivel_sel = None, seleccion.get("nivel")
+        if nivel_sel == "departamento":
+            geom = next((f["geometry"] for f in T.departamentos_geojson()["features"]
+                         if f["properties"]["cod_dpto"] == str(seleccion.get("zona"))), None)
+            d = T.departamentos().set_index("cod_dpto")
+            if str(seleccion.get("zona")) in d.index:
+                foco = (float(d.loc[str(seleccion["zona"]), "lat"]), float(d.loc[str(seleccion["zona"]), "lon"]), 6.6)
+        else:
+            try:
+                idx = int(float(seleccion.get("zona")))
+            except (TypeError, ValueError):
+                idx = -1
+            geom = next((f["geometry"] for f in T.municipios_geojson()["features"] if f["properties"]["idx"] == idx), None)
+            if 0 <= idx < len(mpios):
+                foco = (float(mpios.iloc[idx]["lat"]), float(mpios.iloc[idx]["lon"]), 8.4)
+        if geom:
+            sel = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": geom, "properties": {}}]}
+            capas.append(pdk.Layer("GeoJsonLayer", data=sel, id="seleccion_brillo", stroked=True, filled=False,
+                                   get_line_color=[94, 224, 212, 70], line_width_min_pixels=12, pickable=False))
+            capas.append(pdk.Layer("GeoJsonLayer", data=sel, id="seleccion", stroked=True, filled=True,
+                                   get_fill_color=[94, 224, 212, 35], get_line_color=[94, 255, 236, 255],
+                                   line_width_min_pixels=2.5, pickable=False))
 
     if len(capas) <= 1 and not any(capas_on.values()):
         return None, leyendas
-    deck = pdk.Deck(layers=capas, initial_view_state=_vista(vistas_lat, vistas_lon, inclinacion),
+    if inclinada and inclinacion == 0:
+        inclinacion = 40
+    vista = _vista(vistas_lat, vistas_lon, inclinacion)
+    if foco:
+        vista = pdk.ViewState(latitude=foco[0], longitude=foco[1], zoom=foco[2], pitch=inclinacion,
+                              bearing=-12 if inclinacion else 0, transition_duration=900)
+    deck = pdk.Deck(layers=capas, initial_view_state=vista,
                     map_style=getattr(pdk.map_styles, _MAPAS.get(fondo, "CARTO_DARK")), map_provider="carto",
                     tooltip=_tooltip(oscuro))
     return deck, leyendas
@@ -592,33 +697,206 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
 
 # ── Piezas de la pantalla ─────────────────────────────────────────────────
 
-def _kpis(z: dict, cob: dict, crecer: dict, metrica_label: str) -> str:
+def _sparkline(valores, color: str = "#0fa8a0", ancho: int = 132, alto: int = 34) -> str:
+    """Mini-gráfico de tendencia en SVG (línea con área degradada y punto final)."""
+    v = [float(x) for x in valores if x is not None and np.isfinite(x)]
+    if len(v) < 2:
+        return ""
+    mn, mx = min(v), max(v)
+    rango = (mx - mn) or 1.0
+    pts = [(2 + i / (len(v) - 1) * (ancho - 6), alto - 4 - (x - mn) / rango * (alto - 10)) for i, x in enumerate(v)]
+    linea = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    gid = "sp" + str(abs(hash((tuple(v), color))) % 10 ** 8)
+    return (f'<svg class="terr-spark" width="{ancho}" height="{alto}" viewBox="0 0 {ancho} {alto}">'
+            f'<defs><linearGradient id="{gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{color}" stop-opacity=".35"/>'
+            f'<stop offset="1" stop-color="{color}" stop-opacity="0"/></linearGradient></defs>'
+            f'<polygon points="2,{alto} {linea} {ancho - 4},{alto}" fill="url(#{gid})"/>'
+            f'<polyline points="{linea}" fill="none" stroke="{color}" stroke-width="2" stroke-linejoin="round"/>'
+            f'<circle cx="{pts[-1][0]:.1f}" cy="{pts[-1][1]:.1f}" r="3.2" fill="{color}"/></svg>')
+
+
+def _anillo(fraccion, color: str = "#0fa8a0", tam: int = 46) -> str:
+    """Anillo de progreso con el porcentaje en el centro."""
+    f = max(0.0, min(1.0, float(fraccion or 0)))
+    r = tam / 2 - 5
+    largo = 2 * math.pi * r
+    return (f'<svg width="{tam}" height="{tam}" viewBox="0 0 {tam} {tam}" class="terr-anillo">'
+            f'<circle cx="{tam / 2}" cy="{tam / 2}" r="{r}" fill="none" stroke="var(--line)" stroke-width="5"/>'
+            f'<circle cx="{tam / 2}" cy="{tam / 2}" r="{r}" fill="none" stroke="{color}" stroke-width="5" stroke-linecap="round" '
+            f'stroke-dasharray="{largo * f:.1f} {largo:.1f}" transform="rotate(-90 {tam / 2} {tam / 2})"/>'
+            f'<text x="50%" y="54%" text-anchor="middle" font-size="11" font-weight="800" fill="var(--text)">{f:.0%}</text></svg>')
+
+
+def _hud(z: dict, serie: pd.DataFrame, metrica_label: str, cob: dict) -> str:
+    """La barra de indicadores sobre el mapa."""
     tabla = z["tabla"]
-    tarjetas = [("", f"{'Total' if z.get('sumable') else 'Promedio'} · {metrica_label}", T.cifra(z["total"]),
-                 f"{z['n']} zonas con actividad")]
+    tiles = []
+    delta = ""
+    if len(serie) >= 2 and serie["valor"].iloc[-2]:
+        cambio = (serie["valor"].iloc[-1] - serie["valor"].iloc[-2]) / abs(serie["valor"].iloc[-2])
+        delta = (f'<span class="terr-delta {"pos" if cambio >= 0 else "neg"}">{"▲" if cambio >= 0 else "▼"} '
+                 f'{abs(cambio):.1%} <small>{T.etiqueta_mes(serie["mes"].iloc[-1], True)}</small></span>')
+    tiles.append(("principal", f"{'Total' if z.get('sumable') else 'Promedio'} · {metrica_label}", T.cifra(z["total"]),
+                  delta, _sparkline(serie["valor"]) if len(serie) >= 2 else ""))
+    tiles.append(("", "Zonas con actividad", f"{z['n']:,}",
+                  f"de {cob['municipios_deptos']:,} municipios de tus departamentos" if cob else "", ""))
     if len(tabla):
         lider = tabla.iloc[0]
-        part = f" · {lider['participacion']:.0%} del total" if pd.notna(lider.get("participacion")) else ""
-        tarjetas.append(("", "Zona líder", str(lider["nombre"]), f"{T.cifra(lider['valor'])}{part}"))
-    if "cambio" in tabla.columns and z.get("mes_a"):
+        part = f"{lider['participacion']:.0%} del total" if pd.notna(lider.get("participacion")) else T.cifra(lider["valor"])
+        tiles.append(("", "Zona líder", str(lider["nombre"]), part, ""))
+    if "cambio" in tabla.columns and z.get("mes_a") and (tabla["cambio"] < 0).any():
         caida = tabla.sort_values("cambio").iloc[0]
-        if caida["cambio"] < 0:
-            tarjetas.append(("neg", f"Mayor caída · {T.etiqueta_mes(z['mes_b'], True)}", str(caida["nombre"]),
-                             f"{T.cifra(caida['cambio'])}" + (f" · {caida['variacion']:+.0%}" if pd.notna(caida['variacion']) else "")))
-        subida = tabla.sort_values("cambio", ascending=False).iloc[0]
-        if subida["cambio"] > 0:
-            tarjetas.append(("pos", f"Mayor subida · {T.etiqueta_mes(z['mes_b'], True)}", str(subida["nombre"]),
-                             f"+{T.cifra(subida['cambio'])}" + (f" · {subida['variacion']:+.0%}" if pd.notna(subida['variacion']) else "")))
-    if cob:
-        tarjetas.append(("", "Cobertura de población", f"{cob['pct_deptos']:.0%}" if cob.get("pct_deptos") else "—",
-                         f"{cob['municipios']} de {cob['municipios_deptos']} municipios de tus departamentos"))
+        tiles.append(("neg", f"Mayor caída · {T.etiqueta_mes(z['mes_b'], True)}", str(caida["nombre"]),
+                      f"{T.cifra(caida['cambio'])}" + (f" · {caida['variacion']:+.0%}" if pd.notna(caida["variacion"]) else ""), ""))
+    if cob and cob.get("pct_deptos") is not None:
+        tiles.append(("anillo", "Cobertura de población", _anillo(cob["pct_deptos"]),
+                      "de la gente de tus departamentos vive donde ya estás", ""))
+    partes = []
+    for clase, etiqueta, valor, sub, extra in tiles:
+        cuerpo = valor if clase == "anillo" else f'<b title="{html.escape(valor)}">{html.escape(valor)}</b>'
+        sub_html = sub if sub.startswith("<span") else f"<small>{html.escape(sub)}</small>"
+        partes.append(f'<div class="terr-hud-tile {clase}"><span>{html.escape(etiqueta)}</span>'
+                      f'<div class="fila">{cuerpo}{extra}</div>{sub_html}</div>')
+    return '<div class="terr-hud">' + "".join(partes) + "</div>"
+
+
+def _firma_mapa() -> Optional[tuple]:
+    """(capa, zona, nivel) del objeto elegido hoy en el mapa, o None."""
+    estado = st.session_state.get("territorial_deck")
+    seleccion = getattr(estado, "selection", None)
+    if seleccion is None and isinstance(estado, dict):
+        seleccion = estado.get("selection")
+    try:
+        objetos = (seleccion.get("objects") if seleccion else None) or {}
+    except Exception:
+        return None
+    for capa in ("mpios", "zonas", "deptos", "blancos", "poblacion"):
+        elegido = (objetos.get(capa) or [None])[0]
+        if elegido:
+            props = elegido.get("properties", elegido)
+            return capa, str(props.get("zona")), props.get("nivel")
+    return None
+
+
+def _leer_clic(nivel_mpio: str) -> None:
+    """Toma el clic del mapa ANTES de dibujarlo, para que el resaltado y el
+    vuelo a la zona salgan en esa misma vuelta. Un clic ya atendido (la
+    selección queda guardada en el widget) no se vuelve a aplicar: si no,
+    cerrar la ficha la reabría en el acto."""
+    firma = _firma_mapa()
+    if firma and st.session_state.get("_territorial_firma") != firma:
+        st.session_state["_territorial_firma"] = firma
+        capa, zona, nivel = firma
+        st.session_state["territorial_zona_sel"] = {"zona": zona, "nivel": nivel or (
+            "departamento" if capa == "deptos" else nivel_mpio)}
+
+
+def _cerrar_seleccion() -> None:
+    st.session_state.pop("territorial_zona_sel", None)
+    st.session_state["_territorial_firma"] = _firma_mapa()
+
+
+def _ir_a(opciones: dict) -> None:
+    elegido = st.session_state.get("territorial_ir_a")
+    if elegido in opciones:
+        st.session_state["territorial_zona_sel"] = opciones[elegido]
+
+
+def _riel(z: dict, colores: list, seleccion: Optional[dict], zm: dict, zd: dict, ub, metrica, calculo, fecha_col,
+          crecer: dict, nivel_mpio: str):
+    """El riel derecho: zona abierta, ir a una zona, Top 10 y alertas."""
+    tabla = z["tabla"]
+    # 1) La zona abierta, en corto.
+    if seleccion:
+        z_sel = zd if seleccion.get("nivel") == "departamento" else zm
+        t = z_sel["tabla"]
+        fila = pd.DataFrame()
+        if not t.empty:
+            if seleccion.get("nivel") == "departamento":
+                fila = t[t["zona"].astype(str) == str(seleccion["zona"])]
+            else:
+                fila = t[pd.to_numeric(t["zona"], errors="coerce") == pd.to_numeric(seleccion["zona"], errors="coerce")]
+        if len(fila):
+            f = fila.iloc[0]
+            es_depto = seleccion.get("nivel") == "departamento"
+            clave = seleccion["zona"] if es_depto else int(float(seleccion["zona"]))
+            serie = T.serie_zona(ub, clave, "departamento" if es_depto else nivel_mpio,
+                                 None if metrica == _CONTEO else metrica, calculo, fecha_col)
+            datos = [("Valor", T.cifra(f["valor"])), ("Posición", f"{int(f['posicion'])}.º de {z_sel['n']}")]
+            if pd.notna(f.get("variacion", np.nan)):
+                datos.append(("Vs mes anterior", f"{f['variacion']:+.0%}"))
+            if pd.notna(f.get("cumplimiento", np.nan)):
+                datos.append(("Meta", f"{f['cumplimiento']:.0%}"))
+            if pd.notna(f.get("por_10k", np.nan)):
+                datos.append(("Por 10.000 hab.", T.cifra(f["por_10k"])))
+            st.markdown(
+                f'<div class="terr-rail-card sel"><span class="eyebrow">Zona seleccionada</span>'
+                f'<h4>{html.escape(str(f["nombre"]))}</h4><div class="sub">{html.escape(str(f.get("departamento", "")))}</div>'
+                + (_sparkline(serie["zona"], ancho=250, alto=46) if len(serie) >= 2 else "")
+                + '<div class="terr-mini">' + "".join(f"<div><span>{html.escape(a)}</span><b>{html.escape(b)}</b></div>"
+                                                      for a, b in datos)
+                + '</div><div class="pista">La ficha completa está debajo del mapa ↓</div></div>', unsafe_allow_html=True)
+        else:
+            m = T.municipios()
+            try:
+                r = m.iloc[int(float(seleccion["zona"]))]
+                st.markdown(
+                    f'<div class="terr-rail-card sel oport"><span class="eyebrow">Sin actividad · oportunidad</span>'
+                    f'<h4>{html.escape(str(r["municipio"]))}</h4><div class="sub">{html.escape(str(r["departamento"]))}</div>'
+                    f'<div class="terr-mini"><div><span>Población</span><b>{T.cifra(r["poblacion"])}</b></div>'
+                    f'<div><span>Urbana</span><b>{T.cifra(r["poblacion_cabecera"])}</b></div></div></div>',
+                    unsafe_allow_html=True)
+            except Exception:
+                pass
+        st.button("✕ Cerrar selección", key="territorial_cerrar_riel", on_click=_cerrar_seleccion,
+                  use_container_width=True)
+
+    # 2) Abrir cualquier zona sin buscarla en el mapa.
+    if not tabla.empty:
+        nivel_t = "departamento" if z.get("nivel") == "departamento" else nivel_mpio
+        opciones = {f"{int(r.posicion)}. {r.nombre}": {"zona": str(r.zona), "nivel": nivel_t}
+                    for r in tabla.head(300).itertuples()}
+        st.selectbox("Ir a una zona", ["—"] + list(opciones), key="territorial_ir_a", on_change=_ir_a, args=(opciones,),
+                     help="Abre la ficha de una zona y el mapa vuela hacia ella.")
+
+    # 3) Top 10 con barras del mismo color que el mapa.
+    if not tabla.empty:
+        top = tabla.head(10)
+        tope = float(top["valor"].abs().max()) or 1.0
+        filas = []
+        for k, r in enumerate(top.itertuples()):
+            c = colores[k] if k < len(colores) and colores[k] else (15, 168, 160)
+            var = ""
+            if "variacion" in tabla.columns and pd.notna(getattr(r, "variacion", np.nan)):
+                var = (f'<em class="{"pos" if r.variacion >= 0 else "neg"}">{"▲" if r.variacion >= 0 else "▼"}'
+                       f'{abs(r.variacion):.0%}</em>')
+            filas.append(f'<div class="terr-top-fila"><span class="num">{int(r.posicion)}</span>'
+                         f'<div class="cuerpo"><div class="nom"><b>{html.escape(str(r.nombre))}</b><i>{T.cifra(r.valor)}</i>{var}</div>'
+                         f'<div class="barra"><u style="width:{max(abs(r.valor) / tope * 100, 3):.1f}%;'
+                         f'background:rgb{tuple(c)}"></u></div></div></div>')
+        st.markdown(f'<div class="terr-rail-card"><span class="eyebrow">Top 10 de {z["n"]}</span>'
+                    + "".join(filas) + "</div>", unsafe_allow_html=True)
+
+    # 4) Alertas del territorio.
+    alertas = []
+    if "cambio" in tabla.columns and z.get("mes_a"):
+        for r in tabla[(tabla["variacion"] <= -0.2)].sort_values("cambio").head(2).itertuples():
+            alertas.append(("neg", f"{r.nombre} cayó {abs(r.variacion):.0%}",
+                            f"{T.cifra(r.cambio)} en {T.etiqueta_mes(z['mes_b'])}"))
+    if "cumplimiento" in tabla.columns and tabla["cumplimiento"].notna().sum() >= 2:
+        bajo = tabla[tabla["cumplimiento"] < 0.9]
+        if len(bajo):
+            alertas.append(("warn", f"{len(bajo)} de {int(tabla['cumplimiento'].notna().sum())} bajo el 90% de su meta",
+                            ", ".join(bajo.sort_values("cumplimiento")["nombre"].astype(str).head(3))))
     blancos = crecer.get("blancos") if crecer else None
     if blancos is not None and len(blancos):
-        tarjetas.append(("oport", "Mayor blanco sin presencia", str(blancos.iloc[0]["municipio"]),
-                         f"{T.cifra(blancos.iloc[0]['poblacion'])} habitantes"))
-    return '<div class="terr-kpis">' + "".join(
-        f'<div class="terr-kpi {tono}"><span>{html.escape(et)}</span><b title="{html.escape(v)}">{html.escape(v)}</b>'
-        f'<small title="{html.escape(s)}">{html.escape(s)}</small></div>' for tono, et, v, s in tarjetas) + "</div>"
+        b = blancos.iloc[0]
+        alertas.append(("oport", f"{b['municipio']} sin presencia",
+                        f"{T.cifra(b['poblacion'])} habitantes · potencial {T.cifra(b['potencial'])}"))
+    if alertas:
+        st.markdown('<div class="terr-rail-card"><span class="eyebrow">Alertas del territorio</span>' + "".join(
+            f'<div class="terr-alerta {t}"><b>{html.escape(a)}</b><small>{html.escape(d)}</small></div>'
+            for t, a, d in alertas) + "</div>", unsafe_allow_html=True)
 
 
 def _negritas(texto: str) -> str:
@@ -752,9 +1030,7 @@ def _ficha(ub, zona_sel: dict, z: dict, crecer: dict, metrica, metrica_label, ca
                     st.dataframe(top.rename(metrica_label).reset_index(), hide_index=True, use_container_width=True,
                                  column_config={metrica_label: st.column_config.ProgressColumn(
                                      format="%.0f", min_value=0, max_value=float(top.max()))})
-    if st.button("✕ Cerrar ficha", key="territorial_cerrar_ficha"):
-        st.session_state.pop("territorial_zona_sel", None)
-        st.rerun()
+    st.button("✕ Cerrar ficha", key="territorial_cerrar_ficha", on_click=_cerrar_seleccion)
 
 
 def _donde_crecer(crecer: dict, metrica_label: str):
@@ -827,7 +1103,7 @@ def render_territorial_page():
     metricas = [m for m in metric_candidates(df_hoja, schema) if m in df_hoja.columns]
 
     with st.container(key="terr_consola"):
-        panel, principal = st.columns([300, 720], gap="medium")
+        panel, principal, riel = st.columns([300, 720, 300], gap="medium")
 
     with panel, st.container(key="terr_panel"):
         st.markdown('<div class="terr-sec">Datos</div>', unsafe_allow_html=True)
@@ -914,6 +1190,8 @@ def render_territorial_page():
         if st.session_state.get("territorial_mapa_fondo") not in opciones_fondo:
             st.session_state["territorial_mapa_fondo"] = "Oscuro" if _oscuro() else "Claro"
         fondo = st.selectbox("Fondo del mapa", opciones_fondo, key="territorial_mapa_fondo")
+        inclinada = st.toggle("Vista inclinada", key="territorial_inclinada",
+                              help="Inclina el mapa aunque las capas sean planas: da profundidad.")
         escala = st.slider("Altura 3D", 0.3, 3.0, 1.0, 0.1, key="territorial_escala")
         radio_km = st.slider("Tamaño del hexágono (km)", 1.0, 40.0, 8.0, 1.0, key="territorial_radio") \
             if capas_on.get("hex") else 8.0
@@ -940,12 +1218,18 @@ def render_territorial_page():
         w = 1.0 if metrica == _CONTEO else pd.to_numeric(datos[metrica], errors="coerce").fillna(0)
         return pd.DataFrame({"lat": datos["_t_lat"].astype(float), "lon": datos["_t_lon"].astype(float), "w": w})
 
+    # El clic se atiende antes de dibujar: así el mapa ya sale resaltado y
+    # centrado en la zona elegida.
+    _leer_clic(nivel_mpio)
+    seleccion = st.session_state.get("territorial_zona_sel")
+
     def _dibujar(mes, clave_evento: Optional[str], leyendas_panel: bool = True):
         zm_m, zd_m = (zm, zd) if mes == periodo else _calcular(mes)
         hex_t = T.hexagonos(ub, metrica_calc, calculo, radio_km, fecha_col, mes) if capas_on.get("hex") else pd.DataFrame()
         deck, leyendas = _construir_mapa(capas_on, zm_m["tabla"], zd_m["tabla"], hex_t,
                                          _puntos(mes) if (capas_on.get("calor") or capas_on.get("puntos")) else pd.DataFrame(),
-                                         crecer, color, paleta, fondo, escala, radio_km, metrica_label)
+                                         crecer, color, paleta, fondo, escala, radio_km, metrica_label,
+                                         seleccion=seleccion if clave_evento else None, inclinada=inclinada)
         # Desde la animación (un fragmento) no se puede escribir en el panel,
         # que está fuera de él: las leyendas se quedan como estaban.
         if leyendas_panel:
@@ -962,9 +1246,9 @@ def render_territorial_page():
             st.info("Prende al menos una capa en el panel de la izquierda.")
             return None
         if clave_evento:
-            return st.pydeck_chart(deck, height=680, use_container_width=True, on_select="rerun",
+            return st.pydeck_chart(deck, height=700, use_container_width=True, on_select="rerun",
                                    selection_mode="single-object", key=clave_evento)
-        st.pydeck_chart(deck, height=680, use_container_width=True)
+        st.pydeck_chart(deck, height=700, use_container_width=True)
         return None
 
     with principal:
@@ -973,6 +1257,8 @@ def render_territorial_page():
                   "texto": f"el municipio escrito en «{meta['columna']}»"}.get(meta["origen"], "")
         st.markdown(f'<div class="terr-estado">📍 Ubicados <b>{meta["ubicadas"]:,} de {meta["total"]:,}</b> registros '
                     f'a partir de {html.escape(origen)}.</div>', unsafe_allow_html=True)
+        st.markdown(_hud(z if not z["tabla"].empty else zm, T.serie_total(ub, metrica_calc, calculo, fecha_col),
+                         metrica_label, cob), unsafe_allow_html=True)
         if jugar and len(meses) >= 2:
             # La animación vive en un fragmento que se redibuja solo, sin
             # correr el resto de la pantalla.
@@ -984,25 +1270,17 @@ def render_territorial_page():
             _animacion()
             evento = None
         else:
-            evento = _dibujar(periodo, "territorial_deck")
-        st.markdown(_kpis(z if not z["tabla"].empty else zm, cob, crecer, metrica_label), unsafe_allow_html=True)
+            _dibujar(periodo, "territorial_deck")
         if meta.get("no_ubicados"):
             with st.expander(f"{meta['total'] - meta['ubicadas']:,} registros sin ubicar"):
                 st.caption("Valores que no se reconocieron como un municipio de Colombia: " +
                            ", ".join(f"«{html.escape(str(k))}» ({v})" for k, v in meta["no_ubicados"].items()))
 
-    # Clic en una zona → su ficha.
-    try:
-        objetos = (evento.selection.get("objects") or {}) if evento is not None else {}
-    except Exception:
-        objetos = {}
-    for capa in ("mpios", "zonas", "deptos", "blancos", "poblacion"):
-        elegido = (objetos.get(capa) or [None])[0]
-        if elegido:
-            props = elegido.get("properties", elegido)
-            st.session_state["territorial_zona_sel"] = {"zona": str(props.get("zona")), "nivel": props.get(
-                "nivel", "departamento" if capa == "deptos" else nivel_mpio)}
-    seleccion = st.session_state.get("territorial_zona_sel")
+    # Riel derecho: zona abierta, ir a una zona, Top 10 y alertas.
+    with riel, st.container(key="terr_riel"):
+        colores_top, _ = _clasificar(z["tabla"], color, paleta, fondo.startswith("Oscuro")) if not z["tabla"].empty else ([], [])
+        _riel(z, colores_top, seleccion, zm, zd, ub, metrica, calculo, fecha_col, crecer, nivel_mpio)
+
     if seleccion:
         _ficha(ub, seleccion, zd if seleccion["nivel"] == "departamento" else zm, crecer, metrica, metrica_label,
                calculo, fecha_col, dims)
