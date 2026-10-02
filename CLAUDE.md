@@ -104,7 +104,11 @@ aggregate step (KPIs, insights, alerts, anomalies, performance, growth) and is w
 
 The mode-choice screen (`ui/mode_choice.py`) offers three routes: **Análisis Completo** (the main
 panel above; `analysis_mode == "completo"`, the default path with no `if` of its own),
-**Territorial** (`ui/territorial.py`, geography-first view) and **Seguimiento de Logística**
+**Territorial** (`ui/territorial.py`, geography-first view: 3D pydeck map — columns per municipio,
+extruded departments, hexagons, heatmap, points — colored by volume/variation/goal/penetration, with
+ranking, zone detail on click, timeline playback and «Dónde crecer»; the engine is
+`core/territorio.py` over the bundled Colombia data in `assets/geo/`: DIVIPOLA's 1,122 municipios
+with coordinates and DANE 2026 population, plus the 33 department polygons) and **Seguimiento de Logística**
 (`ui/logistica.py`, `analysis_mode == "logistica"`; still a scaffold — upload + data preview — whose
 analysis is being defined incrementally). Territorial and Logística run as standalone full-screen
 pages, stopping the main script with `st.stop()`, each with its own file uploader and
