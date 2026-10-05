@@ -652,7 +652,7 @@ V_CUADRO, V_CANALES, V_PROYECCION, V_EXPORTAR = "📊 Cómo va cada uno", "📈 
 inicio = (V_INICIO, lambda: render_home(wb, sheet, mode_info, dashboard, seleccion=seleccion))
 exportar = (V_EXPORTAR, lambda: render_exports(df,dashboard,wb["filename"],sheet,full_df=item["processed"],schema=schema,workbook=wb))
 asistente = ("🤖 Asistente IA", lambda: render_assistant(df, schema, item["profile"], mode_info, dashboard))
-geo = [("🗺️ Georreferenciación", lambda: render_georeferencing(df, schema))] if geo_enabled else []
+geo = [("🗺️ Georreferenciación", lambda: render_georeferencing(df, schema, wb, sheet))] if geo_enabled else []
 comparar_archivos = ([("⚖️ Comparar archivos", lambda: render_comparison(st.session_state.comparison_result))]
                      if st.session_state.comparison_result else [])
 soporte = [

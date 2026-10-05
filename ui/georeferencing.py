@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 import pandas as pd
 import plotly.express as px
@@ -7,9 +8,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.geo_engine import geographic_summary
-from visualization.charts import metric_candidates, _label, _compact_number, chart_text_color
+from visualization.charts import metric_candidates, dimension_candidates, _label, _compact_number, chart_text_color
 from ui.components.charts import chart_card
 from ui.components.section import banner_header
+from core import territorio as T
+from core import territorio_plan as P
+from visualization import mapa_territorial as M
 
 
 def _fmt(v):
@@ -126,7 +130,10 @@ def _map_figure(summary: dict, metric: str | None):
         "Lat: %{lat:.5f} · Lon: %{lon:.5f}<extra>Haz clic para ver el detalle</extra>"
     )
 
-    color_map = {"Nivel alto": "#22A06B", "Nivel medio": "#F59E0B", "Nivel bajo": "#E05252"}
+    # Azul por TAMAÑO, no verde/amarillo/rojo: en el resto de la app ese
+    # trío es el semáforo (subió / estable / bajó) y aquí significaba «vende
+    # mucho / poco». Una misma zona salía roja aquí y verde en el semáforo.
+    color_map = {"Nivel alto": "#1D4ED8", "Nivel medio": "#60A5FA", "Nivel bajo": "#BFDBFE"}
     fig = px.scatter_map(
         x, lat="_geo_lat", lon="_geo_lon", size="marker_size", size_max=11,
         text="label", color="nivel",
@@ -521,12 +528,12 @@ def _detail_panel(enriched: pd.DataFrame, summary: dict, label: str, schema: dic
             st.caption(f"Mostrando 100 de {len(rows):,} registros de esta ubicación.")
 
 
-def render_georeferencing(df: pd.DataFrame, schema: dict):
-    """Interactive geographic workspace: KPIs compactos, mapa como elemento
-    principal a todo el ancho, y detalle/comparación organizados alrededor
-    (antes/después) sin competir con él en tamaño."""
-    st.markdown(banner_header("Georeferenciación", "Mapa interactivo · dónde está pasando cada cosa.", "ciudad_red.jpg"), unsafe_allow_html=True)
-    st.caption("Haz clic en un punto para abrir toda la información relacionada con esa ubicación.")
+def _render_generico(df: pd.DataFrame, schema: dict):
+    """El mapa de respaldo, para lugares que no son municipios ni coordenadas
+    de Colombia (países, ciudades de otros países): KPIs compactos, mapa a
+    todo el ancho, detalle y comparación de dos zonas."""
+    st.caption("Los lugares de este archivo no son de Colombia: se muestra el mapa general. El color dice el tamaño "
+               "(azul más intenso = más alto). Haz clic en un punto para ver su información.")
 
     # ── Controles compactos: métrica y estilo de mapa en la misma fila,
     # para que no le resten protagonismo al mapa con dos filas completas.
@@ -662,3 +669,199 @@ def render_georeferencing(df: pd.DataFrame, schema: dict):
         _detail_panel(enriched, summary, selected, schema, metric)
     else:
         st.info("Selecciona un punto del mapa para ver sus datos, indicadores, categorías relacionadas y registros.")
+
+
+# ── Mapa territorial compacto (Colombia) ──────────────────────────────────
+# El mismo mapa de la consola de Análisis Territorial (visualization/
+# mapa_territorial), sobre los datos y filtros del panel: mismo semáforo,
+# mismo corte del mes a medias, misma ficha al pasar el cursor, mismos pines
+# del plan. Lo de fondo (capas, presentación, agentes, descargas) queda en la
+# consola, a un clic.
+
+_CONTEO = "__conteo__"
+
+
+def _esc(v) -> str:
+    return html.escape(str(v))
+
+
+@st.cache_data(show_spinner=False, max_entries=6, ttl=1800)
+def _ubicar(df: pd.DataFrame, schema: dict):
+    return T.ubicar(df, schema)
+
+
+@st.cache_data(show_spinner=False, max_entries=6, ttl=1800)
+def _plan(ub, metrica, calculo, fecha_col, z, dims, etiquetas, agente, cuenta):
+    return P.plan(ub, metrica, calculo, fecha_col, z, list(dims), etiquetas, agente=agente, cuenta=cuenta)
+
+
+def _calculo(df, schema, metrica) -> str:
+    if metrica is None:
+        return "Conteo"
+    try:
+        from core.explorador import calculo_automatico
+        return calculo_automatico(df, schema, metrica)
+    except Exception:
+        return "Suma"
+
+
+def _columna_meta(df, schema, metrica):
+    if metrica is None:
+        return None
+    try:
+        from core.performance import columna_meta
+        meta = columna_meta(df, schema, metrica)
+        return meta if meta in df.columns else None
+    except Exception:
+        return None
+
+
+def _abrir_consola(workbook, sheet, metrica, color, zona: dict | None = None) -> None:
+    """Lleva el mismo archivo, hoja, métrica y color a la consola de Análisis Territorial."""
+    st.session_state["territorial_workbook"] = workbook
+    st.session_state["territorial_sheet"] = sheet
+    st.session_state["territorial_metrica"] = metrica if metrica is not None else _CONTEO
+    st.session_state["territorial_color"] = color
+    if zona:
+        st.session_state["territorial_zona_sel"] = zona
+    else:
+        st.session_state.pop("territorial_zona_sel", None)
+    st.session_state.analysis_mode = "territorial"
+
+
+def _zona_elegida(evento) -> dict | None:
+    seleccion = getattr(evento, "selection", None)
+    if seleccion is None and isinstance(evento, dict):
+        seleccion = evento.get("selection")
+    try:
+        objetos = (seleccion.get("objects") if seleccion else None) or {}
+    except Exception:
+        return None
+    for capa in ("jugadas_pin", "rutas", "mpios", "zonas", "deptos"):
+        elegido = (objetos.get(capa) or [None])[0]
+        if elegido:
+            props = elegido.get("properties", elegido)
+            return {"zona": str(props.get("zona")), "nivel": props.get("nivel") or ("departamento" if capa == "deptos" else "municipio"),
+                    "nombre": props.get("nombre", ""), "valor": props.get("valor_txt", ""), "var": props.get("var_txt", ""),
+                    "plan": props.get("plan_tit", "")}
+    return None
+
+
+def render_georeferencing(df: pd.DataFrame, schema: dict, workbook: dict | None = None, sheet: str | None = None):
+    """Mapa del panel: el mapa territorial sobre los datos filtrados, con un
+    clic a la consola completa. Si los lugares no son de Colombia, el mapa general."""
+    st.markdown(banner_header("Georeferenciación", "Mapa interactivo · dónde está pasando cada cosa y qué hacer.",
+                              "ciudad_red.jpg"), unsafe_allow_html=True)
+    try:
+        ub, meta = _ubicar(df, schema)
+    except Exception:
+        ub, meta = None, {"ubicadas": 0}
+    if ub is None or not meta.get("ubicadas") or not meta.get("en_colombia", True):
+        _render_generico(df, schema)
+        return
+    st.markdown("<style>" + M.CSS_MAPA + "</style>", unsafe_allow_html=True)
+
+    metricas = [m for m in metric_candidates(df, schema) if m in df.columns]
+    fecha_col = next((c for c in schema.get("dates", []) if c in df.columns), None)
+    meses = T.meses_disponibles(ub[ub["_t_ok"]], fecha_col)
+
+    c1, c2, c3, c4 = st.columns([2.2, 2.2, 1, 1.9])
+    with c1:
+        metrica = st.selectbox("Métrica del mapa", metricas + [None], key="geo_t_metrica",
+                               format_func=lambda x: "Número de registros" if x is None else _label(schema, x))
+    calculo = _calculo(df, schema, metrica)
+    meta_col = _columna_meta(df, schema, metrica)
+    solo_departamento = meta["origen"] == "departamento"
+    por_municipio = not solo_departamento
+    with c2:
+        colores = (["variacion"] if len(meses) >= 2 else []) + (["meta"] if meta_col else []) + ["volumen"] \
+            + (["penetracion"] if calculo in {"Suma", "Conteo"} else [])
+        color = st.selectbox("Color según", colores, key="geo_t_color", format_func=M.COLORES.get)
+    with c3:
+        st.write("")
+        en_3d = st.toggle("3D", key="geo_t_3d", help="Levanta cada zona como una columna: altura = volumen.")
+
+    metrica_label = "Registros" if metrica is None else _label(schema, metrica)
+    zm = T.zonas(ub, metrica, calculo, "municipio", fecha_col, None, meta_col) if por_municipio else {"tabla": pd.DataFrame(), "n": 0}
+    zd = T.zonas(ub, metrica, calculo, "departamento", fecha_col, None, meta_col)
+    z = zd if solo_departamento else zm
+    if z["tabla"].empty:
+        _render_generico(df, schema)
+        return
+    crecer = T.donde_crecer(zm) if por_municipio else {}
+    cob = T.cobertura(zm) if por_municipio else {}
+
+    dims = [d for d in dimension_candidates(df, schema) if d in df.columns][:5]
+    etiquetas = {d: _label(schema, d) for d in dims}
+    dims_neg = [d for d in dims if d != meta.get("columna")
+                and not re.search(r"depart|municip|ciudad|latit|longit|coord", str(d), re.I)]
+    columnas_texto = [c for c in df.columns if c not in set(metricas) | set(schema.get("dates", []))]
+    agente = P.columna_agente(df, columnas_texto)
+    cuenta = P.columna_cuenta(df, columnas_texto, excluir=(agente,))
+    dims_plan = dims_neg + ([agente] if agente and agente not in dims_neg else [])
+    pl = _plan(ub, metrica, calculo, fecha_col, z, tuple(dims_plan), etiquetas, agente, cuenta)
+
+    with c4:
+        st.write("")
+        if workbook is not None:
+            st.button("🗺️ Abrir la consola completa →", type="primary", use_container_width=True, key="geo_t_consola",
+                      on_click=_abrir_consola, args=(workbook, sheet, metrica, color),
+                      help="Análisis Territorial: todas las capas, modo presentación, plan por agente y descargas.")
+
+    st.markdown(f'<div class="terr-estado">📍 Ubicados <b>{meta["ubicadas"]:,} de {meta["total"]:,}</b> registros con los '
+                'filtros del panel · el mismo mapa y los mismos cálculos de Análisis Territorial.</div>', unsafe_allow_html=True)
+    st.markdown(M.hud(z, T.serie_total(ub, metrica, calculo, fecha_col), metrica_label, cob), unsafe_allow_html=True)
+
+    oscuro = st.session_state.get("theme_mode") == "dark"
+    if solo_departamento:
+        capas_on = {"deptos": True, "jugadas": True, "etiquetas": True}
+    else:
+        capas_on = {"mpios": not en_3d, "columnas": en_3d, "jugadas": True, "rutas": True, "etiquetas": True}
+    deck, leyendas = M.construir_mapa(capas_on, zm["tabla"], zd["tabla"], pd.DataFrame(), pd.DataFrame(), crecer, color,
+                                      "Rojo intenso", "Oscuro" if oscuro else "Claro", 1.0, 8.0, metrica_label, plan=pl)
+    etiqueta = (f"Todo el periodo · {T.etiqueta_mes(meses[0], True)} – {T.etiqueta_mes(meses[-1], True)}"
+                if meses else "Todos los registros")
+    st.markdown(M.cabecera_mapa(metrica_label, color, z, etiqueta, capas_on, pl), unsafe_allow_html=True)
+    if deck is None:
+        st.info("No se pudo construir el mapa con las ubicaciones disponibles.")
+        return
+    evento = st.pydeck_chart(deck, height=680, use_container_width=True, on_select="rerun",
+                             selection_mode="single-object", key="geo_t_deck")
+    capa_ley = "deptos" if solo_departamento else ("columnas" if en_3d else "mpios")
+    st.markdown(M.leyenda_linea(leyendas.get(capa_ley, [])), unsafe_allow_html=True)
+
+    # Clic en una zona: lo esencial y el atajo a su ficha completa en la consola.
+    elegida = _zona_elegida(evento)
+    if elegida:
+        partes = [x for x in (elegida["valor"], elegida["var"], elegida["plan"]) if x]
+        a, b = st.columns([4, 1.4])
+        with a:
+            st.markdown(f'<div class="terr-jugada estable" style="margin-top:10px"><h4>📍 {_esc(elegida["nombre"])}</h4>'
+                        f'<p class="que">{" · ".join(_esc(x) for x in partes)}</p></div>', unsafe_allow_html=True)
+        with b:
+            st.write("")
+            if workbook is not None:
+                st.button("Abrir su ficha en la consola →", use_container_width=True, key="geo_t_ficha",
+                          on_click=_abrir_consola, args=(workbook, sheet, metrica, color,
+                                                         {"zona": elegida["zona"], "nivel": elegida["nivel"]}))
+
+    # Las primeras jugadas del plan, en corto: el porqué de los pines.
+    jugadas = (pl or {}).get("jugadas") or []
+    if jugadas:
+        st.markdown('<div class="terr-label">🎯 Las primeras jugadas del plan · los números de los pines</div>',
+                    unsafe_allow_html=True)
+        columnas = st.columns(min(3, len(jugadas)), gap="medium")
+        for col, j in zip(columnas, jugadas[:3]):
+            vale = (f"vale ≈ <b>{_esc(T.cifra(j['valor']))}</b> al mes" if j["valor"] else "buena práctica")
+            pasos = "".join(f"<li>{_esc(x.replace('**', ''))}</li>" for x in j["pasos"][:2])
+            pie = " · ".join(x for x in (f"👤 {_esc(j['responsable'])}" if j["responsable"] else "",
+                                         f"⏱ {_esc(j['plazo'])}") if x)
+            with col:
+                st.markdown(f'<div class="terr-jugada {j["tono"]}"><div class="cab"><span class="n">{j["n"]}</span>'
+                            f'<span class="tchip {j["tono"]}">{j["icono"]} {_esc(j["titulo"])}</span>'
+                            f'<span class="valor">{vale}</span></div><h4>{_esc(j["zona"])}'
+                            f'<small>{_esc(j["departamento"])}</small></h4><ol>{pasos}</ol>'
+                            f'<div class="pie"><span>{pie}</span></div></div>', unsafe_allow_html=True)
+        st.caption(f"El plan completo ({len(jugadas)} jugadas, plan por agente y dónde abrir), el modo presentación y "
+                   "las descargas en Excel y HTML están en la consola de Análisis Territorial. La consola abre la hoja "
+                   "completa con sus propios filtros.")

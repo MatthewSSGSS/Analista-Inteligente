@@ -54,7 +54,8 @@ Three layers, strictly separated (see `DESIGN.md` for the full rationale):
 core/            Data engine: load, profile, semantic schema detection, filters, KPIs,
                  insights, alerts, comparison, geography, forecasting, tracking, auth.
                  No Streamlit dependency except auth_engine.py/db_engine.py (st.secrets only).
-visualization/   Plotly chart engine (charts.py) + chart type selector (chart_selector.py).
+visualization/   Plotly chart engine (charts.py) + chart type selector (chart_selector.py)
+                 + the shared pydeck territorial map (mapa_territorial.py).
                  Reused by all of ui/. No business logic.
 ui/              Presentation only, layered further (see below).
 app.py           Orchestrator/router only: session bootstrap, login gate, sidebar
@@ -117,7 +118,9 @@ on-screen traffic-light board uses), a «🎯 Plan de acción» turning the diag
 column, lost clients to visit, and «Dónde abrir» with the nearest base zone; also in the Excel/HTML reports),
 numbered plan pins, expansion arcs, a rich hover tooltip on every pickable layer (Streamlit escapes tooltip field
 values, so all HTML/styling lives in the `_tooltip` template and fields carry plain text/colors) and a «🎬 Modo
-presentación» that flies through the plan's plays, timeline playback and «Dónde crecer»; the engine is
+presentación» that flies through the plan's plays, The map itself lives in `visualization/mapa_territorial.py` and is shared with the
+main panel's «🗺️ Georreferenciación» tab (`ui/georeferencing.py`, a compact version over the panel's filtered data with a
+button to the full console; the old plotly map remains only as a fallback for places outside Colombia), timeline playback and «Dónde crecer»; the engine is
 `core/territorio.py` over the bundled Colombia data in `assets/geo/`: DIVIPOLA's 1,122 municipios
 with coordinates and DANE 2026 population, plus the 33 department polygons) and **Seguimiento de Logística**
 (`ui/logistica.py`, `analysis_mode == "logistica"`; still a scaffold — upload + data preview — whose
