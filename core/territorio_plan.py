@@ -379,6 +379,8 @@ def _aperturas(t: pd.DataFrame, tipica: float, maximo: int) -> pd.DataFrame:
             activos["lat"].to_numpy()[None, :], activos["lon"].to_numpy()[None, :])
     cerca = d.argmin(axis=1)
     b["base"] = activos["nombre"].to_numpy()[cerca]
+    b["base_lat"] = activos["lat"].to_numpy()[cerca].astype(float)
+    b["base_lon"] = activos["lon"].to_numpy()[cerca].astype(float)
     b["distancia_km"] = d[np.arange(len(b)), cerca]
     b["agente_sugerido"] = [(activos["agentes_zona"].iloc[j] or [""])[0] for j in cerca]
     b["crecimiento_2030"] = np.where(b["poblacion"] > 0, b["poblacion_2030"] / b["poblacion"] - 1, np.nan)
@@ -407,14 +409,16 @@ def _jugadas(t: pd.DataFrame, aperturas: pd.DataFrame, maximo: int) -> list[dict
         filas.append({"estrategia": r["estrategia"], **e, "zona": str(r["nombre"]), "departamento": str(r.get("departamento", "")),
                       "valor": float(r["valor_mes"]), "meta": float(r["meta_mes"]), "ritmo": float(r["ritmo"]),
                       "responsable": r.get("responsable") or "", "por_que": r.get("por_que") or "",
-                      "pasos": r["pasos"], "kpi": r["kpi"], "clave_zona": str(r["zona"])})
+                      "pasos": r["pasos"], "kpi": r["kpi"], "clave_zona": str(r["zona"]),
+                      "lat": float(r["lat"]), "lon": float(r["lon"])})
     for _, r in aperturas.iterrows() if len(aperturas) else []:
         e = ESTRATEGIAS["abrir"]
         filas.append({"estrategia": "abrir", **e, "zona": str(r["municipio"]), "departamento": str(r["departamento"]),
                       "valor": float(r["potencial_mes"]), "meta": float(r["potencial_mes"]), "ritmo": 0.0,
                       "responsable": r.get("agente_sugerido") or "", "por_que": "",
                       "pasos": r["pasos"], "kpi": f"{T.cifra(r['potencial_mes'])} al mes en 90 días",
-                      "clave_zona": str(int(T.municipios().index[T.municipios()["cod_mpio"] == r["cod_mpio"]][0]))})
+                      "clave_zona": str(int(T.municipios().index[T.municipios()["cod_mpio"] == r["cod_mpio"]][0])),
+                      "lat": float(r["lat"]), "lon": float(r["lon"])})
     for f in filas:
         f["valor_esperado"] = f["valor"] * ALCANZABLE.get(f["estrategia"], 1.0)
     filas.sort(key=lambda f: -f["valor_esperado"])
@@ -435,7 +439,7 @@ def _jugadas(t: pd.DataFrame, aperturas: pd.DataFrame, maximo: int) -> list[dict
                         "departamento": str(r.get("departamento", "")), "valor": 0.0, "meta": float(r["ritmo"]),
                         "ritmo": float(r["ritmo"]), "responsable": r.get("responsable") or "",
                         "por_que": r.get("por_que") or "", "pasos": r["pasos"], "kpi": r["kpi"], "clave_zona": str(r["zona"]),
-                        "ganancia": float(r["cambio"])})
+                        "ganancia": float(r["cambio"]), "lat": float(r["lat"]), "lon": float(r["lon"])})
     for n, j in enumerate(jugadas, start=1):
         j["n"] = n
     return jugadas

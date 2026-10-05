@@ -114,7 +114,10 @@ Excel/HTML reports (`ui/report_territorial.py`, both built from `core/territorio
 on-screen traffic-light board uses), a «🎯 Plan de acción» turning the diagnosis into decisions
 (`core/territorio_plan.plan`: per-zone strategy Rescatar/Recuperar/Desarrollar/Replicar/Sostener valued per month,
 «las jugadas del mes» ranked by expected value, a playbook per sales agent when the file has an asesor/vendedor/agente
-column, lost clients to visit, and «Dónde abrir» with the nearest base zone; also in the Excel/HTML reports), timeline playback and «Dónde crecer»; the engine is
+column, lost clients to visit, and «Dónde abrir» with the nearest base zone; also in the Excel/HTML reports),
+numbered plan pins, expansion arcs, a rich hover tooltip on every pickable layer (Streamlit escapes tooltip field
+values, so all HTML/styling lives in the `_tooltip` template and fields carry plain text/colors) and a «🎬 Modo
+presentación» that flies through the plan's plays, timeline playback and «Dónde crecer»; the engine is
 `core/territorio.py` over the bundled Colombia data in `assets/geo/`: DIVIPOLA's 1,122 municipios
 with coordinates and DANE 2026 population, plus the 33 department polygons) and **Seguimiento de Logística**
 (`ui/logistica.py`, `analysis_mode == "logistica"`; still a scaffold — upload + data preview — whose

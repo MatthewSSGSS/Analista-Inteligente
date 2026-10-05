@@ -236,6 +236,30 @@ def _inject_css():
         .terr-mapa-head b{font-size:17px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
         .terr-mapa-head .per{font-size:13px;font-weight:800;color:var(--teal);letter-spacing:.04em}
         .terr-mapa-head .capas{display:flex;flex-wrap:wrap;gap:5px}
+        .terr-leer{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;padding-top:8px;
+          border-top:1px dashed var(--line);font-size:12.5px;color:var(--muted)}
+        .terr-leer span{white-space:nowrap}
+        /* Modo presentación */
+        @keyframes tourIn{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}
+        .terr-tour{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:10px;
+          padding:18px 22px;border-radius:18px;border:1px solid var(--line);border-left:7px solid var(--muted);
+          background:linear-gradient(120deg,var(--panel) 60%,var(--panel-2));box-shadow:var(--shadow-md);animation:tourIn .5s ease both}
+        .terr-tour.bajo{border-left-color:#ef4444}.terr-tour.estable{border-left-color:#eab308}
+        .terr-tour.subio{border-left-color:#22c55e}.terr-tour.oport{border-left-color:#a855f7}
+        .terr-tour .izq{display:flex;gap:16px;align-items:flex-start;min-width:0}
+        .terr-tour .n{flex:0 0 54px;height:54px;border-radius:14px;display:grid;place-items:center;font-size:26px;font-weight:900;
+          background:var(--text);color:var(--panel)}
+        .terr-tour h3{margin:6px 0 4px!important;padding:0!important;border:0!important;background:none!important;box-shadow:none!important;
+          display:block!important;font-size:30px;font-family:'Sora','Inter',sans-serif;color:var(--text);letter-spacing:-.02em}
+        .terr-tour h3 small{font-size:15px;color:var(--muted);font-weight:500;font-family:'Inter',sans-serif}
+        .terr-tour p{margin:0;font-size:15.5px;line-height:1.5;color:var(--text)}
+        .terr-tour .der{text-align:right;flex:0 0 auto}
+        .terr-tour .valor{font-size:16px;color:var(--muted)}.terr-tour .valor b{font-size:28px;color:var(--text);font-family:'Sora','Inter',sans-serif}
+        .terr-tour .resp{font-size:14px;color:var(--muted);margin-top:4px}
+        .terr-tour .puntos{display:flex;gap:5px;justify-content:flex-end;margin-top:10px}
+        .terr-tour .puntos i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+        .terr-tour .puntos i.on{background:var(--teal);box-shadow:0 0 8px var(--teal)}
+        .terr-tour small{font-size:12px;color:var(--muted)}
         div[data-testid="stDeckGlJsonChart"]{border-radius:0 0 16px 16px;overflow:hidden;border:1px solid var(--line);border-top:0}
 
         /* Semáforo: rojo · amarillo · verde con los tonos del tema */
@@ -570,10 +594,66 @@ def _ley_html(leyenda: list) -> str:
         f'<div><i style="background:rgb{tuple(c)}"></i>{html.escape(t)}</div>' for c, t in leyenda) + "</div>"
 
 
-def _textos(tabla: pd.DataFrame, n: int, unidad: str) -> pd.DataFrame:
+# Ficha flotante (al pasar el cursor): cada capa que se puede señalar trae
+# TODOS estos campos, aunque vayan vacíos; si falta uno, deck.gl muestra el
+# «{campo}» tal cual. Streamlit ESCAPA el valor de cada campo (un trozo de
+# HTML salía como texto crudo), así que la estructura y los estilos viven en
+# la plantilla de `_tooltip` y los campos solo traen texto o colores: el
+# chip del semáforo (`var_*`) y el bloque del plan (`plan_*`) se «apagan»
+# con fondo transparente y relleno 0 cuando no aplican.
+_CAMPOS_TT = ("valor_txt", "pos_txt", "part_txt", "var_txt", "var_bg", "var_fg", "var_pad", "cump_txt", "pob_txt",
+              "pen_txt", "unidad", "plan_tit", "plan_resp", "plan_paso", "plan_borde", "plan_bg", "plan_pad", "hint")
+_CHIP_TT = {"bajo": ("#fee2e2", "#b91c1c"), "estable": ("#fef9c3", "#a16207"), "subio": ("#dcfce7", "#15803d"),
+            "oport": ("#f3e8ff", "#7e22ce")}
+_TONO_HEX = {"bajo": "#ef4444", "estable": "#eab308", "subio": "#22c55e", "oport": "#a855f7"}
+_TONO_RGB = {"bajo": [239, 68, 68], "estable": [234, 179, 8], "subio": [34, 197, 94], "oport": [168, 85, 247]}
+_HINT = "👆 Clic para abrir su ficha"
+_SIN_CHIP = {"var_txt": "", "var_bg": "transparent", "var_fg": "inherit", "var_pad": "0"}
+_SIN_PLAN = {"plan_tit": "", "plan_resp": "", "plan_paso": "", "plan_borde": "transparent", "plan_bg": "transparent",
+             "plan_pad": "0"}
+
+
+def _clave(z) -> str:
+    """La misma clave para una zona venga como 125, 125.0 o "125"; los códigos de departamento quedan como texto."""
+    try:
+        return str(int(float(z))) if not (isinstance(z, str) and z.startswith("0")) else z
+    except (TypeError, ValueError):
+        return str(z)
+
+
+def _chip(texto: str, estado) -> dict:
+    """Campos del chip de color de la ficha flotante."""
+    if not texto:
+        return dict(_SIN_CHIP)
+    fondo, color = _CHIP_TT.get(estado, ("rgba(148,163,184,.22)", "inherit"))
+    return {"var_txt": texto, "var_bg": fondo, "var_fg": color, "var_pad": "3px 10px"}
+
+
+def _bloque_plan(titulo: str, resp: str, paso: str, tono: str) -> dict:
+    """Campos del bloque del plan de la ficha flotante."""
+    paso = (paso or "").replace("**", "")
+    paso = paso if len(paso) <= 130 else paso[:127] + "…"
+    return {"plan_tit": titulo, "plan_resp": f"👤 {resp}" if resp else "", "plan_paso": f"→ {paso}" if paso else "",
+            "plan_borde": _TONO_HEX.get(tono, "#94a3b8"), "plan_bg": "rgba(148,163,184,.14)", "plan_pad": "8px 10px"}
+
+
+def _plan_tooltip(pl: Optional[dict]) -> dict:
+    """Lo que dice el plan de cada zona, para la ficha flotante: {clave: campos plan_*}."""
+    if not pl or pl.get("zonas") is None or pl["zonas"].empty:
+        return {}
+    salida = {}
+    for _, r in pl["zonas"].iterrows():
+        e = P.ESTRATEGIAS[r["estrategia"]]
+        vale = f" · vale ≈ {T.cifra(r['valor_mes'])} al mes" if r["valor_mes"] > 0 else ""
+        salida[_clave(r["zona"])] = _bloque_plan(f"{e['icono']} Plan: {e['titulo']}{vale}", str(r["responsable"] or ""),
+                                                 r["pasos"][0] if r["pasos"] else "", e["tono"])
+    return salida
+
+
+def _textos(tabla: pd.DataFrame, n: int, unidad: str, plan_info: Optional[dict] = None, hint: str = _HINT) -> pd.DataFrame:
     t = tabla.copy()
     t["valor_txt"] = t["valor"].map(T.cifra)
-    t["pos_txt"] = t["posicion"].map(lambda p: f"{int(p)}.º de {n}")
+    t["pos_txt"] = t["posicion"].map(lambda p: f"· {int(p)}.º de {n}")
     t["part_txt"] = t["participacion"].map(lambda x: f"{x:.1%} del total" if pd.notna(x) else "") \
         if "participacion" in t.columns else ""
     if "variacion" in t.columns:
@@ -589,9 +669,11 @@ def _textos(tabla: pd.DataFrame, n: int, unidad: str) -> pd.DataFrame:
             if td == -1:
                 return f"{icono} sin actividad en el último mes".strip()
             return "sin dato del mes anterior"
-        t["var_txt"] = [_var(x, td, e) for x, td, e in zip(t["variacion"], tend, estado)]
+        chips = [_chip(_var(x, td, e), e) for x, td, e in zip(t["variacion"], tend, estado)]
     else:
-        t["var_txt"] = ""
+        chips = [dict(_SIN_CHIP)] * len(t)
+    for k in _SIN_CHIP:
+        t[k] = [c[k] for c in chips]
     t["cump_txt"] = t["cumplimiento"].map(lambda x: f"{x:.0%} de la meta" if pd.notna(x) else "") \
         if "cumplimiento" in t.columns else ""
     t["pob_txt"] = t["poblacion"].map(lambda x: f"{T.cifra(x)} habitantes" if pd.notna(x) and x > 0 else "") \
@@ -599,23 +681,40 @@ def _textos(tabla: pd.DataFrame, n: int, unidad: str) -> pd.DataFrame:
     t["pen_txt"] = t["por_10k"].map(lambda x: f"{T.cifra(x)} por cada 10.000 hab." if pd.notna(x) else "") \
         if "por_10k" in t.columns else ""
     t["unidad"] = unidad
+    bloques = [(plan_info or {}).get(_clave(z), _SIN_PLAN) for z in t["zona"]]
+    for k in _SIN_PLAN:
+        t[k] = [b[k] for b in bloques]
+    t["hint"] = hint
     return t
 
 
+def _campos(r) -> dict:
+    """Los campos de la ficha flotante de una fila de `_textos`."""
+    return {k: getattr(r, k, "") for k in _CAMPOS_TT}
+
+
 def _tooltip(fondo_oscuro: bool) -> dict:
-    fondo, texto, suave, acento = (("#11161f", "#e6e9ef", "#9aa4b2", "#5ee0d4") if fondo_oscuro
-                                   else ("#ffffff", "#131826", "#5b6473", "#0f8a85"))
+    """La ficha flotante: nombre grande, valor, semáforo, lo que dice el plan y la pista del clic."""
+    fondo, texto, suave, acento = (("rgba(12,17,26,.96)", "#eef2f7", "#9aa4b2", "#5ee0d4") if fondo_oscuro
+                                   else ("rgba(255,255,255,.98)", "#131826", "#5b6473", "#0f8a85"))
     return {
-        "html": ("<div style='font-family:Inter,Segoe UI,sans-serif;min-width:200px'>"
-                 "<div style='font-size:14px;font-weight:800'>{nombre}</div>"
-                 f"<div style='font-size:11px;color:{suave};margin-bottom:6px'>{{departamento}} · {{pos_txt}}</div>"
-                 f"<div style='font-size:18px;font-weight:800;color:{acento}'>{{valor_txt}} "
-                 f"<span style='font-size:11px;color:{suave}'>{{unidad}}</span></div>"
-                 "<div style='font-size:12.5px;font-weight:700;margin-top:2px'>{var_txt}</div>"
-                 "<div style='font-size:12px'>{cump_txt}</div>"
-                 f"<div style='font-size:11px;color:{suave};margin-top:4px'>{{part_txt}}<br>{{pob_txt}}<br>{{pen_txt}}</div></div>"),
+        "html": ("<div style='font-family:Inter,Segoe UI,sans-serif;min-width:230px;max-width:330px'>"
+                 "<div style='font-size:17px;font-weight:800;letter-spacing:-.01em;line-height:1.2'>{nombre}</div>"
+                 f"<div style='font-size:12px;color:{suave};margin-top:2px'>{{departamento}} {{pos_txt}}</div>"
+                 f"<div style='font-size:24px;font-weight:800;color:{acento};margin-top:7px;line-height:1.1'>{{valor_txt}} "
+                 f"<span style='font-size:11.5px;color:{suave};font-weight:600'>{{unidad}}</span></div>"
+                 "<div><span style='display:inline-block;margin-top:7px;background:{var_bg};color:{var_fg};padding:{var_pad};"
+                 "border-radius:99px;font-size:12px;font-weight:800'>{var_txt}</span></div>"
+                 "<div style='font-size:12.5px;margin-top:5px;font-weight:600'>{cump_txt}</div>"
+                 f"<div style='font-size:12px;color:{suave};margin-top:4px;line-height:1.45'>{{part_txt}}<br>{{pob_txt}}<br>{{pen_txt}}</div>"
+                 "<div style='margin-top:9px;padding:{plan_pad};border-radius:9px;border-left:4px solid {plan_borde};"
+                 "background:{plan_bg};white-space:normal'><div style='font-size:12.5px;font-weight:800'>{plan_tit}</div>"
+                 "<div style='font-size:12px;margin-top:2px'>{plan_resp}</div>"
+                 "<div style='font-size:12px;margin-top:2px;opacity:.85'>{plan_paso}</div></div>"
+                 f"<div style='font-size:11.5px;color:{acento};margin-top:8px;font-weight:700'>{{hint}}</div></div>"),
         "style": {"backgroundColor": fondo, "color": texto, "border": "1px solid #2a313d" if fondo_oscuro else "1px solid #d8dce6",
-                  "borderRadius": "10px", "padding": "10px 12px", "boxShadow": "0 8px 24px rgba(0,0,0,.25)"},
+                  "borderRadius": "14px", "padding": "12px 14px", "boxShadow": "0 14px 40px rgba(0,0,0,.35)",
+                  "backdropFilter": "blur(6px)"},
     }
 
 
@@ -641,7 +740,8 @@ def _vista(lat, lon, inclinacion: float):
     return vista
 
 
-_VACIO = {"valor_txt": "Sin actividad", "pos_txt": "", "part_txt": "", "var_txt": "", "cump_txt": "", "pen_txt": "", "unidad": ""}
+_VACIO = {"valor_txt": "Sin actividad", "pos_txt": "", "part_txt": "", "cump_txt": "", "pob_txt": "",
+          "pen_txt": "", "unidad": "", "hint": _HINT, **_SIN_CHIP, **_SIN_PLAN}
 
 
 def _sin_tildes(texto) -> str:
@@ -688,13 +788,16 @@ def _etiquetas_sin_choque(tabla: pd.DataFrame, maximo: int = 10) -> pd.DataFrame
 
 def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd.DataFrame, puntos: pd.DataFrame,
                     crecer: dict, color: str, paleta: str, fondo: str, escala: float, radio_km: float, unidad: str,
-                    seleccion: Optional[dict] = None, inclinada: bool = False, ligero: bool = False):
+                    seleccion: Optional[dict] = None, inclinada: bool = False, ligero: bool = False,
+                    plan: Optional[dict] = None):
     """El objeto pydeck y las leyendas de cada capa activa.
 
     `seleccion` = la zona abierta en la ficha: se resalta con un borde neón y
     la vista vuela hacia ella. `inclinada` inclina también las capas planas.
     `ligero` = para el informe HTML: sin los municipios que no tienen dato
-    (con todos, el archivo pasa de ~1 a ~5 MB)."""
+    (con todos, el archivo pasa de ~1 a ~5 MB). `plan` = `core/territorio_plan.plan`:
+    su estrategia va en la ficha flotante de cada zona y sus jugadas y
+    aperturas se dibujan como pines numerados y arcos de expansión."""
     import pydeck as pdk
     oscuro = fondo.startswith("Oscuro")
     capas, leyendas = [], {}
@@ -707,6 +810,16 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
     sin_dato = [70, 80, 100, 40] if oscuro else [205, 210, 220, 70]
     vistas_lat, vistas_lon = [], []
     inclinacion = 0
+    info_plan = _plan_tooltip(plan)
+    plan_mpio = info_plan if plan and plan.get("nivel") == "municipio" else None
+    plan_depto = info_plan if plan and plan.get("nivel") == "departamento" else None
+    # Altura de cada zona cuando está levantada en 3D: los nombres y los pines
+    # se ponen ENCIMA de la columna (en el suelo, las columnas los tapaban).
+    tope_m = float(zm["valor"].clip(lower=0).max()) if not zm.empty else 1.0
+    tope_m = tope_m or 1.0
+    factor_m = 320_000 if capas_on.get("columnas") else 260_000 if (capas_on.get("mpios") and capas_on.get("mpios3d")) else 0
+    alto_mpio = ({_clave(z): max(float(v), 0) / tope_m * factor_m * escala for z, v in zip(zm["zona"], zm["valor"])}
+                 if factor_m and not zm.empty else {})
 
     # 1) Contexto: población DANE (abajo de todo).
     if capas_on.get("poblacion"):
@@ -725,7 +838,7 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
                 "color": list(rampa[c]) + [200] if c >= 0 else sin_dato, "nombre": r["municipio"],
                 "departamento": r["departamento"], "zona": str(i), "nivel": "municipio",
                 **_VACIO, "valor_txt": f"{T.cifra(r['poblacion'])} hab.", "pob_txt": f"{d:,.0f} hab/km²" if np.isfinite(d) else "",
-                "unidad": ""}))
+                "unidad": "", "hint": ""}))
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="poblacion",
                                filled=True, stroked=True, get_fill_color="properties.color", get_line_color=linea_vacia,
                                line_width_min_pixels=0.3, pickable=not capas_on.get("mpios")))
@@ -735,7 +848,7 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
 
     # 2) Municipios coloreados (y levantados en 3D si se pide).
     if capas_on.get("mpios") and not zm.empty and "cod_mpio" in zm.columns:
-        t = _textos(zm, len(zm), unidad)
+        t = _textos(zm, len(zm), unidad, plan_mpio)
         colores, leyendas["mpios"] = _clasificar(t, color, paleta, oscuro)
         tope = float(t["valor"].clip(lower=0).max()) or 1.0
         por_idx = {int(z): (r, c) for z, r, c in zip(t["zona"], t.itertuples(), colores)}
@@ -749,14 +862,13 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
                     feats.append(_feature(f["geometry"], {
                         "color": sin_dato, "linea": linea_vacia, "altura": 0, "nombre": r["municipio"] if r is not None else "",
                         "departamento": r["departamento"] if r is not None else "", "zona": str(i), "nivel": "municipio",
-                        **_VACIO, "pob_txt": f"{T.cifra(r['poblacion'])} habitantes" if r is not None else ""}))
+                        **_VACIO, "pob_txt": f"{T.cifra(r['poblacion'])} habitantes" if r is not None else "",
+                        **(plan_mpio or {}).get(str(i), _SIN_PLAN)}))
                 continue
             r, c = dato
             feats.append(_feature(f["geometry"], {
                 "color": list(c) + [235] if c else sin_dato, "linea": linea, "altura": max(r.valor, 0) / tope * 260_000 * escala,
-                "nombre": r.nombre, "departamento": r.departamento, "zona": str(i), "nivel": "municipio",
-                "valor_txt": r.valor_txt, "pos_txt": r.pos_txt, "part_txt": r.part_txt, "var_txt": r.var_txt,
-                "cump_txt": r.cump_txt, "pob_txt": r.pob_txt, "pen_txt": r.pen_txt, "unidad": unidad}))
+                "nombre": r.nombre, "departamento": r.departamento, "zona": str(i), "nivel": "municipio", **_campos(r)}))
         en3d = bool(capas_on.get("mpios3d"))
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="mpios",
                                filled=True, stroked=True, extruded=en3d, wireframe=False,
@@ -768,7 +880,7 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
 
     # 3) Departamentos levantados en 3D.
     if capas_on.get("deptos") and not zd.empty:
-        t = _textos(zd, len(zd), unidad)
+        t = _textos(zd, len(zd), unidad, plan_depto)
         colores, leyendas["deptos"] = _clasificar(t, color, paleta, oscuro)
         tope = float(t["valor"].clip(lower=0).max()) or 1.0
         por_cod = {str(z): (r, c) for z, r, c in zip(t["zona"], t.itertuples(), colores)}
@@ -780,10 +892,9 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
             if dato:
                 r, c = dato
                 base.update(altura=max(float(r.valor), 0) / tope * 320_000 * escala, color=list(c) + [215] if c else sin_dato,
-                            valor_txt=r.valor_txt, pos_txt=r.pos_txt, part_txt=r.part_txt, var_txt=r.var_txt,
-                            cump_txt=r.cump_txt, pob_txt=r.pob_txt, pen_txt=r.pen_txt, unidad=unidad)
+                            **_campos(r))
             else:
-                base.update(altura=0, color=sin_dato, pob_txt="", **_VACIO)
+                base.update(altura=0, color=sin_dato, **_VACIO)
             feats.append(_feature(f["geometry"], base))
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="deptos",
                                extruded=True, wireframe=False, get_elevation="properties.altura",
@@ -803,27 +914,38 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
 
     # 4) Columnas 3D por municipio.
     if capas_on.get("columnas") and not zm.empty:
-        t = _textos(zm, len(zm), unidad)
+        t = _textos(zm, len(zm), unidad, plan_mpio)
         colores, ley = _clasificar(t, color, paleta, oscuro)
         leyendas.setdefault("columnas", ley)
         tope = float(t["valor"].clip(lower=0).max()) or 1.0
         t["altura"] = t["valor"].clip(lower=0) / tope * 320_000 * escala
         t["color"] = [list(c) + [240] if c else sin_dato for c in colores]
         t["zona"] = t["zona"].astype(str)
-        capas.append(pdk.Layer("ColumnLayer", data=t, id="zonas", get_position=["lon", "lat"], get_elevation="altura",
-                               elevation_scale=1, radius=10_000, disk_resolution=24, extruded=True,
+        # Solo las columnas que usa la capa: un DataFrame con listas, fechas o
+        # NaN en otras columnas puede dejar la capa sin ficha flotante.
+        cols = ["lon", "lat", "altura", "color", "zona", "nombre", "departamento", *_CAMPOS_TT]
+        datos_col = t[cols].copy()
+        datos_col["nivel"] = "municipio"
+        # Un disco ancho y bajo debajo de cada columna: marca dónde está aunque
+        # la columna sea baja, y da el brillo de «base» de los mapas tipo kepler.
+        capas.append(pdk.Layer("ScatterplotLayer", data=datos_col[["lon", "lat", "color"]], id="zonas_base",
+                               get_position=["lon", "lat"], get_radius=14_000, radius_min_pixels=4,
+                               get_fill_color="color", opacity=0.22, pickable=False))
+        capas.append(pdk.Layer("ColumnLayer", data=datos_col, id="zonas", get_position=["lon", "lat"], get_elevation="altura",
+                               elevation_scale=1, radius=10_000, disk_resolution=24, extruded=True, coverage=0.92,
                                get_fill_color="color", pickable=True, auto_highlight=True,
-                               highlight_color=[94, 224, 212, 255]))
+                               highlight_color=[255, 255, 255, 230]))
         vistas_lat += list(t["lat"]); vistas_lon += list(t["lon"])
         inclinacion = max(inclinacion, 52)
 
     # 5) Hexágonos 3D (ya agregados en core/territorio.hexagonos).
     if capas_on.get("hex") and not hex_t.empty:
-        t = _textos(hex_t, len(hex_t), unidad)
+        t = _textos(hex_t, len(hex_t), unidad, hint="")
         colores, leyendas["hex"] = _clasificar(t, "volumen", paleta, oscuro)
         tope = float(t["valor"].clip(lower=0).max()) or 1.0
         t["altura"] = t["valor"].clip(lower=0) / tope * 300_000 * escala
         t["color"] = [list(c) + [240] if c else sin_dato for c in colores]
+        t = t[["lon", "lat", "altura", "color", "zona", "nombre", "departamento", *_CAMPOS_TT]]
         capas.append(pdk.Layer("ColumnLayer", data=t, id="hexagonos", get_position=["lon", "lat"], get_elevation="altura",
                                elevation_scale=1, radius=radio_km * 1000 * 0.94, disk_resolution=6, angle=90,
                                extruded=True, get_fill_color="color", pickable=True, auto_highlight=True,
@@ -866,9 +988,8 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
                 continue
             feats.append(_feature(f["geometry"], {
                 "nombre": r.municipio, "departamento": f"{r.departamento} · sin presencia", "zona": str(f["properties"]["idx"]),
-                "nivel": "blanco", "valor_txt": f"Potencial {T.cifra(r.potencial)}", "pos_txt": "oportunidad",
-                "part_txt": "", "var_txt": "", "cump_txt": "", "pob_txt": f"{T.cifra(r.poblacion)} habitantes",
-                "pen_txt": "", "unidad": ""}))
+                "nivel": "blanco", **_VACIO, "valor_txt": f"Potencial {T.cifra(r.potencial)}", "pos_txt": "· oportunidad",
+                "pob_txt": f"{T.cifra(r.poblacion)} habitantes", **_chip("🎯 Sin presencia: para abrir", "oport")}))
         # Violeta: el amarillo es «estable» en el semáforo y se confundían.
         neon = [147, 51, 234] if not oscuro else [192, 132, 252]
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="blancos",
@@ -880,7 +1001,7 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
     if capas_on.get("etiquetas"):
         fuente = zd if (capas_on.get("deptos") and not zd.empty and zm.empty) else zm
         if fuente is not None and not fuente.empty:
-            top = _etiquetas_sin_choque(fuente).copy()
+            top = _etiquetas_sin_choque(fuente, maximo=8 if alto_mpio else 10).copy()
             # Sin tildes a propósito: el TextLayer solo trae letras ASCII y
             # pydeck no deja ampliarlas (character_set="auto" no dibuja nada y
             # una lista o un texto de caracteres se interpretan como código).
@@ -896,10 +1017,17 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
             neutro = [94, 224, 212, 210] if oscuro else [15, 120, 115, 200]
             estados = top["estado"] if "estado" in top.columns else pd.Series(None, index=top.index)
             top["borde"] = [list(_ESTADO_RGB[e]) + [255] if e in _ESTADO_RGB else neutro for e in estados]
-            capas.append(pdk.Layer("TextLayer", data=top[["lon", "lat", "texto", "borde"]], id="etiquetas",
-                                   get_position=["lon", "lat"], get_text="texto",
+            # En 3D, el nombre va encima de su columna; en plano, en el suelo.
+            if fuente is zm:
+                top["z"] = [alto_mpio.get(_clave(z), 0.0) + (4_000 if alto_mpio else 0) for z in top["zona"]]
+            else:
+                tope_d = float(zd["valor"].clip(lower=0).max()) or 1.0
+                top["z"] = top["valor"].clip(lower=0) / tope_d * 320_000 * escala + 4_000
+            capas.append(pdk.Layer("TextLayer", data=top[["lon", "lat", "z", "texto", "borde"]], id="etiquetas",
+                                   get_position=["lon", "lat", "z"], get_text="texto",
                                    get_size=14, get_color=[236, 241, 246] if oscuro else [19, 24, 38],
-                                   get_pixel_offset=[0, -18], billboard=True, background=True,
+                                   # Con pines del plan, el nombre sube un poco más para no quedar debajo del pin.
+                                   get_pixel_offset=[0, -34 if capas_on.get("jugadas") else -18], billboard=True, background=True,
                                    get_background_color=[13, 18, 28, 230] if oscuro else [255, 255, 255, 240],
                                    background_padding=[8, 4, 8, 4], get_border_color="borde",
                                    get_border_width=2))
@@ -922,7 +1050,75 @@ def _construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: p
             leyendas["focos"] = [(_ESTADO_RGB["subio"], f"{len(subidas)} mayores subidas"),
                                  (_ESTADO_RGB["bajo"], f"{len(caidas)} mayores caídas")]
 
-    # 11) La zona abierta en la ficha: borde neón con brillo y la vista va hacia ella.
+    # 11) Rutas de expansión: un arco desde la zona más cercana de la red a cada municipio por abrir.
+    aperturas = plan.get("aperturas") if plan else None
+    if capas_on.get("rutas") and aperturas is not None and len(aperturas) and "base_lat" in aperturas.columns:
+        a = aperturas.copy()
+        idx_m = {c: i for i, c in zip(mpios.index, mpios["cod_mpio"])}
+        arcos = pd.DataFrame({
+            "base_lon": a["base_lon"], "base_lat": a["base_lat"], "lon": a["lon"].astype(float), "lat": a["lat"].astype(float),
+            "nombre": "Abrir " + a["municipio"].astype(str), "departamento": a["departamento"].astype(str),
+            "zona": [str(idx_m.get(c, -1)) for c in a["cod_mpio"]], "nivel": "blanco",
+            **{k: "" for k in _CAMPOS_TT},
+        })
+        arcos["valor_txt"] = ["≈ " + T.cifra(v) for v in a["potencial_mes"]]
+        arcos["unidad"] = "al mes de potencial"
+        arcos["pos_txt"] = [f"· desde {b} ({k:.0f} km)" for b, k in zip(a["base"], a["distancia_km"])]
+        arcos["pob_txt"] = [f"{T.cifra(p)} habitantes · {T.cifra(u)} urbanos" for p, u in zip(a["poblacion"], a["poblacion_cabecera"])]
+        for k, v in _chip("🎯 Dónde abrir", "oport").items():
+            arcos[k] = v
+        bloques = [_bloque_plan("🎯 Plan: Abrir · 90 días", str(ag or ""), m, "oport")
+                   for m, ag in zip(a["modelo"], a["agente_sugerido"])]
+        for k in _SIN_PLAN:
+            arcos[k] = [b[k] for b in bloques]
+        arcos["hint"] = _HINT
+        capas.append(pdk.Layer("ArcLayer", data=arcos, id="rutas", get_source_position=["base_lon", "base_lat"],
+                               get_target_position=["lon", "lat"], get_source_color=[45, 212, 191, 230],
+                               get_target_color=[192, 132, 252, 255], get_width=5, width_min_pixels=3,
+                               get_height=0.8, pickable=True, auto_highlight=True, highlight_color=[255, 255, 255, 255]))
+        capas.append(pdk.Layer("ScatterplotLayer", data=arcos[["lon", "lat"]], id="rutas_destino", get_position=["lon", "lat"],
+                               get_radius=6_000, radius_min_pixels=7, radius_max_pixels=16, filled=True, stroked=True,
+                               get_fill_color=[192, 132, 252, 90], get_line_color=[192, 132, 252, 255],
+                               line_width_min_pixels=2, pickable=False))
+        leyendas["rutas"] = [((45, 212, 191), "sale de tu zona más cercana"), ((192, 132, 252), f"llega a {len(a)} municipios por abrir")]
+
+    # 12) Las jugadas del plan: pines numerados, el mismo número de las tarjetas.
+    jugadas = plan.get("jugadas") if plan else None
+    if capas_on.get("jugadas") and jugadas:
+        pines = pd.DataFrame([{
+            "lon": j["lon"], "lat": j["lat"], "n": str(j["n"]), "tono": j["tono"],
+            "z": alto_mpio.get(_clave(j["clave_zona"]), 0.0) + (9_000 if alto_mpio else 0),
+            "nombre": f"{j['n']}. {j['icono']} {j['titulo']} {j['zona']}", "departamento": j["departamento"],
+            "zona": j["clave_zona"], "nivel": "blanco" if j["estrategia"] == "abrir" else (plan.get("nivel") or "municipio"),
+            **{k: "" for k in _CAMPOS_TT},
+            "valor_txt": (f"≈ {T.cifra(j['valor'])}" if j["valor"] else T.cifra_signo(j.get("ganancia", 0))),
+            "unidad": "al mes" if j["valor"] else "ganó este mes",
+            "pos_txt": f"· {j['plazo']}",
+            **_chip(f"Jugada {j['n']} del plan", j["tono"]),
+            **_bloque_plan(f"{j['icono']} {j['titulo']} · {j['kpi']}", j["responsable"], j["pasos"][0] if j["pasos"] else "",
+                           j["tono"]),
+            "hint": _HINT} for j in jugadas if j.get("lat") is not None])
+        if len(pines):
+            # Pin oscuro con anillo del color de la estrategia: el número blanco
+            # se lee igual sobre rojo, amarillo, verde o violeta.
+            pines["color"] = [_TONO_RGB[x] + [255] for x in pines["tono"]]
+            pines["halo"] = [_TONO_RGB[x] + [90] for x in pines["tono"]]
+            capas.append(pdk.Layer("ScatterplotLayer", data=pines[["lon", "lat", "z", "halo"]], id="jugadas_halo",
+                                   get_position=["lon", "lat", "z"], get_radius=1, radius_min_pixels=22, radius_max_pixels=22,
+                                   get_fill_color="halo", pickable=False))
+            capas.append(pdk.Layer("ScatterplotLayer", data=pines.drop(columns=["halo"]), id="jugadas_pin",
+                                   get_position=["lon", "lat", "z"], get_radius=1, radius_min_pixels=15, radius_max_pixels=15,
+                                   get_fill_color=[17, 24, 39, 245], stroked=True, get_line_color="color",
+                                   line_width_min_pixels=3.5, pickable=True, auto_highlight=True,
+                                   highlight_color=[255, 255, 255, 120]))
+            capas.append(pdk.Layer("TextLayer", data=pines[["lon", "lat", "z", "n"]], id="jugadas_num",
+                                   get_position=["lon", "lat", "z"], get_text="n", get_size=17,
+                                   get_color=[255, 255, 255, 255], billboard=True))
+            tonos = list(dict.fromkeys(j["tono"] for j in jugadas))
+            nombres = {"bajo": "rescatar / recuperar", "estable": "desarrollar", "oport": "abrir", "subio": "replicar"}
+            leyendas["jugadas"] = [(tuple(_TONO_RGB[x]), nombres[x]) for x in tonos]
+
+    # 13) La zona abierta en la ficha: borde neón con brillo y la vista va hacia ella.
     foco = None
     if seleccion:
         geom, nivel_sel = None, seleccion.get("nivel")
@@ -1076,7 +1272,7 @@ def _firma_mapa() -> Optional[tuple]:
         objetos = (seleccion.get("objects") if seleccion else None) or {}
     except Exception:
         return None
-    for capa in ("mpios", "zonas", "deptos", "blancos", "poblacion"):
+    for capa in ("jugadas_pin", "rutas", "mpios", "zonas", "deptos", "blancos", "poblacion"):
         elegido = (objetos.get(capa) or [None])[0]
         if elegido:
             props = elegido.get("properties", elegido)
@@ -1743,6 +1939,9 @@ _CAPAS = [
     ("poblacion", "Población DANE 2026", "Densidad de población por municipio, como contexto.", "DANE · proyecciones", "dane"),
     ("blancos", "Blancos de expansión", "Municipios grandes donde aún no hay presencia.", "Oportunidad", "oport"),
     ("focos", "Focos del mes", "Anillos sobre las 3 zonas que más subieron (verde) y más bajaron (rojo).", "Tu archivo", "dato"),
+    ("jugadas", "Jugadas del plan", "Pines numerados con las jugadas del mes: el mismo número de las tarjetas del plan.",
+     "Plan de acción", "oport"),
+    ("rutas", "Rutas de expansión", "Arcos desde tu zona más cercana a cada municipio por abrir.", "Plan de acción", "oport"),
     ("etiquetas", "Nombres de las zonas", "Las zonas clave con su cifra y su variación; el borde lleva el color del semáforo.",
      "Tu archivo", "dato"),
 ]
@@ -1824,12 +2023,13 @@ def render_territorial_page():
 
     disponibles = {"mpios": por_municipio, "columnas": por_municipio, "deptos": en_colombia, "hex": con_coordenadas,
                    "calor": True, "puntos": con_coordenadas, "poblacion": True, "blancos": por_municipio,
-                   "focos": (por_municipio or con_coordenadas) and len(meses) >= 2, "etiquetas": True}
-    por_defecto = ({"hex", "focos", "etiquetas"} if con_coordenadas else {"mpios", "blancos", "focos", "etiquetas"}
-                   if por_municipio else {"deptos", "etiquetas"})
+                   "focos": (por_municipio or con_coordenadas) and len(meses) >= 2, "etiquetas": True,
+                   "jugadas": en_colombia, "rutas": por_municipio}
+    por_defecto = ({"hex", "jugadas", "rutas", "etiquetas"} if con_coordenadas else
+                   {"mpios", "jugadas", "rutas", "etiquetas"} if por_municipio else {"deptos", "jugadas", "etiquetas"})
 
     with panel, st.container(key="terr_panel_2"):
-        periodo, jugar = None, False
+        periodo, jugar, tour = None, False, False
         if len(meses) >= 2:
             opciones_mes = ["Todo"] + meses
             if st.session_state.get("territorial_mes") not in opciones_mes:
@@ -1839,6 +2039,9 @@ def render_territorial_page():
             periodo = None if periodo == "Todo" else periodo
             jugar = st.toggle("▶ Reproducir mes a mes", key="territorial_play",
                               help="Recorre los meses en el mapa, uno cada segundo y medio.")
+        tour = st.toggle("🎬 Modo presentación", key="territorial_tour",
+                         help="Recorre las jugadas del plan una por una: el mapa vuela a cada zona y muestra qué hacer. "
+                              "Para proyectar en una reunión.")
 
         st.markdown('<div class="terr-sec">Capas</div>', unsafe_allow_html=True)
         capas_on, huecos = {}, {}
@@ -1914,13 +2117,20 @@ def render_territorial_page():
     if seleccion and seleccion.get("nivel") == "municipio" and nivel_mpio == "punto":
         z_mpio_sel, nivel_sel = z_plan, "municipio"
 
-    def _dibujar(mes, clave_evento: Optional[str], leyendas_panel: bool = True):
+    columnas_texto = [c for c in df.columns if c not in set(metricas) | set(schema.get("dates", []))]
+    agente_col = P.columna_agente(df, columnas_texto)
+    cuenta_col = P.columna_cuenta(df, columnas_texto, excluir=(agente_col,))
+    dims_plan = dims_neg + ([agente_col] if agente_col and agente_col not in dims_neg else [])
+    pl = _plan_cacheado(ub, metrica_calc, calculo, fecha_col, z_plan, tuple(dims_plan), etiquetas, agente_col, cuenta_col)
+
+    def _dibujar(mes, clave_evento: Optional[str], leyendas_panel: bool = True, forzar: Optional[dict] = None):
         zm_m, zd_m = (zm, zd) if mes == periodo else _calcular(mes)
         hex_t = T.hexagonos(ub, metrica_calc, calculo, radio_km, fecha_col, mes) if capas_on.get("hex") else pd.DataFrame()
         deck, leyendas = _construir_mapa(capas_on, zm_m["tabla"], zd_m["tabla"], hex_t,
                                          _puntos(mes) if (capas_on.get("calor") or capas_on.get("puntos")) else pd.DataFrame(),
                                          crecer, color, paleta, fondo, escala, radio_km, metrica_label,
-                                         seleccion=seleccion if clave_evento else None, inclinada=inclinada)
+                                         seleccion=forzar or (seleccion if clave_evento else None),
+                                         inclinada=inclinada or bool(forzar), plan=pl)
         # Desde la animación (un fragmento) no se puede escribir en el panel,
         # que está fuera de él: las leyendas se quedan como estaban.
         if leyendas_panel:
@@ -1944,8 +2154,17 @@ def render_territorial_page():
         elif sem:
             corte = (f'<span class="corte suave">Semáforo: {html.escape(T.etiqueta_mes(z_m["mes_b"], True))} frente a '
                      f'{html.escape(T.etiqueta_mes(z_m["mes_a"], True))}</span>')
+        leer = [f"🎨 Color: {_COLORES[color].replace('🚦 ', '')}"]
+        if capas_on.get("columnas") or capas_on.get("mpios3d") or capas_on.get("deptos") or capas_on.get("hex"):
+            leer.append(f"📏 Altura: {metrica_label.lower()}")
+        if capas_on.get("jugadas") and pl and pl.get("jugadas"):
+            leer.append("🔢 Pines: jugadas del plan")
+        if capas_on.get("rutas") and pl is not None and len(pl.get("aperturas", [])):
+            leer.append("🟣 Arcos: dónde abrir")
+        leer += ["🔍 Pasa el cursor: detalle", "👆 Clic: ficha"]
         st.markdown(f'<div class="terr-mapa-head"><div><b>{html.escape(metrica_label)} · {html.escape(_COLORES[color])}</b><br>'
-                    f'<span class="per">{html.escape(etiqueta)}</span>{corte}</div><div class="capas">{derecha}</div></div>',
+                    f'<span class="per">{html.escape(etiqueta)}</span>{corte}</div><div class="capas">{derecha}</div>'
+                    '<div class="terr-leer">' + "".join(f"<span>{html.escape(x)}</span>" for x in leer) + "</div></div>",
                     unsafe_allow_html=True)
         if deck is None:
             st.info("Prende al menos una capa en el panel de la izquierda.")
@@ -1964,7 +2183,32 @@ def render_territorial_page():
                     f'a partir de {html.escape(origen)}.</div>', unsafe_allow_html=True)
         st.markdown(_hud(z if not z["tabla"].empty else zm, T.serie_total(ub, metrica_calc, calculo, fecha_col),
                          metrica_label, cob), unsafe_allow_html=True)
-        if jugar and len(meses) >= 2:
+        jugadas_tour = [j for j in (pl.get("jugadas") if pl else None) or [] if j.get("lat") is not None]
+        if tour and jugadas_tour:
+            # Modo presentación: un fragmento que cada 6 s pasa a la jugada
+            # siguiente; el mapa vuela a la zona y la tarjeta dice qué hacer.
+            @st.fragment(run_every=6)
+            def _presentacion():
+                i = st.session_state.get("territorial_tour_i", 0) % len(jugadas_tour)
+                j = jugadas_tour[i]
+                vale = (f"vale ≈ <b>{T.cifra(j['valor'])}</b> al mes" if j["valor"] else
+                        f"ganó <b>{T.cifra_signo(j.get('ganancia', 0))}</b> · buena práctica")
+                puntos = "".join(f'<i class="{"on" if k == i else ""}"></i>' for k in range(len(jugadas_tour)))
+                st.markdown(
+                    f'<div class="terr-tour {j["tono"]}"><div class="izq"><span class="n">{j["n"]}</span><div>'
+                    f'<span class="tchip {j["tono"]}">{j["icono"]} {html.escape(j["titulo"])}</span>'
+                    f'<h3>{html.escape(j["zona"])} <small>{html.escape(j["departamento"])}</small></h3>'
+                    f'<p>{_negritas(j["pasos"][0]) if j["pasos"] else ""}</p></div></div>'
+                    f'<div class="der"><div class="valor">{vale}</div>'
+                    + (f'<div class="resp">👤 {html.escape(j["responsable"])} · ⏱ {html.escape(j["plazo"])}</div>' if j["responsable"]
+                       else f'<div class="resp">⏱ {html.escape(j["plazo"])}</div>')
+                    + f'<div class="puntos">{puntos}</div><small>Jugada {i + 1} de {len(jugadas_tour)}</small></div></div>',
+                    unsafe_allow_html=True)
+                nivel_j = "municipio" if j["estrategia"] == "abrir" else (pl.get("nivel") or "municipio")
+                _dibujar(periodo, None, leyendas_panel=False, forzar={"zona": j["clave_zona"], "nivel": nivel_j})
+                st.session_state["territorial_tour_i"] = i + 1
+            _presentacion()
+        elif jugar and len(meses) >= 2:
             # La animación vive en un fragmento que se redibuja solo, sin
             # correr el resto de la pantalla.
             @st.fragment(run_every=1.5)
@@ -1994,7 +2238,7 @@ def render_territorial_page():
             deck, _ = _construir_mapa(capas_on, zm["tabla"], zd["tabla"], hex_t,
                                       _puntos(periodo) if (capas_on.get("calor") or capas_on.get("puntos")) else pd.DataFrame(),
                                       crecer, color, paleta, fondo, escala, radio_km, metrica_label, inclinada=inclinada,
-                                      ligero=True)
+                                      ligero=True, plan=pl)
             return deck.to_html(as_string=True, notebook_display=False) if deck is not None else None
         except Exception:
             return None  # sin mapa, el informe sale igual
@@ -2003,11 +2247,6 @@ def render_territorial_page():
         _ficha(ub, seleccion, zd if seleccion["nivel"] == "departamento" else z_mpio_sel, crecer, metrica, metrica_label,
                calculo, fecha_col, dims, dims_neg, etiquetas)
 
-    columnas_texto = [c for c in df.columns if c not in set(metricas) | set(schema.get("dates", []))]
-    agente_col = P.columna_agente(df, columnas_texto)
-    cuenta_col = P.columna_cuenta(df, columnas_texto, excluir=(agente_col,))
-    dims_plan = dims_neg + ([agente_col] if agente_col and agente_col not in dims_neg else [])
-    pl = _plan_cacheado(ub, metrica_calc, calculo, fecha_col, z_plan, tuple(dims_plan), etiquetas, agente_col, cuenta_col)
     _plan_accion(pl, metrica_label, nivel_plan)
 
     # Pocas razones en pantalla (se ven 3 por columna); el informe descargable pide muchas más.
