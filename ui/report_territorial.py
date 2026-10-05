@@ -32,9 +32,11 @@ from openpyxl.chart.series import DataPoint
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from core import territorio as T
+from core import territorio_plan as P
 
 # Tinta y grises del tema claro; el semáforo con los mismos tonos que el mapa.
 TINTA, MUTED, LINEA, ZEBRA, PANEL, TEAL = "131826", "5B6473", "D8DCE6", "F6F7F9", "F1F3F7", "0F8A85"
@@ -179,7 +181,7 @@ def _pintar_estado(celda, estado) -> None:
         celda.alignment = Alignment(horizontal="center", vertical="top")
 
 
-def _hoja_resumen(wb, inf: dict, ctx: dict, serie_total: pd.DataFrame) -> int:
+def _hoja_resumen(wb, inf: dict, ctx: dict, serie_total: pd.DataFrame, plan: dict | None = None) -> int:
     ws = wb.active
     ws.title = "Resumen"
     for col in range(1, 13):
@@ -205,6 +207,22 @@ def _hoja_resumen(wb, inf: dict, ctx: dict, serie_total: pd.DataFrame) -> int:
     ws.row_dimensions[fila + 1].height = 30
     ws.row_dimensions[fila + 2].height = 30
     fila += 4
+
+    if plan and plan.get("resumen"):
+        fila = _seccion(ws, fila, "Plan de acción · lo primero de la semana")
+        for frase in plan["resumen"]:
+            fila = _parrafo(ws, fila, "• " + frase)
+        for j in plan["jugadas"][:5]:
+            valor = f"vale ≈ {T.cifra(j['valor'])} al mes" if j["valor"] else "buena práctica"
+            fila = _parrafo(ws, fila, f"{j['n']}. {j['icono']} {j['titulo']} {j['zona']} ({j['departamento']}) · {valor}"
+                            + (f" · responsable: {j['responsable']}" if j["responsable"] else "") + f" · {j['plazo']}",
+                            negrita=True, color=SEM["bajo"][0] if j["tono"] == "bajo" else TINTA)
+            if j["pasos"]:
+                fila = _parrafo(ws, fila, "     → " + _plano(j["pasos"][0]), color=MUTED)
+        c = ws.cell(fila, 1, "→ El plan completo, para hacerle seguimiento, está en la hoja «Plan de acción»")
+        c.hyperlink = "#'Plan de acción'!A1"
+        c.font = Font(color=TEAL, bold=True, underline="single")
+        fila += 2
 
     if inf.get("por_donde") or inf.get("por_que"):
         fila = _seccion(ws, fila, "Qué pasó y por qué")
@@ -308,7 +326,10 @@ def _hoja_resumen(wb, inf: dict, ctx: dict, serie_total: pd.DataFrame) -> int:
     return fila
 
 
-_DESCRIPCION_HOJAS = {"Semáforo": "todas las zonas con su estado, su cambio y por qué se movieron",
+_DESCRIPCION_HOJAS = {"Plan de acción": "qué hacer en cada zona, responsable, plazo, meta y estado para el seguimiento",
+                      "Agentes": "el plan de cada agente: dónde perdió, clientes perdidos, ruta, meta y estrategia",
+                      "Dónde abrir": "municipios sin presencia, desde dónde atenderlos y cuánto valen",
+                      "Semáforo": "todas las zonas con su estado, su cambio y por qué se movieron",
                       "Departamentos": "cada departamento y qué municipios lo empujaron",
                       "Mes a mes": "cada zona por mes, con escala de color",
                       "Dónde crecer": "municipios grandes sin presencia y presentes por debajo de lo normal",
@@ -418,6 +439,129 @@ def _hoja_mes_a_mes(wb, inf: dict, mensual: pd.DataFrame) -> None:
         c.border = Border(top=Side(style="medium", color=TINTA))
 
 
+def _alto_texto(texto, ancho_col: float) -> float:
+    """Alto de fila para que un texto con varias líneas y ajuste se vea completo."""
+    caracteres = int(max(ancho_col * 1.15, 10))
+    renglones = sum(max(1, -(-len(linea) // caracteres)) for linea in str(texto or "").split("\n"))
+    return min(409, 15.5 * max(2, renglones) + 4)
+
+
+_ESTADOS_SEGUIMIENTO ='"Pendiente,En curso,Hecho,Descartado"'
+
+
+def _seguimiento(ws, ini: int, fin: int, col_estado: int) -> None:
+    """Lista desplegable de estado y color según cómo va cada acción."""
+    if fin < ini:
+        return
+    dv = DataValidation(type="list", formula1=_ESTADOS_SEGUIMIENTO, allow_blank=True)
+    ws.add_data_validation(dv)
+    letra = get_column_letter(col_estado)
+    dv.add(f"{letra}{ini}:{letra}{fin}")
+    from openpyxl.formatting.rule import FormulaRule
+    for texto, fondo, color in (("Hecho", "DCFCE7", "15803D"), ("En curso", "FEF9C3", "A16207"),
+                                ("Pendiente", "FEE2E2", "B91C1C")):
+        ws.conditional_formatting.add(f"{letra}{ini}:{letra}{fin}", FormulaRule(
+            formula=[f'{letra}{ini}="{texto}"'], fill=PatternFill("solid", fgColor=fondo), font=Font(color=color, bold=True)))
+
+
+def _hoja_plan(wb, plan: dict) -> None:
+    """El plan de acción para repartir y hacerle seguimiento: una fila por acción."""
+    zonas = plan["zonas"]
+    ws = wb.create_sheet("Plan de acción")
+    fila = _encabezado(ws, "Plan de acción territorial",
+                       "Una fila por zona con algo que hacer, ordenadas por urgencia y por lo que valen al mes. Las columnas "
+                       "«Estado» y «Comentarios» son para el seguimiento semanal: elige el estado en la lista.", ancho=13)
+    filas = []
+    acciones = zonas[zonas["estrategia"] != "sostener"].copy()
+    acciones["_orden"] = acciones["estrategia"].map(lambda e: P.ESTRATEGIAS[e]["orden"])
+    acciones = acciones.sort_values(["_orden", "valor_mes"], ascending=[True, False])
+    for r in acciones.itertuples():
+        e = P.ESTRATEGIAS[r.estrategia]
+        filas.append([e["orden"], f"{e['icono']} {e['titulo']}", str(r.nombre), str(getattr(r, "departamento", "")),
+                      "\n".join(f"{k}. {_plano(x)}" for k, x in enumerate(r.pasos, start=1)), r.responsable or "",
+                      r.plazo, _num(r.ritmo), _num(r.meta_mes), _num(r.valor_mes), r.kpi, "Pendiente", ""])
+    for r in (plan["aperturas"].itertuples() if len(plan["aperturas"]) else []):
+        filas.append([P.ESTRATEGIAS["abrir"]["orden"], "🎯 Abrir", str(r.municipio), str(r.departamento),
+                      "\n".join(f"{k}. {_plano(x)}" for k, x in enumerate(r.pasos, start=1)), r.agente_sugerido or "",
+                      P.ESTRATEGIAS["abrir"]["plazo"], 0, _num(r.potencial_mes), _num(r.potencial_mes),
+                      f"{T.cifra(r.potencial_mes)} al mes en 90 días", "Pendiente", ""])
+    ini, fin = _tabla(ws, fila, ["Prioridad", "Estrategia", "Zona", "Departamento", "Qué hacer", "Responsable", "Plazo",
+                                 "Ritmo al mes", "Meta al mes", "Vale al mes", "Cómo se mide", "Estado", "Comentarios"],
+                      filas, {8: FMT_NUM, 9: FMT_NUM, 10: FMT_NUM}, nombre="TablaPlan",
+                      anchos={1: 9, 2: 15, 3: 22, 4: 18, 5: 80, 6: 18, 7: 14, 8: 13, 9: 13, 10: 13, 11: 28, 12: 13, 13: 30})
+    for i in range(ini, fin + 1):
+        ws.cell(i, 5).alignment = Alignment(wrap_text=True, vertical="top")
+        ws.cell(i, 11).alignment = Alignment(wrap_text=True, vertical="top")
+        ws.row_dimensions[i].height = _alto_texto(ws.cell(i, 5).value, 80)
+        estrategia = str(ws.cell(i, 2).value)
+        tono = "bajo" if ("Rescatar" in estrategia or "Recuperar" in estrategia) else \
+            "subio" if "Replicar" in estrategia else "estable"
+        ws.cell(i, 2).font = Font(bold=True, color=SEM[tono][0])
+    _seguimiento(ws, ini, fin, 12)
+    ws.freeze_panes = None
+    if fin >= ini:
+        ws.conditional_formatting.add(f"J{ini}:J{fin}", DataBarRule(start_type="num", start_value=0, end_type="max",
+                                                                    color="F4A3A3"))
+
+
+def _hoja_agentes(wb, plan: dict) -> None:
+    agentes = plan["agentes"]
+    if not agentes:
+        return
+    ws = wb.create_sheet("Agentes")
+    n = len(agentes)
+    fila = _encabezado(ws, "Plan por agente comercial",
+                       f"Posición y mediana sobre los {n} agentes. Ritmo = lo que vende al mes hoy; meta sugerida = su mejor "
+                       "nivel reciente (promedio de sus últimos 3 meses completos o el último, el mayor).", ancho=12)
+    filas = []
+    for a in agentes:
+        filas.append([a["posicion"], a["nombre"], f"{a['perfil_icono']} {a['perfil_titulo']}", _num(a["ritmo"]), _num(a["var"]),
+                      _num(a["vs_mediana"]), _num(a["meta"]), a["zonas"],
+                      ", ".join(f"{p['zona']} ({T.cifra_signo(p['delta'])})" for p in a["perdio"]),
+                      ", ".join(c["nombre"] for c in a["cuentas_perdidas"]),
+                      " → ".join(r["zona"] for r in a["ruta"]),
+                      "\n".join(f"{k}. {_plano(x)}" for k, x in enumerate(a["estrategia"], start=1))])
+    ini, fin = _tabla(ws, fila, ["#", "Agente", "Perfil", "Ritmo al mes", "Vs mes anterior", f"Vs mediana de {n}",
+                                 "Meta sugerida", "Zonas", "Dónde perdió", "Clientes que dejaron de comprar", "Ruta sugerida",
+                                 "Estrategia"], filas,
+                      {4: FMT_NUM, 5: FMT_PCT_SIGNO, 6: FMT_PCT_SIGNO, 7: FMT_NUM}, nombre="TablaAgentes",
+                      anchos={1: 5, 2: 22, 3: 17, 4: 13, 5: 12, 6: 13, 7: 13, 8: 8, 9: 34, 10: 34, 11: 34, 12: 80})
+    for i in range(ini, fin + 1):
+        for c in (9, 10, 11, 12):
+            ws.cell(i, c).alignment = Alignment(wrap_text=True, vertical="top")
+        ws.row_dimensions[i].height = max(_alto_texto(ws.cell(i, 12).value, 80), _alto_texto(ws.cell(i, 9).value, 34),
+                                          _alto_texto(ws.cell(i, 10).value, 34))
+        perfil = str(ws.cell(i, 3).value)
+        tono = "bajo" if "caída" in perfil else "subio" if "Referente" in perfil else "estable"
+        ws.cell(i, 3).font = Font(bold=True, color=SEM[tono][0])
+    if fin >= ini:
+        ws.conditional_formatting.add(f"E{ini}:E{fin}", ColorScaleRule(
+            start_type="num", start_value=-0.3, start_color="F8B4B4", mid_type="num", mid_value=0, mid_color="FFFFFF",
+            end_type="num", end_value=0.3, end_color="A7F3D0"))
+
+
+def _hoja_abrir(wb, plan: dict) -> None:
+    ap = plan["aperturas"]
+    if ap is None or ap.empty:
+        return
+    ws = wb.create_sheet("Dónde abrir")
+    fila = _encabezado(ws, "Dónde abrir · municipios sin presencia",
+                       f"Municipios de 20.000+ habitantes sin presencia, en los departamentos donde ya operas. Potencial = la mitad "
+                       f"de la penetración típica de tu red ({T.cifra(plan['tipica'])} por cada 10.000 habitantes al mes). "
+                       "Población: DANE 2026.", ancho=10)
+    filas = [[r.municipio, r.departamento, _num(r.poblacion), _num(r.poblacion_cabecera), _num(r.crecimiento_2030), r.base,
+              _num(round(r.distancia_km)), r.agente_sugerido or "", _num(r.potencial_mes), r.modelo] for r in ap.itertuples()]
+    ini, fin = _tabla(ws, fila, ["Municipio", "Departamento", "Población 2026", "Urbana", "Crec. 2030", "Atender desde",
+                                 "Km", "Agente sugerido", "Potencial al mes", "Modelo de entrada"], filas,
+                      {3: FMT_NUM, 4: FMT_NUM, 5: FMT_PCT_SIGNO, 7: FMT_NUM, 9: FMT_NUM}, nombre="TablaAbrir",
+                      anchos={1: 24, 2: 20, 3: 14, 4: 12, 5: 11, 6: 22, 7: 7, 8: 18, 9: 15, 10: 70})
+    for i in range(ini, fin + 1):
+        ws.cell(i, 10).alignment = Alignment(wrap_text=True, vertical="top")
+    if fin >= ini:
+        ws.conditional_formatting.add(f"I{ini}:I{fin}", DataBarRule(start_type="num", start_value=0, end_type="max",
+                                                                    color="C4B5FD"))
+
+
 def _hoja_crecer(wb, inf: dict) -> None:
     crecer = inf["crecer"] or {}
     blancos, rezagados = crecer.get("blancos"), crecer.get("rezagados")
@@ -465,15 +609,23 @@ def _hoja_notas(wb, inf: dict) -> None:
 
 
 def build_territorial_excel(inf: dict, ctx: dict, serie_total: pd.DataFrame | None = None,
-                            mensual: pd.DataFrame | None = None) -> bytes:
-    """El Excel ejecutivo del territorio. `ctx` = {archivo, hoja, registros, filtros, generado}."""
+                            mensual: pd.DataFrame | None = None, plan: dict | None = None) -> bytes:
+    """El Excel ejecutivo del territorio. `ctx` = {archivo, hoja, registros, filtros, generado}.
+    Con `plan` (`core/territorio_plan.plan`), además: el plan en la portada y las hojas «Plan de acción»
+    (para el seguimiento), «Agentes» y «Dónde abrir» (que reemplaza a «Dónde crecer»)."""
     ctx = _ctx(ctx)
     wb = Workbook()
-    fila = _hoja_resumen(wb, inf, ctx, serie_total if serie_total is not None else pd.DataFrame())
+    fila = _hoja_resumen(wb, inf, ctx, serie_total if serie_total is not None else pd.DataFrame(), plan)
+    if plan:
+        _hoja_plan(wb, plan)
+        _hoja_agentes(wb, plan)
     _hoja_semaforo(wb, inf)
     _hoja_departamentos(wb, inf)
     _hoja_mes_a_mes(wb, inf, mensual)
-    _hoja_crecer(wb, inf)
+    if plan and len(plan.get("aperturas", [])):
+        _hoja_abrir(wb, plan)
+    else:
+        _hoja_crecer(wb, inf)
     _hoja_notas(wb, inf)
     _indice(wb, fila)
     salida = io.BytesIO()
@@ -547,6 +699,21 @@ ul.lectura{margin:0;padding-left:20px}ul.lectura li{margin-bottom:7px;line-heigh
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
 .dot.subio{background:#22c55e}.dot.estable{background:#eab308}.dot.bajo{background:#ef4444}
 footer{color:var(--muted);font-size:12px;margin-top:24px;line-height:1.6}
+.jugadas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.jug{border:1px solid var(--linea);border-left:6px solid var(--muted);border-radius:14px;padding:14px 16px;break-inside:avoid}
+.jug.bajo{border-left-color:#ef4444}.jug.estable{border-left-color:#eab308}.jug.subio{border-left-color:#22c55e}
+.jug.oport{border-left-color:#a855f7}.chip.oport{color:var(--violeta);background:#f3e8ff}
+.jcab{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.jn{width:28px;height:28px;border-radius:8px;background:var(--tinta);
+  color:#fff;display:grid;place-items:center;font-weight:800}.jv{margin-left:auto;color:var(--muted);font-size:13px}
+.jv b{color:var(--tinta);font-size:16px}.jug h3{margin:10px 0 6px;font-size:20px}.jug h3 small{color:var(--muted);font-size:13px;font-weight:500}
+.jug ol,.agente ol{margin:0;padding-left:20px}.jug li,.agente li{font-size:14px;line-height:1.5;margin-bottom:4px}
+.jpie{margin-top:8px;padding-top:8px;border-top:1px dashed var(--linea);color:var(--muted);font-size:12.5px}
+details.agente{border:1px solid var(--linea);border-left:6px solid var(--muted);border-radius:12px;padding:10px 14px;margin-top:8px}
+details.agente.bajo{border-left-color:#ef4444}details.agente.subio{border-left-color:#22c55e}details.agente.estable{border-left-color:#eab308}
+details.agente summary{cursor:pointer;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:14.5px}
+details.agente summary span:last-child{color:var(--muted);font-size:13px}details.agente p{margin:8px 0 4px;font-size:13.5px}
+@media(max-width:900px){.jugadas{grid-template-columns:1fr}}
+@media print{details.agente{break-inside:avoid}details.agente>*{display:block}}
 @media(max-width:900px){.total,.cols{grid-template-columns:1fr}}
 @media print{body{background:#fff}.pagina{padding:0}section,header.portada{box-shadow:none;break-inside:avoid}
   .buscar,.mapa-caja{display:none}.tabla-caja{max-height:none;overflow:visible}}
@@ -601,8 +768,59 @@ def _svg_linea(serie: pd.DataFrame, inf: dict, ancho: int = 1180, alto: int = 24
     return "".join(partes)
 
 
+def _plan_html(plan: dict) -> str:
+    """🎯 El plan de acción en el informe HTML: jugadas, agentes y dónde abrir."""
+    e = html.escape
+    partes = ['<section><h2>🎯 Plan de acción</h2><p class="sub">Qué hacer, dónde, quién y cuánto vale al mes. Primero lo que más vale y '
+              'antes se logra (recuperar es rápido; abrir es una apuesta a 90 días).</p><ul class="lectura">' + "".join(f"<li>{_negritas_html(f)}</li>" for f in plan["resumen"]) + "</ul>"]
+    tarjetas = []
+    for j in plan["jugadas"]:
+        valor = f"vale ≈ <b>{e(T.cifra(j['valor']))}</b> al mes" if j["valor"] else "buena práctica"
+        pie = " · ".join(x for x in (f"👤 {e(j['responsable'])}" if j["responsable"] else "", f"⏱ {e(j['plazo'])}",
+                                     f"📏 {e(j['kpi'])}") if x)
+        tarjetas.append(f'<div class="jug {j["tono"]}"><div class="jcab"><span class="jn">{j["n"]}</span>'
+                        f'<span class="chip {j["tono"]}">{j["icono"]} {e(j["titulo"])}</span><span class="jv">{valor}</span></div>'
+                        f'<h3>{e(j["zona"])} <small>{e(j["departamento"])}</small></h3>'
+                        "<ol>" + "".join(f"<li>{_negritas_html(x)}</li>" for x in j["pasos"]) + f'</ol><div class="jpie">{pie}</div></div>')
+    partes.append('<div class="jugadas">' + "".join(tarjetas) + "</div></section>")
+    agentes = plan["agentes"]
+    if agentes:
+        n = len(agentes)
+        fichas = []
+        for a in agentes:
+            cuerpo = "<ol>" + "".join(f"<li>{_negritas_html(x)}</li>" for x in a["estrategia"]) + "</ol>"
+            extra = []
+            if a["perdio"]:
+                extra.append("<b>Dónde perdió:</b> " + ", ".join(f"{e(p['zona'])} ({e(T.cifra_signo(p['delta']))})" for p in a["perdio"]))
+            if a["cuentas_perdidas"]:
+                extra.append("<b>Clientes que dejaron de comprar:</b> " + ", ".join(e(c["nombre"]) for c in a["cuentas_perdidas"]))
+            if a["ruta"]:
+                extra.append("<b>Ruta sugerida:</b> " + " → ".join(e(r["zona"]) for r in a["ruta"]))
+            var = "—" if a["var"] is None else f"{a['var']:+.0%}"
+            fichas.append(f'<details class="agente {a["perfil_tono"]}"><summary><span class="chip {a["perfil_tono"]}">'
+                          f'{a["perfil_icono"]} {e(a["perfil_titulo"])}</span><b>{e(a["nombre"])}</b>'
+                          f'<span>{a["posicion"]}.º de {n} · ritmo {e(T.cifra(a["ritmo"]))}/mes · {var} · meta '
+                          f'{e(T.cifra(a["meta"]))}</span></summary>'
+                          + "".join(f"<p>{x}</p>" for x in extra) + cuerpo + "</details>")
+        partes.append(f'<section><h2>👥 Plan por agente comercial</h2><p class="sub">{n} agentes. Posición y mediana sobre todos. '
+                      'Clic en un agente para ver su plan; se puede imprimir o reenviar.</p>' + "".join(fichas) + "</section>")
+    ap = plan["aperturas"]
+    if ap is not None and len(ap):
+        filas = "".join(f'<tr><td><b>{e(str(r.municipio))}</b><br><small>{e(str(r.departamento))}</small></td>'
+                        f'<td class="n" data-v="{r.poblacion}">{e(T.cifra(r.poblacion))}</td>'
+                        f'<td>{e(str(r.base))}<br><small>{r.distancia_km:.0f} km</small></td><td>{e(r.agente_sugerido or "—")}</td>'
+                        f'<td class="n" data-v="{r.potencial_mes}">{e(T.cifra(r.potencial_mes))}</td><td><small>{e(r.modelo)}</small></td></tr>'
+                        for r in ap.itertuples())
+        partes.append('<section><h2>📍 Dónde abrir</h2><p class="sub">Municipios de 20.000+ habitantes sin presencia en los '
+                      f'departamentos donde operas. Potencial al mes = la mitad de la penetración típica ({e(T.cifra(plan["tipica"]))} '
+                      'por cada 10.000 hab.).</p><div class="tabla-caja"><table class="ordenable"><thead><tr><th>Municipio</th>'
+                      '<th>Población</th><th>Atender desde</th><th>Agente sugerido</th><th>Potencial al mes</th><th>Modelo de entrada</th>'
+                      f'</tr></thead><tbody>{filas}</tbody></table></div></section>')
+    return "".join(partes)
+
+
 def build_territorial_html(inf: dict, ctx: dict, serie_total: pd.DataFrame | None = None,
-                           mapa_html: str | None = None) -> bytes:
+                           mapa_html: str | None = None, plan: dict | None = None) -> bytes:
     """Página autocontenida con el análisis territorial (y el mapa interactivo si se pasa `mapa_html`)."""
     ctx = _ctx(ctx)
     e = html.escape
@@ -634,6 +852,9 @@ def build_territorial_html(inf: dict, ctx: dict, serie_total: pd.DataFrame | Non
         kpis.append(("", "Cobertura de población", f"{cob['pct_deptos']:.0%}", "de la gente de tus departamentos"))
     partes.append('<div class="kpis">' + "".join(f'<div class="kpi {c}"><span>{e(t)}</span><b>{e(v)}</b><small>{e(d)}</small></div>'
                                                  for c, t, v, d in kpis) + "</div>")
+
+    if plan and (plan.get("jugadas") or plan.get("agentes")):
+        partes.append(_plan_html(plan))
 
     # Qué pasó y por qué.
     if ct and sem:

@@ -111,7 +111,10 @@ HUD + map · reading rail with selected zone, Top 10 and alerts — with zone de
 a green/amber/red traffic light by default and «why it rose/fell» per zone (`core/territorio.motivos`; a
 half-loaded last month is compared against the previous month cut at the same day, `corte_dia`), downloadable
 Excel/HTML reports (`ui/report_territorial.py`, both built from `core/territorio.informe`, the same dict the
-on-screen traffic-light board uses), timeline playback and «Dónde crecer»; the engine is
+on-screen traffic-light board uses), a «🎯 Plan de acción» turning the diagnosis into decisions
+(`core/territorio_plan.plan`: per-zone strategy Rescatar/Recuperar/Desarrollar/Replicar/Sostener valued per month,
+«las jugadas del mes» ranked by expected value, a playbook per sales agent when the file has an asesor/vendedor/agente
+column, lost clients to visit, and «Dónde abrir» with the nearest base zone; also in the Excel/HTML reports), timeline playback and «Dónde crecer»; the engine is
 `core/territorio.py` over the bundled Colombia data in `assets/geo/`: DIVIPOLA's 1,122 municipios
 with coordinates and DANE 2026 population, plus the 33 department polygons) and **Seguimiento de Logística**
 (`ui/logistica.py`, `analysis_mode == "logistica"`; still a scaffold — upload + data preview — whose

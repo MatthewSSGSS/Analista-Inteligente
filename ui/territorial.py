@@ -28,6 +28,10 @@ La pantalla es una consola tipo SIG:
   puede cambiar aquí mismo; el fondo del mapa acompaña y se puede elegir.
 - Línea de tiempo con «▶ Reproducir», indicadores, clic → ficha de la zona,
   ranking sobre TODAS las zonas, lectura y «Dónde crecer».
+- **🎯 Plan de acción** (`core/territorio_plan`): lo que se hace con todo lo
+  anterior. Las jugadas del mes (qué hacer, dónde, quién, plazo y cuánto
+  vale al mes), la estrategia de cada zona, el plan de cada agente comercial
+  y dónde abrir. Va también en el Excel y el HTML descargables.
 """
 from __future__ import annotations
 
@@ -40,6 +44,7 @@ import pandas as pd
 import streamlit as st
 
 from core import territorio as T
+from core import territorio_plan as P
 from core.filter_engine import apply_filters
 from core.loader import load_workbook
 from ui.components.descarga import preparar_y_descargar
@@ -312,6 +317,61 @@ def _inject_css():
           box-shadow:var(--shadow-sm)}
         .terr-desc b{display:block;font-size:17px;font-family:'Sora','Inter',sans-serif;color:var(--text);margin-bottom:4px}
         .terr-desc span{font-size:13.5px;color:var(--muted);line-height:1.5}
+        /* Plan de acción */
+        .terr-brief{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--teal);border-radius:18px;
+          padding:18px 22px;box-shadow:var(--shadow-sm);margin-bottom:12px}
+        .terr-brief ul{margin:12px 0 0;padding-left:20px}.terr-brief li{font-size:15px;line-height:1.55;margin-bottom:5px;color:var(--text)}
+        .terr-bolsa{display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:center}
+        .terr-bolsa .tot small{display:block;font-size:11.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+        .terr-bolsa .tot b{font-size:34px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
+        .terr-bolsa .barra{display:flex;height:16px;border-radius:99px;overflow:hidden;gap:3px;background:var(--panel-2)}
+        .terr-bolsa .barra i{display:block}
+        .terr-bolsa .ley{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-size:13px;color:var(--muted)}
+        .terr-bolsa .ley b{color:var(--text)}
+        .terr-bolsa i.rescatar{background:#dc2626}.terr-bolsa i.recuperar{background:#f87171}
+        .terr-bolsa i.desarrollar{background:#eab308}.terr-bolsa i.abrir{background:#a855f7}
+        @media(max-width:900px){.terr-bolsa{grid-template-columns:1fr}}
+        .terr-jugada{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--muted);border-radius:16px;
+          padding:16px 18px;box-shadow:var(--shadow-sm);margin-bottom:6px;animation:fadeUp .35s ease both}
+        .terr-jugada.bajo{border-left-color:#ef4444}.terr-jugada.estable{border-left-color:#eab308}
+        .terr-jugada.subio{border-left-color:#22c55e}.terr-jugada.oport{border-left-color:#a855f7}
+        .terr-jugada .cab{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+        .terr-jugada .cab .n{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:900;font-size:15px;
+          background:var(--text);color:var(--panel)}
+        .terr-jugada .cab .valor{margin-left:auto;font-size:14px;color:var(--muted)}.terr-jugada .cab .valor b{color:var(--text);font-size:17px}
+        .terr-jugada h4,.terr-agente h4,.terr-rail-card h4,.terr-ficha h3{display:block!important;box-shadow:none!important;border:0!important;background:none!important;padding:0!important;width:auto!important}
+        .terr-jugada h4{margin:10px 0 2px;padding:0;border:0;background:none;font-size:22px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
+        .terr-jugada h4 small{font-size:13px;color:var(--muted);font-weight:500;margin-left:8px;font-family:'Inter',sans-serif}
+        .terr-jugada .que{font-size:13px;color:var(--muted);margin:2px 0 8px}
+        .terr-jugada ol,.terr-agente ol{margin:0;padding-left:20px}
+        .terr-jugada li,.terr-agente li{font-size:14.5px;line-height:1.5;margin-bottom:5px;color:var(--text)}
+        .terr-jugada .pie{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;padding-top:9px;border-top:1px dashed var(--line);
+          font-size:13px;color:var(--muted)}
+        .tchip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:800;padding:3px 11px;border-radius:99px}
+        .tchip.bajo{color:var(--red);background:var(--red-soft)}.tchip.subio{color:var(--green);background:var(--green-soft)}
+        .tchip.estable{color:var(--amber-strong);background:var(--amber-soft)}
+        .tchip.oport{color:#a855f7;background:rgba(168,85,247,.12)}
+        .terr-estrs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px}
+        .terr-estr{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--muted);border-radius:14px;padding:12px 14px}
+        .terr-estr.bajo{border-top-color:#ef4444}.terr-estr.estable{border-top-color:#eab308}.terr-estr.subio{border-top-color:#22c55e}
+        .terr-estr span{display:block;font-size:13px;font-weight:800;color:var(--text)}
+        .terr-estr b{display:block;font-size:28px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
+        .terr-estr small{font-size:12px;color:var(--muted);line-height:1.35}
+        .terr-agente{background:var(--panel);border:1px solid var(--line);border-top:5px solid var(--muted);border-radius:18px;
+          padding:18px 22px;box-shadow:var(--shadow-sm);margin-top:8px}
+        .terr-agente.bajo{border-top-color:#ef4444}.terr-agente.subio{border-top-color:#22c55e}.terr-agente.estable{border-top-color:#eab308}
+        .terr-agente .cab{display:flex;justify-content:space-between;gap:16px;align-items:center}
+        .terr-agente h4{margin:8px 0 2px;padding:0;border:0;background:none;font-size:26px;font-family:'Sora','Inter',sans-serif;color:var(--text)}
+        .terr-agente .cab small{font-size:13px;color:var(--muted)}
+        .terr-mini.seis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+        .terr-agente .bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:14px 0 4px}
+        .terr-agente .bloques>div{background:var(--panel-2);border-radius:12px;padding:12px 14px}
+        .terr-agente h5{margin:0 0 6px;font-size:11.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+        .terr-agente>h5{margin-top:14px}
+        .terr-agente p{margin:3px 0;font-size:14px;color:var(--text)}
+        .terr-agente p.mov.bajo{color:var(--red)}.terr-agente p.mov.subio{color:var(--green)}
+        .terr-agente p b{color:var(--text)}
+
         .terr-estado{font-size:13.5px;color:var(--muted);margin:4px 2px 8px}
         .terr-estado b{color:var(--text)}
         .terr-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
@@ -420,6 +480,11 @@ def _cargador():
 @st.cache_data(show_spinner=False, max_entries=6, ttl=1800)
 def _ubicar(df: pd.DataFrame, schema: dict):
     return T.ubicar(df, schema)
+
+
+@st.cache_data(show_spinner="Armando el plan de acción…", max_entries=8, ttl=1800)
+def _plan_cacheado(ub, metrica, calculo, fecha_col, z, dims, etiquetas, agente, cuenta):
+    return P.plan(ub, metrica, calculo, fecha_col, z, list(dims), etiquetas, agente=agente, cuenta=cuenta)
 
 
 def _calculo(df, schema, metrica) -> str:
@@ -1228,7 +1293,7 @@ def _tablero_semaforo(inf: dict) -> None:
 
 def _descargas(ub, metrica, calculo, fecha_col, z: dict, zd: dict, dims_neg: list, etiquetas: dict, crecer: dict,
                cob: dict, metrica_label: str, archivo: str, hoja: str, filtros: dict, registros: int,
-               serie_total: pd.DataFrame, mapa) -> None:
+               serie_total: pd.DataFrame, mapa, plan_accion: Optional[dict] = None) -> None:
     """📥 El análisis para enviar: Excel ejecutivo y HTML con el mapa.
 
     Se arman a pedido (dos pasos, `ui/components/descarga`): el informe
@@ -1253,7 +1318,7 @@ def _descargas(ub, metrica, calculo, fecha_col, z: dict, zd: dict, dims_neg: lis
                     'crecer · notas de cálculo.</span></div>', unsafe_allow_html=True)
         preparar_y_descargar(
             "territorial_desc_xlsx", firma,
-            lambda: build_territorial_excel(_informe(), ctx, serie_total, T.mes_a_mes(
+            lambda: build_territorial_excel(_informe(), ctx, serie_total, plan=plan_accion, mensual=T.mes_a_mes(
                 ub, metrica, calculo, fecha_col, "departamento" if z.get("nivel") == "departamento" else z.get("nivel", "municipio"))),
             nombre_archivo(hoja or archivo, "xlsx"),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1267,10 +1332,196 @@ def _descargas(ub, metrica, calculo, fecha_col, z: dict, zd: dict, dims_neg: lis
             "territorial_desc_html", firma + (str(st.session_state.get("territorial_color")),
                                              str(st.session_state.get("territorial_paleta")),
                                              str(st.session_state.get("territorial_mapa_fondo"))),
-            lambda: build_territorial_html(_informe(), ctx, serie_total, mapa()),
+            lambda: build_territorial_html(_informe(), ctx, serie_total, mapa(), plan=plan_accion),
             nombre_archivo(hoja or archivo, "html"), "text/html",
             preparar="⚙️ Preparar informe HTML", descargar="⬇️ Descargar informe HTML",
             ayuda="Incluye el mapa con las capas, el color y el fondo que tienes puestos.")
+
+
+def _ver_en_mapa(clave: str, nivel: str) -> None:
+    st.session_state["territorial_zona_sel"] = {"zona": str(clave), "nivel": nivel}
+
+
+def _pasos_html(pasos: list) -> str:
+    return "<ol>" + "".join(f"<li>{_negritas(x)}</li>" for x in pasos) + "</ol>"
+
+
+def _bolsa_html(bolsa: dict) -> str:
+    """Barra apilada de lo que hay en juego al mes, por estrategia."""
+    partes = [(e, bolsa[e]["valor"], bolsa[e]["n"]) for e in ("rescatar", "recuperar", "desarrollar", "abrir")
+              if bolsa.get(e, {}).get("valor", 0) > 0]
+    total = sum(v for _, v, _ in partes)
+    if not total:
+        return ""
+    barra = "".join(f'<i class="{e}" style="width:{v / total * 100:.1f}%" title="{P.ESTRATEGIAS[e]["titulo"]}"></i>'
+                    for e, v, _ in partes)
+    leyenda = "".join(f'<span class="{e}"><b>{P.ESTRATEGIAS[e]["icono"]} {P.ESTRATEGIAS[e]["titulo"]}</b> '
+                      f'{T.cifra(v)} · {n} {"zona" if n == 1 else "zonas"}</span>' for e, v, n in partes)
+    return (f'<div class="terr-bolsa"><div class="tot"><small>En juego al mes</small><b>{T.cifra(total)}</b></div>'
+            f'<div class="cuerpo"><div class="barra">{barra}</div><div class="ley">{leyenda}</div></div></div>')
+
+
+def _plan_accion(pl: dict, metrica_label: str, nivel_plan: str) -> None:
+    """🎯 Plan de acción: lo que el gerente reparte el lunes."""
+    if not pl:
+        return
+    st.markdown('<div class="terr-label">🎯 Plan de acción · qué hacer, dónde, quién y cuánto vale</div>',
+                unsafe_allow_html=True)
+    st.markdown('<div class="terr-brief">' + _bolsa_html(pl["bolsa"]) + '<ul>'
+                + "".join(f"<li>{_negritas(f)}</li>" for f in pl["resumen"]) + "</ul></div>", unsafe_allow_html=True)
+    n_ag = len(pl["agentes"])
+    pestañas = st.tabs([f"🎯 Las jugadas del mes ({len(pl['jugadas'])})", "🗺️ Plan por zona",
+                        f"👥 Agentes comerciales ({n_ag})" if n_ag else "👥 Agentes comerciales",
+                        f"📍 Dónde abrir ({len(pl['aperturas'])})"])
+
+    # 1) Las jugadas, ordenadas por lo que valen.
+    with pestañas[0]:
+        if not pl["jugadas"]:
+            st.info("No hay caídas ni brechas que valga la pena atacar con este periodo: el territorio está sano.")
+        for fila in range(0, len(pl["jugadas"]), 2):
+            columnas = st.columns(2, gap="medium")
+            for col, j in zip(columnas, pl["jugadas"][fila:fila + 2]):
+                with col:
+                    valor = (f"vale ≈ <b>{T.cifra(j['valor'])}</b> al mes" if j["valor"] else
+                             f"ganó <b>{T.cifra_signo(j.get('ganancia', 0))}</b> · buena práctica")
+                    pie = [f"👤 {html.escape(j['responsable'])}" if j["responsable"] else "", f"⏱ {html.escape(j['plazo'])}",
+                           f"📏 {html.escape(j['kpi'])}"]
+                    st.markdown(
+                        f'<div class="terr-jugada {j["tono"]}"><div class="cab"><span class="n">{j["n"]}</span>'
+                        f'<span class="tchip {j["tono"]}">{j["icono"]} {html.escape(j["titulo"])}</span>'
+                        f'<span class="valor">{valor}</span></div><h4>{html.escape(j["zona"])}'
+                        f'<small>{html.escape(j["departamento"])}</small></h4><p class="que">{html.escape(j["que"])}</p>'
+                        f'{_pasos_html(j["pasos"])}<div class="pie">' + "".join(f"<span>{x}</span>" for x in pie if x)
+                        + "</div></div>", unsafe_allow_html=True)
+                    nivel = "municipio" if j["estrategia"] == "abrir" else nivel_plan
+                    st.button("🗺️ Ver en el mapa", key=f"terr_jug_{j['n']}", on_click=_ver_en_mapa,
+                              args=(j["clave_zona"], nivel))
+
+    # 2) Todas las zonas con su estrategia.
+    with pestañas[1]:
+        zonas = pl["zonas"]
+        cuenta = zonas["estrategia"].value_counts()
+        tarjetas = "".join(
+            f'<div class="terr-estr {e["tono"]}"><span>{e["icono"]} {e["titulo"]}</span><b>{int(cuenta.get(k, 0))}</b>'
+            f'<small>{html.escape(e["que"])}</small></div>' for k, e in P.ESTRATEGIAS.items()
+            if k != "abrir" and cuenta.get(k, 0))
+        st.markdown(f'<div class="terr-estrs">{tarjetas}</div>', unsafe_allow_html=True)
+        opciones = [k for k in P.ESTRATEGIAS if k != "abrir" and cuenta.get(k, 0)]
+        elegidas = st.multiselect("Ver estrategias", opciones, default=[o for o in opciones if o != "sostener"],
+                                  format_func=lambda k: f"{P.ESTRATEGIAS[k]['icono']} {P.ESTRATEGIAS[k]['titulo']}",
+                                  key="territorial_plan_estr")
+        vista = zonas[zonas["estrategia"].isin(elegidas)].copy()
+        vista["_orden"] = vista["estrategia"].map(lambda e: P.ESTRATEGIAS[e]["orden"])
+        vista = vista.sort_values(["_orden", "valor_mes"], ascending=[True, False])
+        tabla = pd.DataFrame({
+            "Estrategia": vista["estrategia"].map(lambda e: f"{P.ESTRATEGIAS[e]['icono']} {P.ESTRATEGIAS[e]['titulo']}"),
+            "Zona": vista["nombre"], "Departamento": vista.get("departamento", ""),
+            "Ritmo al mes": vista["ritmo"].round(0), "Meta al mes": vista["meta_mes"].round(0),
+            "Vale al mes": vista["valor_mes"].round(0), "Responsable": vista["responsable"],
+            "Plazo": vista["plazo"], "Primer paso": vista["pasos"].map(lambda x: x[0].replace("**", "") if x else ""),
+        })
+        st.dataframe(tabla, hide_index=True, use_container_width=True, height=min(520, 40 + 35 * len(tabla)),
+                     column_config={c: st.column_config.NumberColumn(format="localized")
+                                    for c in ("Ritmo al mes", "Meta al mes", "Vale al mes")}
+                     | {"Primer paso": st.column_config.TextColumn(width="large")})
+
+    # 3) Agentes comerciales.
+    with pestañas[2]:
+        _plan_agentes(pl)
+
+    # 4) Dónde abrir.
+    with pestañas[3]:
+        ap = pl["aperturas"]
+        if ap is None or ap.empty:
+            st.info("No hay municipios grandes sin presencia en los departamentos donde operas"
+                    if pl["nivel"] == "municipio" else "«Dónde abrir» necesita ubicación por municipio.")
+        else:
+            st.caption(f"Municipios de 20.000+ habitantes sin presencia, en los departamentos donde ya operas. Potencial = la "
+                       f"mitad de la penetración típica de tu red ({T.cifra(pl['tipica'])} por cada 10.000 habitantes al mes). "
+                       "El modelo de entrada depende de la distancia a tu zona activa más cercana.")
+            for fila in range(0, min(len(ap), 6), 3):
+                columnas = st.columns(3, gap="small")
+                for col, (_, r) in zip(columnas, ap.iloc[fila:fila + 3].iterrows()):
+                    with col:
+                        st.markdown(
+                            f'<div class="terr-jugada oport"><div class="cab"><span class="tchip oport">🎯 Abrir</span>'
+                            f'<span class="valor">≈ <b>{T.cifra(r["potencial_mes"])}</b> al mes</span></div>'
+                            f'<h4>{html.escape(str(r["municipio"]))}<small>{html.escape(str(r["departamento"]))}</small></h4>'
+                            f'{_pasos_html(r["pasos"])}</div>', unsafe_allow_html=True)
+            tabla = pd.DataFrame({
+                "Municipio": ap["municipio"], "Departamento": ap["departamento"], "Población": ap["poblacion"],
+                "Urbana": ap["poblacion_cabecera"], "Crec. 2030": ap["crecimiento_2030"] * 100,
+                "Atender desde": ap["base"], "Km": ap["distancia_km"].round(0),
+                "Agente sugerido": ap["agente_sugerido"], "Potencial al mes": ap["potencial_mes"].round(0),
+                "Modelo de entrada": ap["modelo"]})
+            st.dataframe(tabla, hide_index=True, use_container_width=True, column_config={
+                "Población": st.column_config.NumberColumn(format="localized"),
+                "Urbana": st.column_config.NumberColumn(format="localized"),
+                "Crec. 2030": st.column_config.NumberColumn(format="%+.1f%%"),
+                "Potencial al mes": st.column_config.NumberColumn(format="localized"),
+                "Modelo de entrada": st.column_config.TextColumn(width="large")})
+
+
+def _plan_agentes(pl: dict) -> None:
+    agentes = pl["agentes"]
+    if not agentes:
+        st.info("Para el plan por agente, el archivo necesita una columna de asesor, vendedor, agente, ejecutivo o "
+                "promotor. Con ella, cada uno recibe su ruta, sus clientes perdidos, su meta y su estrategia.")
+        return
+    n = len(agentes)
+    perfiles = pd.Series([a["perfil"] for a in agentes]).value_counts()
+    st.markdown('<div class="terr-estrs">' + "".join(
+        f'<div class="terr-estr {P.PERFILES[k]["tono"]}"><span>{P.PERFILES[k]["icono"]} {P.PERFILES[k]["titulo"]}</span>'
+        f'<b>{int(perfiles.get(k, 0))}</b><small>de {n} agentes</small></div>'
+        for k in ("caida", "desarrollo", "solido", "referente")) + "</div>", unsafe_allow_html=True)
+    tabla = pd.DataFrame({
+        "#": [a["posicion"] for a in agentes], "Agente": [a["nombre"] for a in agentes],
+        "Perfil": [f"{a['perfil_icono']} {a['perfil_titulo']}" for a in agentes],
+        "Ritmo al mes": [round(a["ritmo"]) for a in agentes],
+        "Variación": [None if a["var"] is None else a["var"] * 100 for a in agentes],
+        f"vs mediana de {n}": [None if a["vs_mediana"] is None else a["vs_mediana"] * 100 for a in agentes],
+        "Meta sugerida": [round(a["meta"]) for a in agentes], "Zonas": [a["zonas"] for a in agentes],
+        "Dónde perdió": [", ".join(p["zona"] for p in a["perdio"]) for a in agentes],
+    })
+    st.dataframe(tabla, hide_index=True, use_container_width=True, height=min(420, 40 + 35 * n), column_config={
+        "Ritmo al mes": st.column_config.NumberColumn(format="localized"),
+        "Meta sugerida": st.column_config.NumberColumn(format="localized"),
+        "Variación": st.column_config.NumberColumn(format="%+.0f%%"),
+        f"vs mediana de {n}": st.column_config.NumberColumn(format="%+.0f%%")})
+    nombres = [a["nombre"] for a in agentes]
+    # Por defecto, el que más cae: es la conversación más urgente.
+    orden = sorted(agentes, key=lambda a: (a["perfil"] != "caida", a["delta"]))
+    if st.session_state.get("territorial_plan_agente") not in nombres:
+        st.session_state["territorial_plan_agente"] = orden[0]["nombre"]
+    elegido = st.selectbox("Plan del agente", nombres, key="territorial_plan_agente")
+    a = next(x for x in agentes if x["nombre"] == elegido)
+    datos = [("Ritmo al mes", T.cifra(a["ritmo"])), ("Posición", f"{a['posicion']}.º de {n}"),
+             ("Vs mes anterior", "—" if a["var"] is None else f"{a['var']:+.0%}"),
+             (f"Vs mediana de {n}", "—" if a["vs_mediana"] is None else f"{a['vs_mediana']:+.0%}"),
+             ("Meta sugerida", T.cifra(a["meta"])), ("Zonas", str(a["zonas"]))]
+    bloques = []
+    if a["perdio"] or a["gano"]:
+        bloques.append("<div><h5>Dónde se movió</h5>" + "".join(
+            f'<p class="mov bajo">▼ <b>{html.escape(x["zona"])}</b> {T.cifra_signo(x["delta"])}</p>' for x in a["perdio"])
+            + "".join(f'<p class="mov subio">▲ <b>{html.escape(x["zona"])}</b> {T.cifra_signo(x["delta"])}</p>' for x in a["gano"])
+            + "</div>")
+    if a["cuentas_perdidas"]:
+        bloques.append("<div><h5>Clientes que dejaron de comprar</h5>" + "".join(
+            f'<p>• <b>{html.escape(c["nombre"])}</b> (compraba {T.cifra(c["antes"])})</p>' for c in a["cuentas_perdidas"])
+            + "</div>")
+    if a["ruta"]:
+        bloques.append("<div><h5>Ruta sugerida</h5>" + "".join(
+            f'<p>{k}. {P.ESTRATEGIAS[r["estrategia"]]["icono"]} <b>{html.escape(r["zona"])}</b>'
+            + (f' · vale ≈ {T.cifra(r["valor"])}' if r["valor"] else "") + "</p>" for k, r in enumerate(a["ruta"], start=1))
+            + "</div>")
+    st.markdown(
+        f'<div class="terr-agente {a["perfil_tono"]}"><div class="cab"><div><span class="tchip {a["perfil_tono"]}">'
+        f'{a["perfil_icono"]} {a["perfil_titulo"]}</span><h4>{html.escape(a["nombre"])}</h4>'
+        f'<small>{"Principales zonas: " + html.escape(", ".join(a["principales"])) if a["principales"] else ""}</small></div>'
+        f'{_sparkline(a["historia"], ancho=220, alto=54) if len(a["historia"]) >= 2 else ""}</div>'
+        '<div class="terr-mini seis">' + "".join(f"<div><span>{html.escape(x)}</span><b>{html.escape(y)}</b></div>" for x, y in datos)
+        + f'</div><div class="bloques">{"".join(bloques)}</div><h5>Estrategia</h5>{_pasos_html(a["estrategia"])}</div>',
+        unsafe_allow_html=True)
 
 
 def _ranking(z: dict, metrica_label: str):
@@ -1648,6 +1899,21 @@ def render_territorial_page():
     _leer_clic(nivel_mpio)
     seleccion = st.session_state.get("territorial_zona_sel")
 
+    # 🎯 El plan: siempre por municipio si se puede (también con coordenadas,
+    # que se asignan al municipio más cercano), si no por departamento.
+    if nivel_mpio == "municipio":
+        z_plan, nivel_plan = zm, "municipio"
+    elif por_municipio:
+        z_plan, nivel_plan = T.zonas(ub, metrica_calc, calculo, "municipio", fecha_col, periodo, meta_col), "municipio"
+    else:
+        z_plan, nivel_plan = zd, "departamento"
+    # Con coordenadas el mapa va por punto, pero el plan abre municipios: la
+    # tarjeta y la ficha de un municipio elegido desde el plan leen la tabla
+    # por municipio (si no, lo mostraban como «sin actividad»).
+    z_mpio_sel, nivel_sel = zm, nivel_mpio
+    if seleccion and seleccion.get("nivel") == "municipio" and nivel_mpio == "punto":
+        z_mpio_sel, nivel_sel = z_plan, "municipio"
+
     def _dibujar(mes, clave_evento: Optional[str], leyendas_panel: bool = True):
         zm_m, zd_m = (zm, zd) if mes == periodo else _calcular(mes)
         hex_t = T.hexagonos(ub, metrica_calc, calculo, radio_km, fecha_col, mes) if capas_on.get("hex") else pd.DataFrame()
@@ -1718,7 +1984,8 @@ def render_territorial_page():
     # Riel derecho: zona abierta, ir a una zona, Top 10 y alertas.
     with riel, st.container(key="terr_riel"):
         colores_top, _ = _clasificar(z["tabla"], color, paleta, fondo.startswith("Oscuro")) if not z["tabla"].empty else ([], [])
-        _riel(z, colores_top, seleccion, zm, zd, ub, metrica, calculo, fecha_col, crecer, nivel_mpio, dims_neg, etiquetas)
+        _riel(z, colores_top, seleccion, z_mpio_sel, zd, ub, metrica, calculo, fecha_col, crecer, nivel_sel, dims_neg,
+              etiquetas)
 
     def _mapa_para_informe() -> Optional[str]:
         """El mapa como se ve ahora (mismas capas, color, paleta y fondo), en HTML para el informe."""
@@ -1732,18 +1999,25 @@ def render_territorial_page():
         except Exception:
             return None  # sin mapa, el informe sale igual
 
-    _descargas(ub, metrica_calc, calculo, fecha_col, z, zd, dims_neg, etiquetas, crecer, cob, metrica_label,
-               libro["filename"], hoja, filtros, len(df), T.serie_total(ub, metrica_calc, calculo, fecha_col),
-               _mapa_para_informe)
-
     if seleccion:
-        _ficha(ub, seleccion, zd if seleccion["nivel"] == "departamento" else zm, crecer, metrica, metrica_label,
+        _ficha(ub, seleccion, zd if seleccion["nivel"] == "departamento" else z_mpio_sel, crecer, metrica, metrica_label,
                calculo, fecha_col, dims, dims_neg, etiquetas)
+
+    columnas_texto = [c for c in df.columns if c not in set(metricas) | set(schema.get("dates", []))]
+    agente_col = P.columna_agente(df, columnas_texto)
+    cuenta_col = P.columna_cuenta(df, columnas_texto, excluir=(agente_col,))
+    dims_plan = dims_neg + ([agente_col] if agente_col and agente_col not in dims_neg else [])
+    pl = _plan_cacheado(ub, metrica_calc, calculo, fecha_col, z_plan, tuple(dims_plan), etiquetas, agente_col, cuenta_col)
+    _plan_accion(pl, metrica_label, nivel_plan)
 
     # Pocas razones en pantalla (se ven 3 por columna); el informe descargable pide muchas más.
     inf = T.informe(ub, metrica_calc, calculo, fecha_col, z, zd, dims_neg, etiquetas, crecer, cob, metrica_label,
                     max_razones=3, max_deptos=8)
     _tablero_semaforo(inf)
+
+    _descargas(ub, metrica_calc, calculo, fecha_col, z, zd, dims_neg, etiquetas, crecer, cob, metrica_label,
+               libro["filename"], hoja, filtros, len(df), T.serie_total(ub, metrica_calc, calculo, fecha_col),
+               _mapa_para_informe, pl)
 
     izq, der = st.columns([1.4, 1])
     with izq:
