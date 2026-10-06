@@ -86,6 +86,39 @@ def municipios_geojson() -> dict:
 
 
 @lru_cache(maxsize=1)
+def _altitud() -> tuple[np.ndarray, tuple]:
+    """La grilla de altitud (metros) y sus límites (oeste, sur, este, norte).
+    Ver assets/geo/generar_altitud.py: gris de 8 bits, cada nivel = `paso_m`."""
+    from PIL import Image
+    img = Image.open(_RUTA / "altitud_colombia.png")
+    limites = tuple(json.loads(img.info["bounds"]))
+    paso = float(img.info.get("paso_m", 25))
+    return np.asarray(img, dtype=np.float32) * paso, limites
+
+
+def altitudes(lat, lon) -> np.ndarray:
+    """Altitud del terreno en metros de cada punto (0 en el mar o fuera de la
+    grilla). Para poner los datos a su altura real cuando el mapa levanta las
+    montañas: sin esto una columna de Bogotá nacería a nivel del mar, enterrada
+    bajo la cordillera. La grilla está en Mercator (como los cuadros de mapa),
+    así que la fila se calcula con la latitud proyectada, no lineal."""
+    lat = np.asarray(lat, dtype=float)
+    lon = np.asarray(lon, dtype=float)
+    grilla, (oeste, sur, este, norte) = _altitud()
+    alto, ancho = grilla.shape
+
+    def _y(la):
+        return np.log(np.tan(np.pi / 4 + np.radians(np.clip(la, -85, 85)) / 2))
+
+    x = (lon - oeste) / (este - oeste) * ancho
+    y = (_y(norte) - _y(lat)) / (_y(norte) - _y(sur)) * alto
+    dentro = np.isfinite(x) & np.isfinite(y) & (x >= 0) & (x < ancho) & (y >= 0) & (y < alto)
+    salida = np.zeros(np.broadcast(lat, lon).shape, dtype=float)
+    salida[dentro] = grilla[y[dentro].astype(int), x[dentro].astype(int)]
+    return salida
+
+
+@lru_cache(maxsize=1)
 def departamentos() -> pd.DataFrame:
     """Un renglón por departamento: nombre, población y su punto de referencia
     (el centro de su población, que cae sobre sus ciudades y no en la selva)."""
