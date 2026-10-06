@@ -780,9 +780,6 @@ def render_georeferencing(df: pd.DataFrame, schema: dict, workbook: dict | None 
     with c3:
         st.write("")
         en_3d = st.toggle("3D", key="geo_t_3d", help="Levanta cada zona como una columna: altura = volumen.")
-        montanas = st.toggle("🏔️ Montañas", key="geo_t_montanas",
-                             help="Levanta el relieve real de Colombia y pone cada zona a su altitud. Al acercarte a una "
-                                  "ciudad sin esta opción, aparecen los edificios en 3D.")
 
     metrica_label = "Registros" if metrica is None else _label(schema, metrica)
     zm = T.zonas(ub, metrica, calculo, "municipio", fecha_col, None, meta_col) if por_municipio else {"tabla": pd.DataFrame(), "n": 0}
@@ -820,9 +817,6 @@ def render_georeferencing(df: pd.DataFrame, schema: dict, workbook: dict | None 
         capas_on = {"deptos": True, "jugadas": True, "etiquetas": True}
     else:
         capas_on = {"mpios": not en_3d, "columnas": en_3d, "jugadas": True, "rutas": True, "etiquetas": True}
-    # Contexto para cualquier archivo: relieve sombreado y, al acercarse a una
-    # ciudad, los edificios en 3D; o las montañas levantadas si se piden.
-    capas_on.update(relieve=True, edificios=True, montanas=montanas)
     deck, leyendas = M.construir_mapa(capas_on, zm["tabla"], zd["tabla"], pd.DataFrame(), pd.DataFrame(), crecer, color,
                                       "Rojo intenso", "Oscuro" if oscuro else "Claro", 1.0, 8.0, metrica_label, plan=pl)
     etiqueta = (f"Todo el periodo · {T.etiqueta_mes(meses[0], True)} – {T.etiqueta_mes(meses[-1], True)}"

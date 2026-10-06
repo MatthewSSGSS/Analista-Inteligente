@@ -131,16 +131,6 @@ state. A former third route, **Práctico**
 (quick summary + Q&A), was removed as redundant with the main panel's «Pregúntale al Excel» and
 Asistente IA; `app.py` maps any stale `analysis_mode` value to `"completo"`.
 
-### Map context layers (relief, satellite, buildings)
-
-`visualization/mapa_territorial.construir_mapa` adds context for ANY file (it doesn't depend on what is measured):
-shaded relief under the data (default), «🏔️ Montañas 3D» (real terrain ×`exageracion`, every data layer lifted to its
-altitude via `core/territorio.altitudes`, which reads the bundled `assets/geo/altitud_colombia.png`), «Satélite» background
-(hybrid, with place names) and 3D buildings from OpenStreetMap when zoomed into a city (13+). All tiles are free and
-keyless (ESRI, AWS Terrain Tiles, OpenFreeMap) and loaded by the browser. Gotchas: wrap literal strings passed to pydeck
-with `_lit()` (otherwise pydeck turns them into deck.gl expressions — URLs and `character_set="auto"` silently fail);
-flat image layers need `_SIN_LUZ` (`material=False` doesn't disable terrain lighting); see FEATURES.md 6.15.
-
 ### Estructura comercial (several files crossed inside Análisis Completo)
 
 «🧰 Herramientas avanzadas › 🏢 Estructura comercial» takes several uploads (structure, PDVs, goals, daily

@@ -56,124 +56,7 @@ CORTES_META = [0.90, 1.00]
 ESTADO_RGB = {"bajo": (239, 68, 68), "estable": (250, 204, 21), "subio": (34, 197, 94)}
 ESTADO_ICONO = {"bajo": "🔴", "estable": "🟡", "subio": "🟢"}
 MAPAS = {"Oscuro": "CARTO_DARK", "Oscuro sin nombres": "CARTO_DARK_NO_LABELS",
-          "Claro": "CARTO_LIGHT", "Claro sin nombres": "CARTO_LIGHT_NO_LABELS", "Calles": "CARTO_ROAD",
-          # La foto satelital se dibuja como capa (ver `_raster`); debajo, el oscuro.
-          "Satélite": "CARTO_DARK_NO_LABELS"}
-
-# ── Relieve, satélite y edificios ─────────────────────────────────────────
-# Capas de CONTEXTO: sirven para cualquier archivo (ventas, personal,
-# inventario…), porque no dependen de qué se mide sino de dónde. Todas son
-# gratuitas y sin clave; las baja el navegador por cuadros, así que se ven
-# nítidas a cualquier zoom (igual que el fondo del mapa, necesitan internet).
-# - Relieve sombreado y satélite: ESRI World Hillshade / World Imagery.
-# - Altura del terreno: Terrain Tiles de AWS (formato terrarium, de SRTM).
-# - Edificios: OpenStreetMap servido por OpenFreeMap, con su altura real
-#   (`render_height`) cuando OSM la tiene; si no, una casa de 8 m.
-SOMBRA_URL = {True: "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}",
-              False: "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"}
-SATELITE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-_ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/{}/MapServer/tile/{{z}}/{{y}}/{{x}}"
-# Con relieve, el mapa base se dibuja aquí (y no lo pone el visor) para poder
-# MULTIPLICARLE las sombras: (base, nombres) según el fondo elegido. Los de
-# CARTO no sirven por cuadros: sin clave salen con una marca de agua.
-BASE_RELIEVE = {
-    "Oscuro": (_ESRI.format("Canvas/World_Dark_Gray_Base"), _ESRI.format("Canvas/World_Dark_Gray_Reference")),
-    "Oscuro sin nombres": (_ESRI.format("Canvas/World_Dark_Gray_Base"), None),
-    "Claro": (_ESRI.format("Canvas/World_Light_Gray_Base"), _ESRI.format("Canvas/World_Light_Gray_Reference")),
-    "Claro sin nombres": (_ESRI.format("Canvas/World_Light_Gray_Base"), None),
-    "Calles": (_ESRI.format("World_Street_Map"), None),  # trae sus nombres pegados
-}
-NOMBRES_SATELITE = _ESRI.format("Reference/World_Boundaries_and_Places")
-ALTURA_URL = "https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png"
-EDIFICIOS_URL = "https://tiles.openfreemap.org/planet"
-# Cuánto se exageran las montañas en «Montañas 3D»: a escala real (×1) la
-# cordillera casi no se nota vista desde el país entero.
-EXAGERACION = 3.0
-# Los datos van un poco por encima del terreno para no «parpadear» con él.
-_SOBRE_TERRENO_M = 250
-
-
-def fondo_oscuro(fondo: str) -> bool:
-    """Si el fondo es oscuro (los colores y la ficha se ajustan a eso). La foto satelital cuenta como oscura."""
-    return fondo.startswith("Oscuro") or fondo == "Satélite"
-
-
-def _lit(texto: str) -> str:
-    """Un texto que pydeck debe pasar tal cual. Sin comillas, pydeck convierte
-    cualquier texto en una fórmula de deck.gl: una URL o la palabra «auto»
-    terminaban evaluadas como código (y fallaban sin avisar)."""
-    return f"'{texto}'"
-
-
-# Una imagen plana se muestra con sus colores tal cual: luz ambiente plena y
-# sin luz direccional. `material=False` NO apaga la luz de la capa de terreno
-# (medido: la imagen salía al 65 % de su brillo y el mapa entero, gris).
-_SIN_LUZ = {"ambient": 1.0, "diffuse": 0.0, "shininess": 0, "specularColor": [0, 0, 0]}
-# Mezcla «multiplicar»: el color de abajo × el de la capa. Con el relieve
-# sombreado (blanco en lo plano) solo oscurece las laderas en sombra, sin
-# lavar el mapa ni el mar como hace la transparencia.
-_MULTIPLICAR = {"blend": True, "blendColorOperation": "add", "blendColorSrcFactor": "dst",
-                "blendColorDstFactor": "zero", "blendAlphaOperation": "add", "blendAlphaSrcFactor": "zero",
-                "blendAlphaDstFactor": "one"}
-
-
-def _raster(pdk, id_capa: str, url: str, opacidad: float = 1.0, k: float = 0.0, nivel: float = -80,
-            mezcla: Optional[dict] = None):
-    """Una capa de cuadros de imagen (satélite, relieve sombreado), con o sin montañas.
-
-    Se usa la capa de terreno de deck.gl porque es la única de imágenes por
-    cuadros que se puede describir sin escribir código JavaScript (la de
-    cuadros normal pide una función para dibujar cada uno). Con `k = 0` el
-    terreno es plano (un poco por debajo del suelo, para no tapar los datos):
-    queda una imagen nítida a cualquier zoom. Con `k > 0` se levanta con la
-    altura real del terreno, exagerada `k` veces, y la imagen lo cubre (ahí sí
-    con luz: es la que da volumen a las laderas). Varias imágenes planas se
-    apilan con `nivel` distinto (más alto = encima) y `mezcla` (ver `_MULTIPLICAR`)."""
-    if k:
-        decodificador = {"rScaler": 256 * k, "gScaler": k, "bScaler": k / 256, "offset": -32768 * k}
-        return pdk.Layer("TerrainLayer", id=id_capa, elevation_data=_lit(ALTURA_URL), texture=_lit(url),
-                         elevation_decoder=decodificador, max_zoom=14, mesh_max_error=4, opacity=opacidad,
-                         pickable=False)
-    decodificador = {"rScaler": 0, "gScaler": 0, "bScaler": 0, "offset": nivel}
-    return pdk.Layer("TerrainLayer", id=id_capa, elevation_data=_lit(url), texture=_lit(url),
-                     elevation_decoder=decodificador, max_zoom=17, mesh_max_error=40, opacity=opacidad,
-                     material=_SIN_LUZ, parameters=mezcla, pickable=False)
-
-
-_DRAPEADOS: dict = {}
-
-
-def _drapear(geom: dict, k: float, alza: float = _SOBRE_TERRENO_M) -> dict:
-    """La geometría con la altura del terreno en cada vértice, para que un
-    municipio o un contorno se «pegue» a las montañas en vez de quedar en el
-    suelo, enterrado bajo la cordillera."""
-    def _anillo(anillo):
-        a = np.asarray(anillo, dtype=float)[:, :2]
-        z = T.altitudes(a[:, 1], a[:, 0]) * k + alza
-        return np.column_stack([a, z]).round(5).tolist()
-    if geom["type"] == "Polygon":
-        return {"type": "Polygon", "coordinates": [_anillo(r) for r in geom["coordinates"]]}
-    if geom["type"] == "MultiPolygon":
-        return {"type": "MultiPolygon", "coordinates": [[_anillo(r) for r in p] for p in geom["coordinates"]]}
-    return geom
-
-
-def _geojson_drapeado(nombre: str, k: float) -> list:
-    """Las geometrías de `T.municipios_geojson()` o `T.departamentos_geojson()`
-    ya pegadas al relieve, en el mismo orden. Se calculan una vez por exageración."""
-    llave = (nombre, round(k, 2))
-    if llave not in _DRAPEADOS:
-        fuente = T.municipios_geojson() if nombre == "municipios" else T.departamentos_geojson()
-        _DRAPEADOS[llave] = [_drapear(f["geometry"], k) for f in fuente["features"]]
-    return _DRAPEADOS[llave]
-
-
-# Sobre las montañas, una capa plana se dibuja SIEMPRE encima (no la tapa una
-# ladera): con los vértices ya a la altura del terreno, queda pegada a él.
-_ENCIMA = {"depthCompare": "always"}
-# Material de las columnas: con luz y reflejo se leen como cilindros, no como
-# rectángulos planos de color.
-_BRILLO = {"ambient": 0.45, "diffuse": 0.6, "shininess": 72, "specularColor": [255, 255, 255]}
+          "Claro": "CARTO_LIGHT", "Claro sin nombres": "CARTO_LIGHT_NO_LABELS", "Calles": "CARTO_ROAD"}
 COLORES = {"variacion": "🚦 Semáforo: subió · estable · bajó", "meta": "🚦 Semáforo de meta",
             "volumen": "Volumen", "penetracion": "Penetración por habitante"}
 
@@ -390,6 +273,12 @@ VACIO = {"valor_txt": "Sin actividad", "pos_txt": "", "part_txt": "", "cump_txt"
           "pen_txt": "", "unidad": "", "hint": HINT, **SIN_CHIP, **SIN_PLAN}
 
 
+def sin_tildes(texto) -> str:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(texto))
+    return "".join(ch for ch in t if not unicodedata.combining(ch) and ord(ch) < 128)
+
+
 def feature(geom, props) -> dict:
     # Los campos también arriba: el tooltip de deck.gl lee el objeto elegido,
     # que en un GeoJSON es el feature, no sus propiedades.
@@ -429,7 +318,7 @@ def etiquetas_sin_choque(tabla: pd.DataFrame, maximo: int = 10) -> pd.DataFrame:
 def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd.DataFrame, puntos: pd.DataFrame,
                     crecer: dict, color: str, paleta: str, fondo: str, escala: float, radio_km: float, unidad: str,
                     seleccion: Optional[dict] = None, inclinada: bool = False, ligero: bool = False,
-                    plan: Optional[dict] = None, exageracion: float = EXAGERACION, rumbo: Optional[float] = None):
+                    plan: Optional[dict] = None):
     """El objeto pydeck y las leyendas de cada capa activa.
 
     `seleccion` = la zona abierta en la ficha: se resalta con un borde neón y
@@ -437,53 +326,11 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
     `ligero` = para el informe HTML: sin los municipios que no tienen dato
     (con todos, el archivo pasa de ~1 a ~5 MB). `plan` = `core/territorio_plan.plan`:
     su estrategia va en la ficha flotante de cada zona y sus jugadas y
-    aperturas se dibujan como pines numerados y arcos de expansión.
-
-    Contexto (cualquier archivo): `capas_on["relieve"]` sombrea las montañas
-    debajo de los datos; `capas_on["montanas"]` las levanta en 3D (exageradas
-    `exageracion` veces) y sube cada dato a su altitud; `capas_on["edificios"]`
-    muestra los edificios en 3D al acercarse a una ciudad (zoom 13+). El fondo
-    «Satélite» pone la foto satelital. `rumbo` = hacia dónde mira la cámara al
-    volar a la zona elegida (el modo presentación lo va girando)."""
+    aperturas se dibujan como pines numerados y arcos de expansión."""
     import pydeck as pdk
-    oscuro = fondo_oscuro(fondo)
+    oscuro = fondo.startswith("Oscuro")
     capas, leyendas = [], {}
     mpios = T.municipios()
-    # Montañas 3D: cada dato se sube a la altitud de su lugar (×exageración).
-    montanas = bool(capas_on.get("montanas"))
-    relieve_x = float(exageracion) if montanas else 0.0
-
-    def suelo(lat, lon) -> np.ndarray:
-        """Altura del suelo bajo cada dato: 0 en el mapa plano; la del terreno con montañas."""
-        if not montanas:
-            return np.zeros(len(np.atleast_1d(lat)))
-        return T.altitudes(lat, lon) * relieve_x + _SOBRE_TERRENO_M
-
-    def geometrias(nombre: str) -> list:
-        fuente = T.municipios_geojson() if nombre == "municipios" else T.departamentos_geojson()
-        return _geojson_drapeado(nombre, relieve_x) if montanas else [f["geometry"] for f in fuente["features"]]
-
-    encima = _ENCIMA if montanas else None
-
-    # 0) Fondo: foto satelital, relieve (plano sombreado o montañas en 3D).
-    satelite = fondo == "Satélite"
-    if montanas:
-        capas.append(_raster(pdk, "montanas", SATELITE_URL if satelite else SOMBRA_URL[oscuro], 1.0, relieve_x))
-    elif satelite:
-        # Híbrido: la foto con los nombres de lugares encima. Ya trae sus
-        # sombras: ponerle además el relieve la ensuciaría.
-        capas.append(_raster(pdk, "satelite", SATELITE_URL, nivel=-120))
-        capas.append(_raster(pdk, "satelite_nombres", NOMBRES_SATELITE, nivel=-60))
-    elif capas_on.get("relieve"):
-        # Mapa base + sombras multiplicadas + nombres encima. Las sombras se
-        # aplican 3 veces sobre fondo oscuro (si no, casi no se notan) y 2 sobre claro.
-        base, nombres = BASE_RELIEVE.get(fondo, BASE_RELIEVE["Oscuro" if oscuro else "Claro"])
-        capas.append(_raster(pdk, "relieve_base", base, nivel=-140))
-        for i in range(3 if oscuro else 2):
-            capas.append(_raster(pdk, f"relieve{'' if i == 0 else i + 1}", SOMBRA_URL[False], nivel=-120 + 10 * i,
-                                 mezcla=_MULTIPLICAR))
-        if nombres:
-            capas.append(_raster(pdk, "relieve_nombres", nombres, nivel=-60))
     # Bordes finos y claros entre municipios con dato; los que no tienen
     # dato casi desaparecen (antes, 1.122 contornos de color armaban una
     # malla que tapaba el mapa).
@@ -509,30 +356,24 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         cortes = cortes_quintiles(np.log10(dens.clip(lower=0.1)))
         rampa = PIZARRA[0] if oscuro else PIZARRA[1]
         feats = []
-        for f, geom in zip(T.municipios_geojson()["features"], geometrias("municipios")):
+        for f in T.municipios_geojson()["features"]:
             i = f["properties"]["idx"]
             if i < 0:
                 continue
             d = dens.iloc[i]
             c = clase(np.log10(max(d, 0.1)) if np.isfinite(d) else np.nan, cortes)
             r = mpios.iloc[i]
-            feats.append(feature(geom, {
+            feats.append(feature(f["geometry"], {
                 "color": list(rampa[c]) + [200] if c >= 0 else sin_dato, "nombre": r["municipio"],
                 "departamento": r["departamento"], "zona": str(i), "nivel": "municipio",
                 **VACIO, "valor_txt": f"{T.cifra(r['poblacion'])} hab.", "pob_txt": f"{d:,.0f} hab/km²" if np.isfinite(d) else "",
                 "unidad": "", "hint": ""}))
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="poblacion",
                                filled=True, stroked=True, get_fill_color="properties.color", get_line_color=linea_vacia,
-                               line_width_min_pixels=0.3, pickable=not capas_on.get("mpios"), parameters=encima))
+                               line_width_min_pixels=0.3, pickable=not capas_on.get("mpios")))
         limites = [10 ** x for x in ([np.log10(max(dens.min(), 0.1))] + cortes + [np.log10(dens.max())])]
         leyendas["poblacion"] = [(rampa[i], f"{T.cifra(limites[i])} – {T.cifra(limites[i + 1])} hab/km²")
                                  for i in range(len(cortes) + 1)][::-1]
-
-    # Con relieve, satélite o edificios debajo, el color de las zonas se deja
-    # ver a través: de lejos se transparenta la cordillera y de cerca se ven
-    # las calles y los edificios (opaco, una ciudad entera quedaba de un solo
-    # color). deck.gl no deja cambiar la transparencia según el zoom.
-    alfa_zona = 185 if (capas_on.get("relieve") or capas_on.get("edificios") or satelite or montanas) else 235
 
     # 2) Municipios coloreados (y levantados en 3D si se pide).
     if capas_on.get("mpios") and not zm.empty and "cod_mpio" in zm.columns:
@@ -541,30 +382,28 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         tope = float(t["valor"].clip(lower=0).max()) or 1.0
         por_idx = {int(z): (r, c) for z, r, c in zip(t["zona"], t.itertuples(), colores)}
         feats = []
-        for f, geom in zip(T.municipios_geojson()["features"], geometrias("municipios")):
+        for f in T.municipios_geojson()["features"]:
             i = f["properties"]["idx"]
             dato = por_idx.get(i)
             if dato is None:
                 if not capas_on.get("poblacion") and not ligero:
                     r = mpios.iloc[i] if i >= 0 else None
-                    feats.append(feature(geom, {
+                    feats.append(feature(f["geometry"], {
                         "color": sin_dato, "linea": linea_vacia, "altura": 0, "nombre": r["municipio"] if r is not None else "",
                         "departamento": r["departamento"] if r is not None else "", "zona": str(i), "nivel": "municipio",
                         **VACIO, "pob_txt": f"{T.cifra(r['poblacion'])} habitantes" if r is not None else "",
                         **(plan_mpio or {}).get(str(i), SIN_PLAN)}))
                 continue
             r, c = dato
-            feats.append(feature(geom, {
-                "color": list(c) + [alfa_zona] if c else sin_dato, "linea": linea, "altura": max(r.valor, 0) / tope * 260_000 * escala,
+            feats.append(feature(f["geometry"], {
+                "color": list(c) + [235] if c else sin_dato, "linea": linea, "altura": max(r.valor, 0) / tope * 260_000 * escala,
                 "nombre": r.nombre, "departamento": r.departamento, "zona": str(i), "nivel": "municipio", **campos(r)}))
-        # Sobre las montañas no se levantan: el relieve ya es el 3D y un bloque
-        # levantado desde una ladera quedaría a medio enterrar.
-        en3d = bool(capas_on.get("mpios3d")) and not montanas
+        en3d = bool(capas_on.get("mpios3d"))
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="mpios",
                                filled=True, stroked=True, extruded=en3d, wireframe=False,
                                get_elevation="properties.altura", get_fill_color="properties.color",
                                get_line_color="properties.linea", line_width_min_pixels=0.6, pickable=True, auto_highlight=True,
-                               highlight_color=[94, 224, 212, 220], parameters=encima))
+                               highlight_color=[94, 224, 212, 220]))
         vistas_lat += list(t["lat"]); vistas_lon += list(t["lon"])
         inclinacion = max(inclinacion, 50 if en3d else 0)
 
@@ -575,7 +414,7 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         tope = float(t["valor"].clip(lower=0).max()) or 1.0
         por_cod = {str(z): (r, c) for z, r, c in zip(t["zona"], t.itertuples(), colores)}
         feats = []
-        for f, geom in zip(T.departamentos_geojson()["features"], geometrias("departamentos")):
+        for f in T.departamentos_geojson()["features"]:
             cod = f["properties"]["cod_dpto"]
             dato = por_cod.get(cod)
             base = {"nombre": f["properties"]["departamento"], "departamento": "Departamento", "zona": cod, "nivel": "departamento"}
@@ -585,42 +424,22 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
                             **campos(r))
             else:
                 base.update(altura=0, color=sin_dato, **VACIO)
-            feats.append(feature(geom, base))
-        # Con montañas, el departamento se pinta sobre el relieve en vez de
-        # levantarse como un bloque (que taparía la cordillera entera).
+            feats.append(feature(f["geometry"], base))
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="deptos",
-                               extruded=not montanas, wireframe=False, get_elevation="properties.altura",
+                               extruded=True, wireframe=False, get_elevation="properties.altura",
                                get_fill_color="properties.color", get_line_color=linea, line_width_min_pixels=1,
-                               pickable=True, auto_highlight=True, highlight_color=[94, 224, 212, 200],
-                               parameters=encima))
+                               pickable=True, auto_highlight=True, highlight_color=[94, 224, 212, 200]))
         vistas_lat += list(t["lat"]); vistas_lon += list(t["lon"])
         inclinacion = max(inclinacion, 48)
     else:
         # Contornos de departamento siempre, con brillo: una línea ancha y
-        # transparente debajo de una fina y nítida. Con montañas, siguen el relieve.
-        contornos = {"type": "FeatureCollection", "features": [
-            {"type": "Feature", "geometry": g, "properties": {}} for g in geometrias("departamentos")]}
-        capas.append(pdk.Layer("GeoJsonLayer", data=contornos, id="contornos_brillo", stroked=True,
+        # transparente debajo de una fina y nítida.
+        capas.append(pdk.Layer("GeoJsonLayer", data=T.departamentos_geojson(), id="contornos_brillo", stroked=True,
                                filled=False, get_line_color=linea[:3] + [40 if oscuro else 30],
-                               line_width_min_pixels=6, pickable=False, parameters=encima))
-        capas.append(pdk.Layer("GeoJsonLayer", data=contornos, id="contornos", stroked=True,
+                               line_width_min_pixels=6, pickable=False))
+        capas.append(pdk.Layer("GeoJsonLayer", data=T.departamentos_geojson(), id="contornos", stroked=True,
                                filled=False, get_line_color=([140, 255, 240, 200] if oscuro else [15, 110, 105, 170]),
-                               line_width_min_pixels=1.1, pickable=False, parameters=encima))
-
-    # 3b) Edificios 3D al acercarse a una ciudad. Solo cargan desde el zoom 13
-    # (un barrio): a la escala del país no se verían y serían millones. Con
-    # montañas no: los edificios no saben la altitud y quedarían enterrados.
-    if capas_on.get("edificios") and not montanas:
-        capas.append(pdk.Layer(
-            "MVTLayer", data=EDIFICIOS_URL, id="edificios", load_options={"mvt": {"layers": ["building"]}},
-            min_zoom=13, max_zoom=14, extruded=True, get_elevation="properties.render_height || 8",
-            # Más claros cuanto más altos, para que las torres se lean como torres.
-            get_fill_color=("properties.render_height > 60 ? [196, 205, 228, 245] : properties.render_height > 20 "
-                            "? [150, 162, 192, 240] : [104, 116, 146, 235]") if oscuro else
-                           ("properties.render_height > 60 ? [148, 163, 184, 245] : properties.render_height > 20 "
-                            "? [190, 200, 214, 240] : [222, 227, 235, 235]"),
-            material={"ambient": 0.4, "diffuse": 0.65, "shininess": 24, "specularColor": [190, 205, 235]},
-            pickable=False))
+                               line_width_min_pixels=1.1, pickable=False))
 
     # 4) Columnas 3D por municipio.
     if capas_on.get("columnas") and not zm.empty:
@@ -636,17 +455,15 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         cols = ["lon", "lat", "altura", "color", "zona", "nombre", "departamento", *CAMPOS_TT]
         datos_col = t[cols].copy()
         datos_col["nivel"] = "municipio"
-        datos_col["suelo"] = suelo(datos_col["lat"], datos_col["lon"])
         # Un disco ancho y bajo debajo de cada columna: marca dónde está aunque
         # la columna sea baja, y da el brillo de «base» de los mapas tipo kepler.
-        capas.append(pdk.Layer("ScatterplotLayer", data=datos_col[["lon", "lat", "suelo", "color"]], id="zonas_base",
-                               get_position=["lon", "lat", "suelo"], get_radius=14_000, radius_min_pixels=4,
+        capas.append(pdk.Layer("ScatterplotLayer", data=datos_col[["lon", "lat", "color"]], id="zonas_base",
+                               get_position=["lon", "lat"], get_radius=14_000, radius_min_pixels=4,
                                get_fill_color="color", opacity=0.22, pickable=False))
-        # Cilindros lisos con brillo: la luz da volumen y se lee el redondeo.
-        capas.append(pdk.Layer("ColumnLayer", data=datos_col, id="zonas", get_position=["lon", "lat", "suelo"],
-                               get_elevation="altura", elevation_scale=1, radius=10_000, disk_resolution=32,
-                               extruded=True, coverage=0.92, get_fill_color="color", pickable=True, auto_highlight=True,
-                               highlight_color=[255, 255, 255, 230], material=_BRILLO))
+        capas.append(pdk.Layer("ColumnLayer", data=datos_col, id="zonas", get_position=["lon", "lat"], get_elevation="altura",
+                               elevation_scale=1, radius=10_000, disk_resolution=24, extruded=True, coverage=0.92,
+                               get_fill_color="color", pickable=True, auto_highlight=True,
+                               highlight_color=[255, 255, 255, 230]))
         vistas_lat += list(t["lat"]); vistas_lon += list(t["lon"])
         inclinacion = max(inclinacion, 52)
 
@@ -657,18 +474,16 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         tope = float(t["valor"].clip(lower=0).max()) or 1.0
         t["altura"] = t["valor"].clip(lower=0) / tope * 300_000 * escala
         t["color"] = [list(c) + [240] if c else sin_dato for c in colores]
-        t = t[["lon", "lat", "altura", "color", "zona", "nombre", "departamento", *CAMPOS_TT]].copy()
-        t["suelo"] = suelo(t["lat"], t["lon"])
-        capas.append(pdk.Layer("ColumnLayer", data=t, id="hexagonos", get_position=["lon", "lat", "suelo"],
-                               get_elevation="altura", elevation_scale=1, radius=radio_km * 1000 * 0.94, disk_resolution=6,
-                               angle=90, extruded=True, get_fill_color="color", pickable=True, auto_highlight=True,
-                               highlight_color=[94, 224, 212, 255], material=_BRILLO))
+        t = t[["lon", "lat", "altura", "color", "zona", "nombre", "departamento", *CAMPOS_TT]]
+        capas.append(pdk.Layer("ColumnLayer", data=t, id="hexagonos", get_position=["lon", "lat"], get_elevation="altura",
+                               elevation_scale=1, radius=radio_km * 1000 * 0.94, disk_resolution=6, angle=90,
+                               extruded=True, get_fill_color="color", pickable=True, auto_highlight=True,
+                               highlight_color=[94, 224, 212, 255]))
         vistas_lat += list(t["lat"]); vistas_lon += list(t["lon"])
         inclinacion = max(inclinacion, 50)
 
-    # 6) Mapa de calor. Se pinta sobre el suelo plano: con montañas quedaría
-    # debajo de la cordillera, así que ahí no se dibuja (la consola lo avisa).
-    if capas_on.get("calor") and not montanas:
+    # 6) Mapa de calor.
+    if capas_on.get("calor"):
         base = puntos if not puntos.empty else (zm.rename(columns={"valor": "w"})[["lat", "lon", "w"]] if not zm.empty else pd.DataFrame())
         if not base.empty:
             rampa = rampa_de(paleta, True)
@@ -685,8 +500,7 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         rampa = rampa_de(paleta, oscuro)
         p["r"] = 300 + np.sqrt(p["w"].clip(lower=0) / tope) * 6000
         p["color"] = [list(rampa[min(4, int(math.sqrt(max(w, 0) / tope) * 5))]) + [220] for w in p["w"]]
-        p["suelo"] = suelo(p["lat"], p["lon"])
-        capas.append(pdk.Layer("ScatterplotLayer", data=p, id="puntos", get_position=["lon", "lat", "suelo"], get_radius="r",
+        capas.append(pdk.Layer("ScatterplotLayer", data=p, id="puntos", get_position=["lon", "lat"], get_radius="r",
                                get_fill_color="color", radius_min_pixels=2, radius_max_pixels=30, opacity=0.9,
                                stroked=True, get_line_color=[255, 255, 255, 90] if oscuro else [0, 0, 0, 60],
                                line_width_min_pixels=0.5))
@@ -697,11 +511,11 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
     if capas_on.get("blancos") and blancos is not None and len(blancos):
         codigos = {c: r for c, r in zip(blancos["cod_mpio"], blancos.itertuples())}
         feats = []
-        for f, geom in zip(T.municipios_geojson()["features"], geometrias("municipios")):
+        for f in T.municipios_geojson()["features"]:
             r = codigos.get(f["properties"]["cod_mpio"])
             if r is None:
                 continue
-            feats.append(feature(geom, {
+            feats.append(feature(f["geometry"], {
                 "nombre": r.municipio, "departamento": f"{r.departamento} · sin presencia", "zona": str(f["properties"]["idx"]),
                 "nivel": "blanco", **VACIO, "valor_txt": f"Potencial {T.cifra(r.potencial)}", "pos_txt": "· oportunidad",
                 "pob_txt": f"{T.cifra(r.poblacion)} habitantes", **chip("🎯 Sin presencia: para abrir", "oport")}))
@@ -709,7 +523,7 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         neon = [147, 51, 234] if not oscuro else [192, 132, 252]
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="blancos",
                                filled=True, stroked=True, get_fill_color=neon + [55], get_line_color=neon + [255],
-                               line_width_min_pixels=2.5, pickable=True, auto_highlight=True, parameters=encima))
+                               line_width_min_pixels=2.5, pickable=True, auto_highlight=True))
         leyendas["blancos"] = [(tuple(neon), f"{len(feats)} municipios grandes sin presencia")]
 
     # 9) Nombres de las zonas principales.
@@ -717,16 +531,16 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         fuente = zd if (capas_on.get("deptos") and not zd.empty and zm.empty) else zm
         if fuente is not None and not fuente.empty:
             top = etiquetas_sin_choque(fuente, maximo=8 if alto_mpio else 10).copy()
-            # Con tildes y eñes: `character_set="auto"` hace que deck.gl arme la
-            # fuente con las letras que traen los nombres. Antes salía «auto»
-            # sin comillas, pydeck lo convertía en una fórmula y no dibujaba
-            # nada, así que los nombres iban sin tildes («Medellin»). Ver `_lit`.
+            # Sin tildes a propósito: el TextLayer solo trae letras ASCII y
+            # pydeck no deja ampliarlas (character_set="auto" no dibuja nada y
+            # una lista o un texto de caracteres se interpretan como código).
+            # Tooltips, ficha y ranking sí llevan los nombres completos.
             def _var(r):
                 v, td = r.get("variacion", np.nan), r.get("tendencia", np.nan)
                 if pd.notna(v):
                     return f"  {v:+.0%}"
                 return "  nuevo" if td == 1 else "  sin venta" if td == -1 else ""
-            top["texto"] = (top["nombre"].astype(str) + "  " + top["valor"].map(T.cifra)
+            top["texto"] = (top["nombre"].map(sin_tildes) + "  " + top["valor"].map(T.cifra)
                             + top.apply(_var, axis=1))
             # Píldoras con el borde del color del semáforo de la zona.
             neutro = [94, 224, 212, 210] if oscuro else [15, 120, 115, 200]
@@ -737,11 +551,9 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
                 top["z"] = [alto_mpio.get(clave(z), 0.0) + (4_000 if alto_mpio else 0) for z in top["zona"]]
             else:
                 tope_d = float(zd["valor"].clip(lower=0).max()) or 1.0
-                # Con montañas el departamento va plano sobre el relieve: el nombre, a ras.
-                top["z"] = 0.0 if montanas else top["valor"].clip(lower=0) / tope_d * 320_000 * escala + 4_000
-            top["z"] = top["z"] + suelo(top["lat"], top["lon"])
+                top["z"] = top["valor"].clip(lower=0) / tope_d * 320_000 * escala + 4_000
             capas.append(pdk.Layer("TextLayer", data=top[["lon", "lat", "z", "texto", "borde"]], id="etiquetas",
-                                   get_position=["lon", "lat", "z"], get_text="texto", character_set=_lit("auto"),
+                                   get_position=["lon", "lat", "z"], get_text="texto",
                                    get_size=14, get_color=[236, 241, 246] if oscuro else [19, 24, 38],
                                    # Con pines del plan, el nombre sube un poco más para no quedar debajo del pin.
                                    get_pixel_offset=[0, -34 if capas_on.get("jugadas") else -18], billboard=True, background=True,
@@ -758,11 +570,10 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         if len(focos):
             focos = focos[["lon", "lat", "borde"]].copy()
             focos["brillo"] = [b[:3] + [60] for b in focos["borde"]]
-            focos["suelo"] = suelo(focos["lat"], focos["lon"])
-            capas.append(pdk.Layer("ScatterplotLayer", data=focos, id="focos_brillo", get_position=["lon", "lat", "suelo"],
+            capas.append(pdk.Layer("ScatterplotLayer", data=focos, id="focos_brillo", get_position=["lon", "lat"],
                                    get_radius=16_000, radius_min_pixels=20, radius_max_pixels=46, filled=False,
                                    stroked=True, get_line_color="brillo", line_width_min_pixels=8, pickable=False))
-            capas.append(pdk.Layer("ScatterplotLayer", data=focos, id="focos", get_position=["lon", "lat", "suelo"],
+            capas.append(pdk.Layer("ScatterplotLayer", data=focos, id="focos", get_position=["lon", "lat"],
                                    get_radius=16_000, radius_min_pixels=20, radius_max_pixels=46, filled=False,
                                    stroked=True, get_line_color="borde", line_width_min_pixels=2.5, pickable=False))
             leyendas["focos"] = [(ESTADO_RGB["subio"], f"{len(subidas)} mayores subidas"),
@@ -790,14 +601,11 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
         for k in SIN_PLAN:
             arcos[k] = [b[k] for b in bloques]
         arcos["hint"] = HINT
-        arcos["base_z"] = suelo(arcos["base_lat"], arcos["base_lon"])
-        arcos["suelo"] = suelo(arcos["lat"], arcos["lon"])
-        capas.append(pdk.Layer("ArcLayer", data=arcos, id="rutas", get_source_position=["base_lon", "base_lat", "base_z"],
-                               get_target_position=["lon", "lat", "suelo"], get_source_color=[45, 212, 191, 230],
+        capas.append(pdk.Layer("ArcLayer", data=arcos, id="rutas", get_source_position=["base_lon", "base_lat"],
+                               get_target_position=["lon", "lat"], get_source_color=[45, 212, 191, 230],
                                get_target_color=[192, 132, 252, 255], get_width=5, width_min_pixels=3,
                                get_height=0.8, pickable=True, auto_highlight=True, highlight_color=[255, 255, 255, 255]))
-        capas.append(pdk.Layer("ScatterplotLayer", data=arcos[["lon", "lat", "suelo"]], id="rutas_destino",
-                               get_position=["lon", "lat", "suelo"],
+        capas.append(pdk.Layer("ScatterplotLayer", data=arcos[["lon", "lat"]], id="rutas_destino", get_position=["lon", "lat"],
                                get_radius=6_000, radius_min_pixels=7, radius_max_pixels=16, filled=True, stroked=True,
                                get_fill_color=[192, 132, 252, 90], get_line_color=[192, 132, 252, 255],
                                line_width_min_pixels=2, pickable=False))
@@ -823,7 +631,6 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
             # Pin oscuro con anillo del color de la estrategia: el número blanco
             # se lee igual sobre rojo, amarillo, verde o violeta.
             pines["color"] = [TONO_RGB[x] + [255] for x in pines["tono"]]
-            pines["z"] = pines["z"] + suelo(pines["lat"], pines["lon"])
             pines["halo"] = [TONO_RGB[x] + [90] for x in pines["tono"]]
             capas.append(pdk.Layer("ScatterplotLayer", data=pines[["lon", "lat", "z", "halo"]], id="jugadas_halo",
                                    get_position=["lon", "lat", "z"], get_radius=1, radius_min_pixels=22, radius_max_pixels=22,
@@ -859,30 +666,21 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
             if 0 <= idx < len(mpios):
                 foco = (float(mpios.iloc[idx]["lat"]), float(mpios.iloc[idx]["lon"]), 8.4)
         if geom:
-            if montanas:
-                geom = _drapear(geom, relieve_x, _SOBRE_TERRENO_M + 150)
             sel = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": geom, "properties": {}}]}
             capas.append(pdk.Layer("GeoJsonLayer", data=sel, id="seleccion_brillo", stroked=True, filled=False,
-                                   get_line_color=[94, 224, 212, 70], line_width_min_pixels=12, pickable=False,
-                                   parameters=encima))
+                                   get_line_color=[94, 224, 212, 70], line_width_min_pixels=12, pickable=False))
             capas.append(pdk.Layer("GeoJsonLayer", data=sel, id="seleccion", stroked=True, filled=True,
                                    get_fill_color=[94, 224, 212, 35], get_line_color=[94, 255, 236, 255],
-                                   line_width_min_pixels=2.5, pickable=False, parameters=encima))
+                                   line_width_min_pixels=2.5, pickable=False))
 
     if len(capas) <= 1 and not any(capas_on.values()):
         return None, leyendas
     if inclinada and inclinacion == 0:
         inclinacion = 40
-    if montanas:
-        # Las montañas solo se ven de lado: vista de dron, girada.
-        inclinacion = max(inclinacion, 58)
     vista = vista_inicial(vistas_lat, vistas_lon, inclinacion)
-    if montanas:
-        vista.bearing = -22
     if foco:
-        giro = rumbo if rumbo is not None else (-22 if montanas else -12 if inclinacion else 0)
         vista = pdk.ViewState(latitude=foco[0], longitude=foco[1], zoom=foco[2], pitch=inclinacion,
-                              bearing=giro, transition_duration=1400 if rumbo is not None else 900)
+                              bearing=-12 if inclinacion else 0, transition_duration=900)
     deck = pdk.Deck(layers=capas, initial_view_state=vista,
                     map_style=getattr(pdk.map_styles, MAPAS.get(fondo, "CARTO_DARK")), map_provider="carto",
                     tooltip=tooltip(oscuro))

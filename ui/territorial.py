@@ -53,12 +53,10 @@ from visualization.mapa_territorial import (
     cabecera_mapa as _cabecera_mapa,
     COLORES as _COLORES,
     ESTADO_ICONO as _ESTADO_ICONO,
-    EXAGERACION as _EXAGERACION,
     MAPAS as _MAPAS,
     PALETAS as _PALETAS,
     clasificar as _clasificar,
     construir_mapa as _construir_mapa,
-    fondo_oscuro as _fondo_oscuro,
     hud as _hud,
     ley_html as _ley_html,
     sin_mes_a_medias as _sin_mes_a_medias,
@@ -696,11 +694,7 @@ def _descargas(ub, metrica, calculo, fecha_col, z: dict, zd: dict, dims_neg: lis
         preparar_y_descargar(
             "territorial_desc_html", firma + (str(st.session_state.get("territorial_color")),
                                              str(st.session_state.get("territorial_paleta")),
-                                             str(st.session_state.get("territorial_mapa_fondo")),
-                                             str(st.session_state.get("territorial_montanas")),
-                                             str(st.session_state.get("territorial_relieve_x")),
-                                             str(st.session_state.get("territorial_relieve")),
-                                             str(st.session_state.get("territorial_edificios"))),
+                                             str(st.session_state.get("territorial_mapa_fondo"))),
             lambda: build_territorial_html(_informe(), ctx, serie_total, mapa(), plan=plan_accion),
             nombre_archivo(hoja or archivo, "html"), "text/html",
             preparar="⚙️ Preparar informe HTML", descargar="⬇️ Descargar informe HTML",
@@ -1231,29 +1225,6 @@ def render_territorial_page():
                 capas_on["mpios3d"] = st.checkbox("Levantar los municipios en 3D", key="territorial_mpios3d")
             huecos[clave] = st.empty()
 
-        # Relieve, satélite y edificios: contexto para cualquier archivo, no
-        # dependen de qué se mide. Ver visualization/mapa_territorial.py.
-        st.markdown('<div class="terr-sec">Relieve y ciudad</div>', unsafe_allow_html=True)
-        capas_on["montanas"] = st.toggle(
-            "🏔️ Montañas 3D", key="territorial_montanas",
-            help="Levanta el relieve real de Colombia (exagerado para que se note) y pone cada dato a la altitud de su "
-                 "lugar. Se ve mejor con «Fondo del mapa: Satélite».")
-        relieve_x = _EXAGERACION
-        if capas_on["montanas"]:
-            relieve_x = st.slider("Exagerar las montañas", 1.0, 6.0, _EXAGERACION, 0.5, key="territorial_relieve_x",
-                                  help="×1 es la altura real; a la escala del país casi no se nota.")
-            if capas_on.get("calor"):
-                st.caption("El mapa de calor no se ve sobre las montañas: se pinta en el suelo plano.")
-        else:
-            capas_on["relieve"] = st.toggle("⛰️ Relieve sombreado", value=True, key="territorial_relieve",
-                                            help="Las cordilleras y los valles sombreados debajo de tus datos.")
-        capas_on["edificios"] = st.toggle(
-            "🏙️ Edificios 3D", value=True, key="territorial_edificios", disabled=capas_on["montanas"],
-            help="Aparecen al acercarte a una ciudad (a nivel de barrio), con su altura real cuando OpenStreetMap la "
-                 "tiene. No se muestran con Montañas 3D.")
-        st.markdown('<div class="terr-capa">Relieve y foto satelital: ESRI · edificios: OpenStreetMap '
-                    '<span class="terr-chip dane">Contexto</span></div>', unsafe_allow_html=True)
-
         st.markdown('<div class="terr-sec">Estilo</div>', unsafe_allow_html=True)
         # El semáforo va primero: es la lectura que pide un gerente.
         colores = (["variacion"] if len(meses) >= 2 else []) + (["meta"] if meta_col else []) + ["volumen"] \
@@ -1324,16 +1295,14 @@ def render_territorial_page():
     dims_plan = dims_neg + ([agente_col] if agente_col and agente_col not in dims_neg else [])
     pl = _plan_cacheado(ub, metrica_calc, calculo, fecha_col, z_plan, tuple(dims_plan), etiquetas, agente_col, cuenta_col)
 
-    def _dibujar(mes, clave_evento: Optional[str], leyendas_panel: bool = True, forzar: Optional[dict] = None,
-                 rumbo: Optional[float] = None):
+    def _dibujar(mes, clave_evento: Optional[str], leyendas_panel: bool = True, forzar: Optional[dict] = None):
         zm_m, zd_m = (zm, zd) if mes == periodo else _calcular(mes)
         hex_t = T.hexagonos(ub, metrica_calc, calculo, radio_km, fecha_col, mes) if capas_on.get("hex") else pd.DataFrame()
         deck, leyendas = _construir_mapa(capas_on, zm_m["tabla"], zd_m["tabla"], hex_t,
                                          _puntos(mes) if (capas_on.get("calor") or capas_on.get("puntos")) else pd.DataFrame(),
                                          crecer, color, paleta, fondo, escala, radio_km, metrica_label,
                                          seleccion=forzar or (seleccion if clave_evento else None),
-                                         inclinada=inclinada or bool(forzar), plan=pl, exageracion=relieve_x,
-                                         rumbo=rumbo)
+                                         inclinada=inclinada or bool(forzar), plan=pl)
         # Desde la animación (un fragmento) no se puede escribir en el panel,
         # que está fuera de él: las leyendas se quedan como estaban.
         if leyendas_panel:
@@ -1383,9 +1352,7 @@ def render_territorial_page():
                     + f'<div class="puntos">{puntos}</div><small>Jugada {i + 1} de {len(jugadas_tour)}</small></div></div>',
                     unsafe_allow_html=True)
                 nivel_j = "municipio" if j["estrategia"] == "abrir" else (pl.get("nivel") or "municipio")
-                # Vuelo de dron: la cámara llega a cada zona desde otro ángulo.
-                _dibujar(periodo, None, leyendas_panel=False, forzar={"zona": j["clave_zona"], "nivel": nivel_j},
-                         rumbo=(-40, 25, -10, 45, -25, 10)[i % 6])
+                _dibujar(periodo, None, leyendas_panel=False, forzar={"zona": j["clave_zona"], "nivel": nivel_j})
                 st.session_state["territorial_tour_i"] = i + 1
             _presentacion()
         elif jugar and len(meses) >= 2:
@@ -1407,7 +1374,7 @@ def render_territorial_page():
 
     # Riel derecho: zona abierta, ir a una zona, Top 10 y alertas.
     with riel, st.container(key="terr_riel"):
-        colores_top, _ = _clasificar(z["tabla"], color, paleta, _fondo_oscuro(fondo)) if not z["tabla"].empty else ([], [])
+        colores_top, _ = _clasificar(z["tabla"], color, paleta, fondo.startswith("Oscuro")) if not z["tabla"].empty else ([], [])
         _riel(z, colores_top, seleccion, z_mpio_sel, zd, ub, metrica, calculo, fecha_col, crecer, nivel_sel, dims_neg,
               etiquetas)
 
@@ -1418,7 +1385,7 @@ def render_territorial_page():
             deck, _ = _construir_mapa(capas_on, zm["tabla"], zd["tabla"], hex_t,
                                       _puntos(periodo) if (capas_on.get("calor") or capas_on.get("puntos")) else pd.DataFrame(),
                                       crecer, color, paleta, fondo, escala, radio_km, metrica_label, inclinada=inclinada,
-                                      ligero=True, plan=pl, exageracion=relieve_x)
+                                      ligero=True, plan=pl)
             return deck.to_html(as_string=True, notebook_display=False) if deck is not None else None
         except Exception:
             return None  # sin mapa, el informe sale igual
