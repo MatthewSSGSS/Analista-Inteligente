@@ -58,6 +58,7 @@ from visualization.mapa_territorial import (
     clasificar as _clasificar,
     construir_mapa as _construir_mapa,
     hud as _hud,
+    leyenda_linea as _leyenda_linea,
     ley_html as _ley_html,
     sin_mes_a_medias as _sin_mes_a_medias,
     sparkline as _sparkline,
@@ -71,6 +72,12 @@ _CLAVE_HOJA = "territorial_sheet"
 _CONTEO = "__conteo__"
 
 _ALTO_MAPA = 900   # px; el panel y el riel se desplazan por dentro para no pasarse de esto
+# En «Mapa grande» el alto lo pone el CSS (lo que deja libre la ventana); este
+# es el de partida, antes de que el navegador mida la pantalla.
+_ALTO_MAPA_GRANDE = 820
+# La capa cuya leyenda va debajo del mapa grande (el panel con las leyendas
+# queda dentro de un menú desplegable): la primera prendida de estas.
+_CAPAS_CON_LEYENDA = ("mpios", "columnas", "deptos", "hex", "calor", "puntos", "poblacion")
 
 
 def _oscuro() -> bool:
@@ -133,6 +140,35 @@ def _inject_css():
           .st-key-terr_consola div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{
             flex:1 1 100%!important;min-width:0!important;max-width:none!important;width:100%!important}}
 
+
+        /* Barra del mapa (ir a una zona · ver todo · inclinar · mapa grande).
+           Sus columnas NO son las de la consola: sin esto heredaban los 320 px
+           fijos del panel y los 360 del riel. */
+        .st-key-terr_consola .st-key-terr_nav div[data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important}
+        .st-key-terr_consola .st-key-terr_nav div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:nth-child(n){
+          flex:1 1 0!important;min-width:0!important;max-width:none!important;width:auto!important}
+        .st-key-terr_consola .st-key-terr_nav div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]:first-child{
+          flex:2.6 1 0!important}
+        .st-key-terr_nav{margin:2px 0 6px}
+        /* El tema muestra TODAS las etiquetas (display:inline-block), también
+           las marcadas como ocultas: la del buscador se quita aquí. */
+        .st-key-terr_nav [data-testid="stWidgetLabel"]{display:none!important}
+
+        /* «Mapa grande»: una sola tarjeta con la fila de menús arriba y el
+           mapa a todo el ancho; el alto es lo que deja libre la ventana. */
+        .st-key-terr_grande{background:var(--panel-2);border:1px solid var(--line);border-radius:20px;padding:14px 16px 16px;
+          box-shadow:var(--shadow-md);margin-top:6px}
+        /* También su envoltorio: si no, guarda el alto de partida y la leyenda
+           de abajo se monta sobre el borde del mapa. */
+        .st-key-terr_mapa_grande [data-testid="stElementContainer"]:has([data-testid="stDeckGlJsonChart"]),
+        .st-key-terr_mapa_grande [data-testid="stDeckGlJsonChart"],
+        .st-key-terr_mapa_grande [data-testid="stDeckGlJsonChart"]>div{height:max(560px,calc(100vh - 150px))!important}
+        .st-key-terr_mapa_grande [data-testid="stDeckGlJsonChart"]{border-radius:16px;overflow:hidden}
+        /* Los menús de la fila: anchos para que quepan las capas con su explicación. */
+        div[data-testid="stPopoverBody"]{min-width:380px;max-height:78vh;overflow-y:auto}
+        /* Debajo del mapa grande, el riel en tarjetas lado a lado. */
+        .st-key-terr_riel_abajo .st-key-terr_riel{display:block!important;columns:3 320px;column-gap:16px;margin-top:14px}
+        .st-key-terr_riel_abajo .st-key-terr_riel>div{break-inside:avoid;margin-bottom:14px}
 
         /* Riel derecho */
         .st-key-terr_riel{gap:.8rem}
@@ -471,9 +507,63 @@ def _ir_a(opciones: dict) -> None:
         st.session_state["territorial_zona_sel"] = opciones[elegido]
 
 
+def _estado_y_hud(meta, origen, z, zm, ub, metrica_calc, calculo, fecha_col, metrica_label, cob) -> None:
+    """Cuántos registros se ubicaron y los indicadores de arriba del mapa."""
+    st.markdown(f'<div class="terr-estado">📍 Ubicados <b>{meta["ubicadas"]:,} de {meta["total"]:,}</b> registros '
+                f'a partir de {html.escape(origen)}.</div>', unsafe_allow_html=True)
+    st.markdown(_hud(z if not z["tabla"].empty else zm, T.serie_total(ub, metrica_calc, calculo, fecha_col),
+                     metrica_label, cob), unsafe_allow_html=True)
+
+
+def _ver_todo() -> None:
+    """Vuelve a encuadrar todas las zonas: cierra la zona abierta y obliga al
+    mapa a recentrarse aunque se haya movido a mano (si la vista que se le
+    manda es idéntica a la anterior, deck.gl deja la cámara donde estaba)."""
+    st.session_state.pop("territorial_zona_sel", None)
+    st.session_state["_territorial_firma"] = _firma_mapa()
+    st.session_state["territorial_vista_n"] = st.session_state.get("territorial_vista_n", 0) + 1
+
+
+def _alternar_grande() -> None:
+    st.session_state["territorial_grande"] = not st.session_state.get("territorial_grande", False)
+
+
+def _alternar_inclinada() -> None:
+    st.session_state["territorial_inclinada"] = not st.session_state.get("territorial_inclinada", False)
+
+
+def _navegacion(z: dict, nivel_mpio: str, grande: bool) -> bool:
+    """La barra pegada al mapa: ir a una zona, ver todo, inclinar y cambiar a
+    «Mapa grande». Devuelve si el mapa va inclinado."""
+    c = st.columns([3.2, 1.2, 1.15, 1.45], gap="small", vertical_alignment="center")
+    tabla = z["tabla"]
+    with c[0]:
+        if not tabla.empty:
+            nivel_t = "departamento" if z.get("nivel") == "departamento" else nivel_mpio
+            opciones = {f"{int(r.posicion)}. {r.nombre}": {"zona": str(r.zona), "nivel": nivel_t}
+                        for r in tabla.head(300).itertuples()}
+            lista = ["🔎 Ir a una zona…"] + list(opciones)
+            if st.session_state.get("territorial_ir_a") not in lista:
+                st.session_state.pop("territorial_ir_a", None)
+            # Sin «?» de ayuda: lo vuelve más alto que los botones y la barra queda dispareja.
+            st.selectbox("Ir a una zona", lista, key="territorial_ir_a", on_change=_ir_a, args=(opciones,),
+                         label_visibility="collapsed")
+    c[1].button("🧭 Ver todo", key="territorial_ver_todo", on_click=_ver_todo, use_container_width=True,
+                help="Vuelve a encuadrar todas tus zonas y cierra la que esté abierta.")
+    # Botón y no interruptor, por la misma razón: todo en la barra mide lo mismo.
+    inclinada = bool(st.session_state.get("territorial_inclinada", False))
+    c[2].button("▭ Plano" if inclinada else "⟋ Inclinar", key="territorial_inclinar_btn", on_click=_alternar_inclinada,
+                use_container_width=True, help="Inclina el mapa aunque las capas sean planas: da profundidad.")
+    c[3].button("↙ Vista normal" if grande else "⛶ Mapa grande", key="territorial_grande_btn",
+                on_click=_alternar_grande, use_container_width=True, type="secondary" if grande else "primary",
+                help="El mapa a todo el ancho y alto de la pantalla; los controles pasan a menús arriba y el "
+                     "resto, debajo del mapa." if not grande else "Vuelve al panel, el mapa y el riel lado a lado.")
+    return inclinada
+
+
 def _riel(z: dict, colores: list, seleccion: Optional[dict], zm: dict, zd: dict, ub, metrica, calculo, fecha_col,
           crecer: dict, nivel_mpio: str, dims_neg: list, etiquetas: dict):
-    """El riel derecho: zona abierta, ir a una zona, Top 10 y alertas."""
+    """El riel derecho: zona abierta, Top 10 y alertas («Ir a una zona» está en la barra del mapa)."""
     tabla = z["tabla"]
     # 1) La zona abierta, en corto.
     if seleccion:
@@ -531,15 +621,7 @@ def _riel(z: dict, colores: list, seleccion: Optional[dict], zm: dict, zd: dict,
         st.button("✕ Cerrar selección", key="territorial_cerrar_riel", on_click=_cerrar_seleccion,
                   use_container_width=True)
 
-    # 2) Abrir cualquier zona sin buscarla en el mapa.
-    if not tabla.empty:
-        nivel_t = "departamento" if z.get("nivel") == "departamento" else nivel_mpio
-        opciones = {f"{int(r.posicion)}. {r.nombre}": {"zona": str(r.zona), "nivel": nivel_t}
-                    for r in tabla.head(300).itertuples()}
-        st.selectbox("Ir a una zona", ["—"] + list(opciones), key="territorial_ir_a", on_change=_ir_a, args=(opciones,),
-                     help="Abre la ficha de una zona y el mapa vuela hacia ella.")
-
-    # 3) Top 10 con barras del mismo color que el mapa.
+    # 2) Top 10 con barras del mismo color que el mapa.
     if not tabla.empty:
         top = tabla.head(10)
         tope = float(top["valor"].abs().max()) or 1.0
@@ -557,7 +639,7 @@ def _riel(z: dict, colores: list, seleccion: Optional[dict], zm: dict, zd: dict,
         st.markdown(f'<div class="terr-rail-card"><span class="eyebrow">Top 10 de {z["n"]}</span>'
                     + "".join(filas) + "</div>", unsafe_allow_html=True)
 
-    # 4) Alertas del territorio.
+    # 3) Alertas del territorio.
     alertas = []
     if "cambio" in tabla.columns and z.get("mes_a"):
         for r in tabla[(tabla["variacion"] <= -0.2)].sort_values("cambio").head(2).itertuples():
@@ -1134,10 +1216,28 @@ def render_territorial_page():
     from visualization.charts import _label, dimension_candidates, metric_candidates
     metricas = [m for m in metric_candidates(df_hoja, schema) if m in df_hoja.columns]
 
-    with st.container(key="terr_consola"):
-        panel, principal, riel = st.columns([320, 1100, 360], gap="medium")
+    # Dos formas de ver la consola. Normal: panel · mapa · riel. «Mapa grande»:
+    # el mapa a todo el ancho y alto de la pantalla, el panel convertido en
+    # menús desplegables en una sola fila y el riel debajo. Los widgets son los
+    # mismos (mismas claves), así que cambiar de modo no pierde nada.
+    grande = bool(st.session_state.get("territorial_grande"))
+    if grande:
+        with st.container(key="terr_grande"):
+            barra = st.columns([1, 1, 1, 1, 5.2], gap="small", vertical_alignment="bottom")
+            caja_datos = barra[0].popover("📂 Datos", use_container_width=True)
+            caja_periodo = barra[1].popover("📅 Periodo", use_container_width=True)
+            caja_capas = barra[2].popover("🗂️ Capas", use_container_width=True)
+            caja_estilo = barra[3].popover("🎨 Estilo", use_container_width=True)
+            caja_nav = barra[4].container()
+            principal = st.container(key="terr_mapa_grande")
+        riel = st.container()
+    else:
+        with st.container(key="terr_consola"):
+            panel, principal, riel = st.columns([320, 1100, 360], gap="medium")
+        caja_datos = panel
+        caja_nav = None
 
-    with panel, st.container(key="terr_panel"):
+    with caja_datos, st.container(key="terr_panel"):
         st.markdown('<div class="terr-sec">Datos</div>', unsafe_allow_html=True)
         hojas = list(libro["sheets"].keys())
         if len(hojas) > 1:
@@ -1198,7 +1298,10 @@ def render_territorial_page():
     por_defecto = ({"hex", "jugadas", "rutas", "etiquetas"} if con_coordenadas else
                    {"mpios", "jugadas", "rutas", "etiquetas"} if por_municipio else {"deptos", "jugadas", "etiquetas"})
 
-    with panel, st.container(key="terr_panel_2"):
+    if not grande:
+        # Se crea aquí y no arriba: el orden en que se crean es el orden en pantalla (Datos va primero).
+        caja_periodo = caja_capas = caja_estilo = panel.container(key="terr_panel_2")
+    with caja_periodo:
         periodo, jugar, tour = None, False, False
         if len(meses) >= 2:
             opciones_mes = ["Todo"] + meses
@@ -1213,6 +1316,7 @@ def render_territorial_page():
                          help="Recorre las jugadas del plan una por una: el mapa vuela a cada zona y muestra qué hacer. "
                               "Para proyectar en una reunión.")
 
+    with caja_capas:
         st.markdown('<div class="terr-sec">Capas</div>', unsafe_allow_html=True)
         capas_on, huecos = {}, {}
         for clave, titulo, explicacion, fuente, clase in _CAPAS:
@@ -1225,6 +1329,7 @@ def render_territorial_page():
                 capas_on["mpios3d"] = st.checkbox("Levantar los municipios en 3D", key="territorial_mpios3d")
             huecos[clave] = st.empty()
 
+    with caja_estilo:
         st.markdown('<div class="terr-sec">Estilo</div>', unsafe_allow_html=True)
         # El semáforo va primero: es la lectura que pide un gerente.
         colores = (["variacion"] if len(meses) >= 2 else []) + (["meta"] if meta_col else []) + ["volumen"] \
@@ -1241,8 +1346,6 @@ def render_territorial_page():
         if st.session_state.get("territorial_mapa_fondo") not in opciones_fondo:
             st.session_state["territorial_mapa_fondo"] = "Oscuro" if _oscuro() else "Claro"
         fondo = st.selectbox("Fondo del mapa", opciones_fondo, key="territorial_mapa_fondo")
-        inclinada = st.toggle("Vista inclinada", key="territorial_inclinada",
-                              help="Inclina el mapa aunque las capas sean planas: da profundidad.")
         escala = st.slider("Altura 3D", 0.3, 3.0, 1.0, 0.1, key="territorial_escala")
         radio_km = st.slider("Tamaño del hexágono (km)", 1.0, 40.0, 8.0, 1.0, key="territorial_radio") \
             if capas_on.get("hex") else 8.0
@@ -1314,22 +1417,35 @@ def render_territorial_page():
         st.markdown(_cabecera_mapa(metrica_label, color, z_m, etiqueta, capas_on, pl,
                                    [tit for c, tit, *_ in _CAPAS if capas_on.get(c)]), unsafe_allow_html=True)
         if deck is None:
-            st.info("Prende al menos una capa en el panel de la izquierda.")
+            st.info("Prende al menos una capa en " + ("el menú «🗂️ Capas»." if grande else "el panel de la izquierda."))
             return None
+        # «🧭 Ver todo»: una vista apenas distinta a la anterior hace que el mapa se recentre.
+        vueltas = st.session_state.get("territorial_vista_n", 0)
+        if vueltas and not forzar and deck.initial_view_state is not None:
+            deck.initial_view_state.zoom = float(deck.initial_view_state.zoom) + vueltas * 1e-6
+        alto = _ALTO_MAPA_GRANDE if grande else _ALTO_MAPA
+        evento = None
         if clave_evento:
-            return st.pydeck_chart(deck, height=_ALTO_MAPA, use_container_width=True, on_select="rerun",
-                                   selection_mode="single-object", key=clave_evento)
-        st.pydeck_chart(deck, height=_ALTO_MAPA, use_container_width=True)
-        return None
+            evento = st.pydeck_chart(deck, height=alto, use_container_width=True, on_select="rerun",
+                                     selection_mode="single-object", key=clave_evento)
+        else:
+            st.pydeck_chart(deck, height=alto, use_container_width=True)
+        if grande:
+            capa = next((c for c in _CAPAS_CON_LEYENDA if capas_on.get(c) and leyendas.get(c)), None)
+            if capa:
+                st.markdown(_leyenda_linea(leyendas[capa]), unsafe_allow_html=True)
+        return evento
 
     with principal:
         origen = {"coordenadas": f"las coordenadas ({meta['columna']})", "municipio": f"la columna «{meta['columna']}»",
                   "departamento": f"la columna «{meta['columna']}» (nivel departamento)",
                   "texto": f"el municipio escrito en «{meta['columna']}»"}.get(meta["origen"], "")
-        st.markdown(f'<div class="terr-estado">📍 Ubicados <b>{meta["ubicadas"]:,} de {meta["total"]:,}</b> registros '
-                    f'a partir de {html.escape(origen)}.</div>', unsafe_allow_html=True)
-        st.markdown(_hud(z if not z["tabla"].empty else zm, T.serie_total(ub, metrica_calc, calculo, fecha_col),
-                         metrica_label, cob), unsafe_allow_html=True)
+        # En «Mapa grande» los indicadores van DEBAJO del mapa: arriba
+        # ocupaban ~300 px y el mapa no cabía entero en la pantalla.
+        if not grande:
+            _estado_y_hud(meta, origen, z, zm, ub, metrica_calc, calculo, fecha_col, metrica_label, cob)
+        with (caja_nav if grande else st.container()), st.container(key="terr_nav"):
+            inclinada = _navegacion(z, nivel_mpio, grande)
         jugadas_tour = [j for j in (pl.get("jugadas") if pl else None) or [] if j.get("lat") is not None]
         if tour and jugadas_tour:
             # Modo presentación: un fragmento que cada 6 s pasa a la jugada
@@ -1367,13 +1483,15 @@ def render_territorial_page():
             evento = None
         else:
             _dibujar(periodo, "territorial_deck")
+        if grande:
+            _estado_y_hud(meta, origen, z, zm, ub, metrica_calc, calculo, fecha_col, metrica_label, cob)
         if meta.get("no_ubicados"):
             with st.expander(f"{meta['total'] - meta['ubicadas']:,} registros sin ubicar"):
                 st.caption("Valores que no se reconocieron como un municipio de Colombia: " +
                            ", ".join(f"«{html.escape(str(k))}» ({v})" for k, v in meta["no_ubicados"].items()))
 
     # Riel derecho: zona abierta, ir a una zona, Top 10 y alertas.
-    with riel, st.container(key="terr_riel"):
+    with riel, st.container(key="terr_riel_abajo" if grande else "terr_riel_lado"), st.container(key="terr_riel"):
         colores_top, _ = _clasificar(z["tabla"], color, paleta, fondo.startswith("Oscuro")) if not z["tabla"].empty else ([], [])
         _riel(z, colores_top, seleccion, z_mpio_sel, zd, ub, metrica, calculo, fecha_col, crecer, nivel_sel, dims_neg,
               etiquetas)

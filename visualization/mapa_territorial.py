@@ -315,6 +315,12 @@ def etiquetas_sin_choque(tabla: pd.DataFrame, maximo: int = 10) -> pd.DataFrame:
     return tabla.loc[list(puestos)]
 
 
+# Altura (m) del municipio más grande al «levantar los municipios en 3D». Era
+# 260 km: al acercarse, los bloques se volvían paredes que tapaban la vista
+# entera. Las columnas (delgadas) siguen más altas; «Altura 3D» lo ajusta.
+_ALTO_MPIOS_3D = 140_000
+
+
 def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd.DataFrame, puntos: pd.DataFrame,
                     crecer: dict, color: str, paleta: str, fondo: str, escala: float, radio_km: float, unidad: str,
                     seleccion: Optional[dict] = None, inclinada: bool = False, ligero: bool = False,
@@ -346,7 +352,7 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
     # se ponen ENCIMA de la columna (en el suelo, las columnas los tapaban).
     tope_m = float(zm["valor"].clip(lower=0).max()) if not zm.empty else 1.0
     tope_m = tope_m or 1.0
-    factor_m = 320_000 if capas_on.get("columnas") else 260_000 if (capas_on.get("mpios") and capas_on.get("mpios3d")) else 0
+    factor_m = 320_000 if capas_on.get("columnas") else _ALTO_MPIOS_3D if (capas_on.get("mpios") and capas_on.get("mpios3d")) else 0
     alto_mpio = ({clave(z): max(float(v), 0) / tope_m * factor_m * escala for z, v in zip(zm["zona"], zm["valor"])}
                  if factor_m and not zm.empty else {})
 
@@ -396,7 +402,7 @@ def construir_mapa(capas_on: dict, zm: pd.DataFrame, zd: pd.DataFrame, hex_t: pd
                 continue
             r, c = dato
             feats.append(feature(f["geometry"], {
-                "color": list(c) + [235] if c else sin_dato, "linea": linea, "altura": max(r.valor, 0) / tope * 260_000 * escala,
+                "color": list(c) + [235] if c else sin_dato, "linea": linea, "altura": max(r.valor, 0) / tope * _ALTO_MPIOS_3D * escala,
                 "nombre": r.nombre, "departamento": r.departamento, "zona": str(i), "nivel": "municipio", **campos(r)}))
         en3d = bool(capas_on.get("mpios3d"))
         capas.append(pdk.Layer("GeoJsonLayer", data={"type": "FeatureCollection", "features": feats}, id="mpios",
