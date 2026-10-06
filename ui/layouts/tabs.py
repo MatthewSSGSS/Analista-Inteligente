@@ -35,6 +35,7 @@ _CLAVE = "nav_vista"
 # Viven aquí para que el botón y la barra usen exactamente el mismo texto.
 VISTA_ATACAR = "🎯 Qué atacar"
 VISTA_SEGUIMIENTO = "🔎 Seguimiento de un caso"
+VISTA_ESTRUCTURA = "🏢 Estructura"
 
 
 def named_tabs(names: list[str]) -> dict:

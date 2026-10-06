@@ -131,6 +131,20 @@ state. A former third route, **Práctico**
 (quick summary + Q&A), was removed as redundant with the main panel's «Pregúntale al Excel» and
 Asistente IA; `app.py` maps any stale `analysis_mode` value to `"completo"`.
 
+### Estructura comercial (several files crossed inside Análisis Completo)
+
+«🧰 Herramientas avanzadas › 🏢 Estructura comercial» takes several uploads (structure, PDVs, goals, daily
+sales…) and `core/estructura.cruzar` crosses them over the hierarchy Región › Jefe › Supervisor › Agente › PDV
+(«Código M.» = the PDV code/cédula): it classifies each column by header and by values, recognizes the same
+person/PDV across files (numeric vs text codes, leading zeros, accents), builds a **network** (an agent may report
+to several supervisors/jefes → row value «A / B», counted fully for each and flagged as shared) and returns one
+unified table that `libro_unificado` turns into the active workbook (`wb["estructura"] = True`), so the whole panel
+and the sidebar filters work on it. The extra view «🏢 Estructura» (`ui/estructura.py`) navigates it level by level
+(chain of command upward, goal vs real vs «should be at today», children with traffic light). Who reports to whom
+always comes from the network (`res["red"]`), never from crossing the columns of a row. Goals: one row per node of
+the base level in the table; higher-level goals live in `res["declaradas"]` (a jefe without its own goal = sum of its
+supervisors'). `tests/estructura_test.py`.
+
 ### Filters
 
 One filter engine only: `core/filter_engine.apply_filters`/`cascading_options`. It is shared by the

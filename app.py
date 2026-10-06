@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from ui.styles.theme import inject_theme
 from ui.layouts.hero import hero_app
-from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_SEGUIMIENTO
+from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_SEGUIMIENTO, VISTA_ESTRUCTURA
 from ui.components.section import section_header
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
@@ -52,6 +52,7 @@ from ui.mode_choice import render_mode_choice
 from ui.territorial import render_territorial_page
 from ui.logistica import render_logistica_page
 from ui.tracking import render_tracking
+from ui.estructura import render_cargador_estructura, render_estructura
 from ui.multi_sheet import render_multi_sheet
 from core.tracking_engine import ingest_file, sources_to_long, merge_long, read_consolidated
 import core.db_engine as db_engine
@@ -486,6 +487,12 @@ with st.sidebar:
         if st.session_state.tracking_error:
             st.error(f"No pudimos procesar el seguimiento: {st.session_state.tracking_error}")
 
+        # Estructura comercial: varios archivos (estructura, puntos, metas,
+        # ventas) cruzados en una sola tabla que pasa a ser el archivo activo;
+        # todo vive en ui/estructura.py y core/estructura.py.
+        st.divider()
+        render_cargador_estructura()
+
 if not st.session_state.workbook:
     if st.session_state.comparison_result:
         render_comparison(st.session_state.comparison_result)
@@ -665,6 +672,10 @@ if profile_enabled:
     soporte.append(("⚔️ Comparar personas", lambda: render_person_compare(df, schema)))
 if st.session_state.tracking_data is not None and not st.session_state.tracking_data.empty:
     soporte.append(("📍 Seguimiento consolidado", lambda: render_tracking(st.session_state.tracking_data)))
+# La vista de la Estructura comercial solo existe mientras el archivo activo es
+# un cruce de varios archivos (ver ui/estructura.py). Recibe `df` ya filtrado.
+estructura = ([(VISTA_ESTRUCTURA, lambda: render_estructura(df, st.session_state.get("estructura_resultado")))]
+              if wb.get("estructura") else [])
 seguimiento = ([(VISTA_SEGUIMIENTO, lambda: render_person_profile(df, schema, dashboard))]
                if mode_info["mode"] not in {"catalog", "reference"} and has_entity(df, schema) else [])
 
@@ -672,7 +683,7 @@ if mode_info["mode"] in {"catalog", "reference"}:
     st.markdown(f'<div class="mode-banner"><b>{mode_info["label"]}</b> · {mode_info["reason"]}</div>', unsafe_allow_html=True)
     # Un catálogo o lista de referencia no tiene desempeño que atacar ni
     # personas que comparar: su vista principal es explorar el contenido.
-    principales = ([inicio, ("📚 Vista principal", lambda: render_catalog(df, schema, mode_info))] + geo
+    principales = ([inicio] + estructura + [("📚 Vista principal", lambda: render_catalog(df, schema, mode_info))] + geo
                    + comparar_archivos + [asistente, soporte[0], exportar])
     secundarias = [v for v in soporte[1:] if v[0] != "⚔️ Comparar personas"]
     barra_de_vistas(principales, secundarias)
@@ -682,7 +693,7 @@ else:
     canales = (V_CANALES, lambda: render_comercial(df, schema, dashboard))
     proyeccion = (V_PROYECCION, lambda: render_forecast(df, schema, dashboard))
     if st.session_state.get("view_mode", "Ejecutivo") == "Ejecutivo":
-        principales = ([inicio, (V_RESUMEN, lambda: render_executive(df, schema, dashboard)), atacar, cuadro,
+        principales = ([inicio] + estructura + [(V_RESUMEN, lambda: render_executive(df, schema, dashboard)), atacar, cuadro,
                         canales, proyeccion] + geo + seguimiento + comparar_archivos + [asistente, exportar])
         secundarias = soporte
     else:
@@ -692,7 +703,7 @@ else:
             st.caption("Esta vista utiliza las métricas detectadas automáticamente; no presupone que el archivo sea de ventas.")
 
         # Modo analista: además, las herramientas de análisis fino.
-        principales = ([inicio, ("🧾 Descripción", lambda: render_dashboard(df,dashboard)), atacar, cuadro,
+        principales = ([inicio] + estructura + [("🧾 Descripción", lambda: render_dashboard(df,dashboard)), atacar, cuadro,
                         ("🔬 Analítica", lambda: render_explorer(df,schema)), canales, proyeccion] + geo + seguimiento
                        + comparar_archivos + [asistente, exportar])
         secundarias = [("🚨 Anomalías", lambda: render_anomalies(df, schema)), ("💵 Finanzas", _render_finanzas)] + soporte
