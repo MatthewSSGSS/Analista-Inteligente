@@ -1,8 +1,14 @@
-"""Pestaña de Inicio: una introducción breve antes de entrar al dashboard.
+"""Pestaña de Inicio: el parte del día para quien tiene que decidir.
 
-No repite el análisis de las demás pestañas; da contexto (qué hace la
-herramienta, qué se cargó, cómo moverse) y usa clases de estilo ya definidas
-en app.py para no introducir CSS adicional.
+Es la pantalla con la que abre el panel, así que responde primero lo que un
+gerente pregunta al abrir el archivo: ¿cómo vamos?, ¿contra qué?, ¿qué hago?
+Arriba, el titular del mes con su lectura frente al año anterior; debajo, las
+cifras que importan (mes, mismo mes del año pasado, acumulado, margen, ticket)
+y las tres cosas que más valen la pena, con cuánto valen y a quién tocan.
+
+Antes abría con «Bienvenido», qué archivo se cargó, «confianza 93%»,
+«herramientas activas» y un tutorial de cuatro pasos: nada del negocio. Eso
+sigue disponible, pero abajo y plegado («Sobre el archivo»).
 """
 from __future__ import annotations
 import html
@@ -12,9 +18,10 @@ import pandas as pd
 import streamlit as st
 
 from ui.components.cards import kpi_card, executive_headline, note_group
+from core.executive import indicadores_gerente
 from ui.imagenes import render_imagenes
 from ui.components.section import section_header, decision_strip
-from ui.layouts.hero import hero
+from ui.layouts.tabs import VISTA_ATACAR, VISTA_RESUMEN, ir_a
 
 
 def _step(number: str, title: str, text: str) -> str:
@@ -181,37 +188,153 @@ def _contenido_del_archivo(sheets: dict) -> None:
         st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
 
 
-def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict, seleccion: dict | None = None) -> None:
-    sheets = wb.get("sheets", {}) or {}
+_CSS_PARTE = """<style>
+.parte-acciones{display:flex;flex-direction:column;gap:10px;margin:4px 0 6px}
+.parte-accion{display:flex;gap:14px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius-md);padding:14px 16px;box-shadow:var(--shadow-sm)}
+.parte-accion .num{flex:0 0 30px;width:30px;height:30px;border-radius:50%;background:var(--brand-orb);color:#fff!important;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+.parte-accion .cuerpo{flex:1;min-width:0}
+.parte-accion .tit{font-weight:800;font-size:14.5px;color:var(--text)!important}
+.parte-accion .txt{font-size:13px;color:var(--muted)!important;line-height:1.5;margin-top:3px}
+.parte-accion .hacer{font-size:13px;color:var(--text)!important;margin-top:6px}
+.parte-accion .medir{font-size:12px;color:var(--muted)!important;margin-top:4px}
+.parte-accion .quien{display:inline-block;font-size:11.5px;font-weight:700;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:999px;padding:2px 9px;margin:6px 6px 0 0;color:var(--text)!important}
+.parte-accion .valor{flex:0 0 auto;text-align:right}
+.parte-accion .valor b{display:block;font-size:20px;font-weight:800;color:var(--green-strong)!important;font-family:var(--font-display)}
+.parte-accion .valor small{font-size:11.5px;color:var(--muted)!important}
+.parte-vigilar{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:var(--radius-md);
+  padding:12px 16px;margin:6px 0}
+.parte-vigilar b{font-size:13.5px;color:var(--text)!important}
+.parte-vigilar div{font-size:12.5px;color:var(--muted)!important;margin-top:3px;line-height:1.45}
+</style>"""
+
+
+def _lectura_del_anio(indicadores: list[dict], g: dict) -> str:
+    """La frase que pone el mes en contexto: un mes que sube dentro de un año
+    que va mal (o al revés) es otra historia, y es justo lo que se escapa al
+    mirar solo «frente al mes anterior»."""
+    por_clave = {i.get("clave"): i for i in indicadores}
+    acum, anual = por_clave.get("acumulado"), por_clave.get("anual")
+    pct_mes = g.get("pct")
+    if pct_mes is None or not (acum or anual):
+        return ""
+    def _pct(i):
+        try:
+            return float(str(i["detalle" if i.get("clave") == "acumulado" else "valor"]).split("%")[0])
+        except (ValueError, KeyError):
+            return None
+    partes = []
+    if anual:
+        pa = _pct(anual)
+        if pa is not None:
+            partes.append(f"frente a {anual['etiqueta'].replace('Frente a ', '')} va <b>{pa:+.1f}%</b>")
+    pac = _pct(acum) if acum else None
+    if pac is not None:
+        partes.append(f"el acumulado del año va <b>{pac:+.1f}%</b>")
+    if not partes:
+        return ""
+    texto = "En perspectiva: " + " y ".join(partes) + "."
+    if pac is not None and (pct_mes > 0) != (pac > 0) and abs(pac) >= 1:
+        texto += (" El mes recupera terreno, pero el año sigue por debajo." if pct_mes > 0
+                  else " Es un tropiezo dentro de un año que va bien: conviene atajarlo antes de que se vuelva tendencia.")
+    return texto
+
+
+def _acciones(g: dict) -> list[dict]:
+    """Las tres cosas que más valen la pena, del análisis gerencial."""
+    acciones = []
+    for o in (g.get("oportunidades") or [])[:3]:
+        quienes = [q["nombre"] for q in (o.get("quienes") or [])][:4]
+        acciones.append({"titulo": o["titulo"], "texto": o.get("texto", ""), "hacer": o.get("accion", ""),
+                         "medir": o.get("medir", ""), "quienes": quienes,
+                         "valor": o.get("monto"), "pct": o.get("pct_total")})
+    # La palanca (volumen o ticket) también es una acción, si queda sitio.
+    if len(acciones) < 3 and g.get("accion_palanca") and g.get("texto_palanca"):
+        acciones.append({"titulo": "Cuidar la palanca que movió el mes" if not g.get("empeoro")
+                         else "Corregir la palanca que lo hundió",
+                         "texto": g["texto_palanca"], "hacer": g["accion_palanca"], "medir": "",
+                         "quienes": [], "valor": None, "pct": None})
+    return acciones
+
+
+def _tarjeta_accion(n: int, a: dict, mes: str) -> str:
+    esc = html.escape
+    quienes = "".join(f'<span class="quien">{esc(str(q))}</span>' for q in a["quienes"])
+    valor = ""
+    if a.get("valor"):
+        from core.territorio import cifra
+        valor = (f'<div class="valor"><b>+{esc(cifra(a["valor"]))}</b><small>al mes'
+                 + (f' · {a["pct"]:.0f}% de {esc(mes)}' if a.get("pct") else "") + "</small></div>")
+    return (f'<div class="parte-accion"><div class="num">{n}</div><div class="cuerpo">'
+            f'<div class="tit">{esc(a["titulo"])}</div><div class="txt">{esc(a["texto"])}</div>'
+            + (f'<div class="hacer">👉 {esc(a["hacer"])}</div>' if a.get("hacer") else "")
+            + (f'<div class="medir">🎯 Se sabe que funcionó si: {esc(a["medir"])}</div>' if a.get("medir") else "")
+            + (f"<div>{quienes}</div>" if quienes else "")
+            + f"</div>{valor}</div>")
+
+
+def _parte_del_dia(df, schema, dashboard) -> bool:
+    """Titular + cifras + qué hacer. Devuelve False si no hay con qué armarlo."""
+    g = dashboard.get("gerencia") if isinstance(dashboard, dict) else None
+    if not (g and g.get("titular") and df is not None and schema):
+        return False
+    st.markdown(_CSS_PARTE, unsafe_allow_html=True)
+    metrica = g.get("metrica")
+    indicadores = indicadores_gerente(df, schema, g, metrica) if metrica else []
+    st.markdown(section_header("Lo que tienes que saber", eyebrow="PARTE DEL DÍA",
+                               subtitle=f"{html.escape(str(g.get('etiqueta') or metrica))} · "
+                                        f"{html.escape(str(g['mes_b']))} frente a {html.escape(str(g['mes_a']))}"),
+                unsafe_allow_html=True)
+    ex = dict((dashboard.get("executive") or {}))
+    ex["headline"] = html.escape(str(g["titular"]))
+    contexto = _lectura_del_anio(indicadores, g)
+    causa = next((f for f in g.get("frases") or [] if f.startswith("La causa")), "")
+    ex["detail"] = " ".join(x for x in (contexto, html.escape(causa)) if x)
+    ex["status"] = ("negative" if g.get("empeoro") else "positive") if g.get("se_movio") else "neutral"
+    ex["status_label"] = ("Requiere atención" if g.get("empeoro") else "Va mejor") if g.get("se_movio") else "Estable"
+    executive_headline({**dashboard, "executive": ex})
+    if indicadores:
+        # Siempre 4 columnas: con una sola cifra, la tarjeta se estiraba a todo el ancho.
+        cols = st.columns(4)
+        for col, i in zip(cols, indicadores[:4]):
+            col.markdown(kpi_card(html.escape(i["etiqueta"]), html.escape(i["valor"]),
+                                  delta=html.escape(i["detalle"]) if i.get("detalle") else None, tone=i["tono"]),
+                         unsafe_allow_html=True)
+
+    acciones = _acciones(g)
+    if acciones:
+        st.markdown(section_header("Qué hacer ahora", eyebrow="PRIORIDADES",
+                                   subtitle="Ordenadas por lo que valen al mes. El plan completo, con responsables y "
+                                            "pasos, está en «🎯 Qué atacar»."),
+                    unsafe_allow_html=True)
+        st.markdown('<div class="parte-acciones">' + "".join(
+            _tarjeta_accion(n, a, str(g["mes_b"])) for n, a in enumerate(acciones, 1)) + "</div>",
+            unsafe_allow_html=True)
+    # Lo que no es una oportunidad pero no se puede dejar pasar (calidad,
+    # estados, atípicos): dos, con su cifra.
+    alertas = [a for a in (dashboard.get("alerts") or []) if a.get("severity") == "Alta"
+               and "caída" not in str(a.get("title", "")).lower()][:2]
+    for a in alertas:
+        st.markdown(f'<div class="parte-vigilar"><b>⚠️ {html.escape(str(a.get("title", "")))}</b>'
+                    f'<div>{html.escape(str(a.get("text", "")))}</div></div>', unsafe_allow_html=True)
+    b1, b2, _ = st.columns([1.3, 1.1, 2])
+    b1.button("🎯 Ver el plan completo", key="inicio_ir_atacar", type="primary", use_container_width=True,
+              on_click=ir_a, args=(VISTA_ATACAR,))
+    b2.button("📋 Ver el resumen", key="inicio_ir_resumen", use_container_width=True,
+              on_click=ir_a, args=(VISTA_RESUMEN,))
+    return True
+
+
+def _sobre_el_archivo(wb, sheet, sheets, classification, seleccion, filtrado) -> None:
+    """Qué se cargó y cómo se interpretó: plegado, para quien lo necesite."""
     total_records = sum(len(it.get("processed", [])) for it in sheets.values() if isinstance(it, dict))
-    classification = (mode_info or {}).get("classification", {}) or {}
-    # Es la pestaña con la que abre el panel. Antes mostraba siempre el
-    # archivo completo: al aplicar un filtro, lo primero que se veía no
-    # cambiaba y parecía que el filtro no hacía nada.
-    filtrado = bool(seleccion and seleccion.get("filtrado"))
-
-    # ── Hero de bienvenida + snapshot del archivo, envueltos en un
-    # st.container(key=...) para que compartan un solo fondo con foto (ver
-    # ".st-key-home_hero_band" en ui/styles/theme.py) — la misma extensión
-    # visual de la franja de arriba, pero contenida SOLO a esta pestaña
-    # (Inicio): la franja de arriba es compartida por toda la app (vive una
-    # sola vez en .block-container, antes de las pestañas) y alargarla ahí
-    # habría puesto esta misma foto detrás de otras pestañas (Resumen
-    # ejecutivo, Descripción...) sin que su texto esté preparado para eso.
-    # Un container propio, con su fondo propio, evita ese efecto secundario
-    # por completo. El alto no es un número fijo: crece con el contenido
-    # de adentro, así que termina justo después de la fila de 4 tarjetas
-    # sin necesidad de calcular ningún píxel a mano.
-    with st.container(key="home_hero_band"):
-        hero(
-            "Bienvenido al Panel Analítico Universal",
-            "Sube cualquier Excel o CSV y obtén, en segundos, KPIs, hallazgos, "
-            "alertas, comparaciones y un informe listo para compartir — sin depender de una estructura fija.",
-            icon=True, tight=True, band=True,
-        )
-
-        # ── Snapshot del archivo cargado ─────────────────────────────────
-        st.markdown(section_header("Qué se cargó", eyebrow="ARCHIVO ACTUAL", compact=True), unsafe_allow_html=True)
+    tipo = classification.get("label") if classification else None
+    resumen = (f"📄 {html.escape(str(wb.get('filename', '—')))} · {len(sheets)} hoja{'s' if len(sheets) != 1 else ''}"
+               f" · hoja activa «{html.escape(str(sheet))}»" + (f" · {html.escape(str(tipo))}" if tipo else ""))
+    st.markdown(f'<div class="chart-reading" style="margin-top:14px">{resumen}</div>', unsafe_allow_html=True)
+    with st.expander("Sobre el archivo: qué se cargó y cómo se leyó", expanded=filtrado):
         c1, c2, c3, c4 = st.columns(4)
         c1.markdown(kpi_card("Archivo", wb.get("filename", "—"), small_value=True), unsafe_allow_html=True)
         c2.markdown(kpi_card("Hojas con datos", f"{len(sheets):,}"), unsafe_allow_html=True)
@@ -220,71 +343,58 @@ def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict, seleccio
                                  delta=f"de {seleccion['total']:,} · {seleccion['porcentaje']:.0f}% de la hoja"),
                         unsafe_allow_html=True)
         else:
-            c3.markdown(kpi_card("Registros totales", f"{total_records:,}"), unsafe_allow_html=True)
+            activa = sheets.get(sheet) if isinstance(sheets.get(sheet), dict) else {}
+            en_hoja = len(activa.get("processed", [])) if activa else None
+            # El total suma TODAS las hojas; arriba se ve el de la hoja activa
+            # (5.015 vs 5.032 parecían cifras que no cuadraban).
+            c3.markdown(kpi_card("Registros totales", f"{total_records:,}",
+                                 delta=(f"{en_hoja:,} en la hoja activa" if en_hoja is not None and len(sheets) > 1
+                                        else None)), unsafe_allow_html=True)
         c4.markdown(kpi_card("Hoja activa", sheet, small_value=True), unsafe_allow_html=True)
-
-    # ── Qué información es y qué no se pudo leer ────────────────────────────
-    # Qué estoy viendo y cómo se interpretó son la misma pregunta, así que
-    # van en una sola tarjeta. Antes eran dos franjas de ancho completo
-    # separadas por media pantalla ("Estás viendo…" arriba del todo y "Tipo
-    # detectado…" después de las imágenes y del contenido del archivo), y
-    # las herramientas activadas se leían como una frase con comas.
-    item = sheets.get(sheet) if isinstance(sheets.get(sheet), dict) else {}
-    titulo = (item.get("profile") or {}).get("titulo")
-    if titulo or classification:
-        partes = []
-        if titulo:
-            partes.append('<div class="context-main"><span class="decision-dot"></span>'
-                          f'<b>Estás viendo:</b> {html.escape(str(titulo))}</div>')
         if classification:
             cap_labels = {"evolucion": "evolución", "comparacion_periodos": "comparación de periodos",
                           "ranking": "rankings", "distribucion": "distribuciones",
                           "relaciones": "relaciones entre métricas", "estadisticas": "estadísticas",
                           "grafico_distribucion": "gráficos de distribución", "geografia": "geografía",
                           "catalogo": "consulta de catálogo", "estados": "seguimiento de estados"}
-            caps = classification.get("capabilities", [])[:6]
-            chips = "".join(f'<span class="context-chip">{html.escape(cap_labels.get(x, str(x)))}</span>'
-                            for x in caps) or '<span class="context-chip">lectura y tabla</span>'
-            partes.append(
-                '<div class="context-meta">'
-                f'<span class="context-tipo">{html.escape(str(classification.get("label", "Datos generales")))}</span>'
-                f'<span class="context-conf">confianza {(classification.get("confidence") or 0) * 100:.0f}%</span>'
-                '</div>'
-                f'<div class="context-caps"><span class="context-caps-label">Herramientas activas</span>{chips}</div>'
-            )
-        st.markdown(f'<div class="context-bar">{"".join(partes)}</div>', unsafe_allow_html=True)
-        reason = classification.get("reason") if classification else None
-        if reason:
-            with st.expander("¿Por qué se detectó este tipo de datos?", expanded=False):
-                st.caption(reason)
-    _notas_de_lectura(wb.get("avisos") or [])
-    render_imagenes(wb)
-    _contenido_del_archivo(sheets)
+            caps = ", ".join(cap_labels.get(x, str(x)) for x in classification.get("capabilities", [])[:6])
+            st.caption(f"Tipo de datos detectado: **{classification.get('label', 'Datos generales')}** "
+                       f"({(classification.get('confidence') or 0) * 100:.0f}% de confianza)"
+                       + (f" · análisis disponibles: {caps}." if caps else ".")
+                       + (f" {classification.get('reason')}" if classification.get("reason") else ""))
 
-    # ── La selección actual: qué filtros hay y cómo va lo que queda ────────
+
+def render_home(wb: dict, sheet: str, mode_info: dict, dashboard: dict, seleccion: dict | None = None,
+                df: pd.DataFrame | None = None, schema: dict | None = None) -> None:
+    sheets = wb.get("sheets", {}) or {}
+    classification = (mode_info or {}).get("classification", {}) or {}
+    # Es la pestaña con la que abre el panel. Antes mostraba siempre el
+    # archivo completo: al aplicar un filtro, lo primero que se veía no
+    # cambiaba y parecía que el filtro no hacía nada.
+    filtrado = bool(seleccion and seleccion.get("filtrado"))
+
+    # El título de la tabla («RANKING DE LOS JEFES») dice qué información es.
+    item = sheets.get(sheet) if isinstance(sheets.get(sheet), dict) else {}
+    titulo = (item.get("profile") or {}).get("titulo")
+    if titulo:
+        st.markdown(f'<div class="context-bar"><div class="context-main"><span class="decision-dot"></span>'
+                    f'<b>Estás viendo:</b> {html.escape(str(titulo))}</div></div>', unsafe_allow_html=True)
+
+    # ── La selección actual: qué filtros hay ───────────────────────────────
     if filtrado:
-        st.markdown(section_header("Tu selección", eyebrow="VISTA FILTRADA", compact=True), unsafe_allow_html=True)
         frases = [html.escape(str(f)) for f in seleccion.get("frases", [])]
-        texto = (f"<b>Filtros activos:</b> {' · '.join(frases)}" if frases
-                 else "<b>Vista acotada</b> por el periodo o la búsqueda.")
+        texto = (f"<b>🎯 Vista filtrada · {seleccion['visibles']:,} de {seleccion['total']:,} registros:</b> "
+                 f"{' · '.join(frases)}" if frases else "<b>Vista acotada</b> por el periodo o la búsqueda.")
         st.markdown(decision_strip(texto, dot=True), unsafe_allow_html=True)
+
+    # ── El parte del día: cómo vamos y qué hacer ───────────────────────────
+    if not _parte_del_dia(df, schema, dashboard or {}):
+        # Sin fechas o sin una métrica que se sume no hay «mes contra mes»:
+        # queda el veredicto general, si lo hay.
         if isinstance(dashboard, dict) and dashboard.get("executive"):
             executive_headline(dashboard)
 
-    # ── Cómo moverse por la herramienta ────────────────────────────────────
-    st.markdown(section_header("Recorrido rápido", eyebrow="CÓMO EMPEZAR", compact=True), unsafe_allow_html=True)
-    s1, s2 = st.columns(2)
-    with s1:
-        st.markdown(_step("1", "Resumen ejecutivo", "KPIs, tendencia, hallazgos y alertas calculados automáticamente sobre tus datos."), unsafe_allow_html=True)
-        st.write("")
-        st.markdown(_step("2", "Filtros y segmentación", "Usa la barra lateral para acotar por persona, categoría, región o periodo. Todo el panel se recalcula solo."), unsafe_allow_html=True)
-    with s2:
-        st.markdown(_step("3", "Asistente IA y comparaciones", "Pregunta directamente sobre tus datos, compara personas o compara archivos/periodos completos."), unsafe_allow_html=True)
-        st.write("")
-        st.markdown(_step("4", "Exportar", "Descarga un informe HTML autocontenido (una hoja o el Excel completo) listo para compartir por correo."), unsafe_allow_html=True)
-
-    st.markdown(
-        '<div class="chart-reading" style="margin-top:18px;"><b>Tip:</b> cada pestaña recalcula sus '
-        'indicadores en tiempo real según los filtros activos en la barra lateral.</div>',
-        unsafe_allow_html=True,
-    )
+    _sobre_el_archivo(wb, sheet, sheets, classification, seleccion, filtrado)
+    _notas_de_lectura(wb.get("avisos") or [])
+    render_imagenes(wb)
+    _contenido_del_archivo(sheets)

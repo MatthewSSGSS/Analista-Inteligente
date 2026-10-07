@@ -22,7 +22,7 @@ def _fmt(v: Any) -> str:
     if isinstance(v, (int, float)):
         v = float(v)
         if abs(v) >= 1_000_000_000:
-            return f"{v/1_000_000_000:.2f}B"
+            return f"{v/1_000_000_000:.2f} mil M"
         if abs(v) >= 1_000_000:
             return f"{v/1_000_000:.2f}M"
         if abs(v) >= 1_000:

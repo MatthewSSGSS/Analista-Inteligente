@@ -233,7 +233,7 @@ def _fmt(value) -> str:
         return _esc(value)
     a = abs(v)
     if a >= 1_000_000_000:
-        return f"{v/1_000_000_000:.1f}B"
+        return f"{v/1_000_000_000:.1f} mil M"
     if a >= 1_000_000:
         return f"{v/1_000_000:.1f}M"
     if a >= 1_000:

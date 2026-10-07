@@ -89,7 +89,7 @@ def _fmt(v):
     signo = "-" if v < 0 else ""
     v = abs(v)
     if v >= 1_000_000_000:
-        return f"{signo}{v/1_000_000_000:.1f}B"
+        return f"{signo}{v/1_000_000_000:.1f} mil M"
     if v >= 1_000_000:
         return f"{signo}{v/1_000_000:.1f}M"
     if v >= 1_000:

@@ -124,7 +124,7 @@ def _compacto(valor) -> str:
     v = float(valor)
     a = abs(v)
     if a >= 1e9:
-        return f"{v / 1e9:.1f}B"
+        return f"{v / 1e9:.1f} mil M"
     if a >= 1e6:
         return f"{v / 1e6:.1f}M"
     if a >= 1e3:

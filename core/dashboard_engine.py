@@ -11,7 +11,7 @@ from .universal_analysis import dynamic_kpis
 def _fmt_number(v):
     if pd.isna(v): return "—"
     v=float(v)
-    if abs(v)>=1_000_000_000: return f"{v/1_000_000_000:.1f}B"
+    if abs(v)>=1_000_000_000: return f"{v/1_000_000_000:.1f} mil M"
     if abs(v)>=1_000_000: return f"{v/1_000_000:.1f}M"
     if abs(v)>=1_000: return f"{v/1_000:.1f}K"
     return f"{v:,.0f}"

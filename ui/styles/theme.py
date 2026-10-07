@@ -305,7 +305,10 @@ _COMPONENTS_CSS_RAW = """
   height:100%;display:flex;flex-direction:column;
 }
 [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(3)) > [data-testid="stColumn"] .kpi-card{
-  flex:1;height:100%;box-sizing:border-box;
+  /* min-height y no height: con height:100% la tarjeta medía lo que el
+     contenedor (95 px) aunque su texto pidiera 99, y la última línea
+     («+17.1% vs junio de 2026») quedaba cortada por el borde. */
+  flex:1;height:auto;min-height:100%;box-sizing:border-box;
 }
 /* Se quitó la franja oscura (::before de 300px sobre .block-container:has
    (.hero-band)) que degradaba hacia la foto de fondo general — sin foto
@@ -620,6 +623,13 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
   background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:5px 12px 5px 5px}
 .app-hero-pasos i{font-style:normal;width:20px;height:20px;border-radius:50%;background:#e4002b;color:#ffffff!important;
   display:inline-grid;place-items:center;font-size:10.5px;font-weight:800}
+/* Con un archivo abierto: una franja delgada (ver hero_app(compacto=True)). */
+.app-hero.compacto{padding:9px 18px;margin:10px 0 8px;gap:12px;box-shadow:var(--shadow-md)}
+.app-hero.compacto:before{width:200px;height:200px;top:-90px;right:-60px}
+.app-hero.compacto .app-hero-orb{width:26px;height:26px;flex:0 0 26px}
+.app-hero.compacto .app-hero-txt{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.app-hero.compacto .app-hero-kicker{font-size:9.5px}
+.app-hero.compacto .app-hero-title{font-size:17px;margin-top:0}
 
 /* ===== Tarjeta «Analizando» + buscador (app.py, st.container key="app_contexto") =====
    Antes: una etiqueta suelta, el campo y una franja gris con todo el
@@ -627,7 +637,7 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    analiza, fichas con registros/periodo/hoja, el estado (archivo completo
    en verde o vista filtrada en rojo, con su porcentaje) y el buscador. */
 .st-key-app_contexto{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);
-  border-radius:var(--radius-lg);padding:14px 18px 14px 22px;box-shadow:var(--shadow-md);gap:.6rem;margin-bottom:12px}
+  border-radius:var(--radius-lg);padding:12px 18px 12px 22px;box-shadow:var(--shadow-md);gap:.5rem;margin-bottom:10px}
 .st-key-app_contexto:before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
   background:linear-gradient(180deg,#ff3b4e,#e4002b)}
 .ctx-top{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
@@ -817,10 +827,15 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    con esta única regla), la solución que sí es solo CSS: el propio
    contenedor del gráfico se convierte en su caja sólida, separada de la
    del título por un espacio chico en vez de fingir ser una sola pieza. */
+/* Sin relleno vertical: Streamlit le fija al contenedor el alto exacto de la
+   figura (p. ej. 360 px) y los 14 px de relleno se los quitaba al gráfico, que
+   se salía por abajo: las fechas del eje x quedaban cortadas por la mitad en
+   todo el panel. El aire de arriba y abajo ya lo dan los márgenes de la figura.
+   (Con height:auto el gráfico crecía sin límite y salía recortado.) */
 .stPlotlyChart{
   margin:8px 0 10px;background:var(--card-solid);
   border:1px solid var(--line);border-radius:var(--radius-lg);
-  padding:10px 12px 4px;
+  padding:0 12px;
   box-shadow:0 1px 2px rgba(20,26,43,.04),0 8px 20px rgba(20,26,43,.055);
 }
 

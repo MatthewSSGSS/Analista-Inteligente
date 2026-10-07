@@ -210,9 +210,12 @@ def realzar_barras(fig, referencia=None, referencia_texto="", horizontal=True, r
                       textfont=dict(size=11.5, family="Inter, Segoe UI, sans-serif"))
     if referencia is not None and np.isfinite(referencia):
         linea = dict(line_width=1.3, line_dash="dot", line_color="#94A3B8")
+        # En vertical, la etiqueta va por encima del área de dibujo: dentro se
+        # montaba sobre la primera barra, que es justo la que más se mira.
         anotacion = dict(annotation_text=referencia_texto,
                          annotation_position="top right" if horizontal else "top left",
-                         annotation_font=dict(size=10, color=MUTED)) if referencia_texto else {}
+                         annotation_font=dict(size=10, color=MUTED),
+                         **({"annotation_yanchor": "bottom"} if horizontal else {})) if referencia_texto else {}
         if horizontal:
             fig.add_vline(x=referencia, **linea, **anotacion)
         else:
@@ -281,12 +284,183 @@ def _compact_number(v):
         return str(v)
     a = abs(v)
     if a >= 1_000_000_000:
-        return f"{v/1_000_000_000:.1f}B"
+        return f"{v/1_000_000_000:.1f} mil M"
     if a >= 1_000_000:
         return f"{v/1_000_000:.1f}M"
     if a >= 1_000:
         return f"{v/1_000:.1f}K"
     return f"{v:,.0f}"
+
+
+# ── Ejes en español ───────────────────────────────────────────────────────
+# Plotly escribe las cifras con prefijos del sistema internacional («1G»,
+# «1.5G», «200k») y los meses en inglés («Jan 2025»): en un tablero para
+# gerentes en Colombia, «G» no se lee y «B» se confunde con billones. No hay
+# forma de pedirle a plotly otro idioma para eso, así que `en_espanol` le
+# pone a cada eje sus marcas calculadas aquí, con el mismo formato corto del
+# resto del panel. Se aplica al dibujar (ver ui/components/charts.chart_card)
+# y solo toca los ejes que lo piden: los de cifras con formato «~s» y los de
+# fecha con mes («%b»).
+MESES_CORTOS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def cifra_eje(v) -> str:
+    """Una marca de eje: 0 · 250 mil · 1.5 M · 2 mil M (sin decimales sobrantes)."""
+    v = float(v)
+    a = abs(v)
+
+    def _corto(x):
+        texto = f"{x:,.1f}"
+        return texto[:-2] if texto.endswith(".0") else texto
+    if a >= 1e9:
+        return f"{_corto(v / 1e9)} mil M"
+    if a >= 1e6:
+        return f"{_corto(v / 1e6)} M"
+    if a >= 1e3:
+        return f"{_corto(v / 1e3)} mil"
+    if a == 0:
+        return "0"
+    return _corto(v) if a >= 1 else f"{v:.2g}"
+
+
+def _paso_redondo(tramo: float, marcas: int = 5):
+    """Un paso de eje «redondo» (1, 2, 2.5 o 5 por potencia de 10) para unas `marcas` marcas."""
+    import math
+    if not tramo or not math.isfinite(tramo) or tramo <= 0:
+        return None
+    crudo = tramo / marcas
+    magnitud = 10 ** math.floor(math.log10(crudo))
+    for m in (1, 2, 2.5, 5, 10):
+        if crudo <= m * magnitud:
+            return m * magnitud
+    return 10 * magnitud
+
+
+def _numeros(valores) -> np.ndarray:
+    try:
+        x = np.asarray(valores, dtype=float)
+    except (TypeError, ValueError):
+        return np.array([])
+    return x[np.isfinite(x)] if x.ndim == 1 else np.array([])
+
+
+def _valores_en_eje(fig, letra: str, ref: str) -> tuple[np.ndarray, bool]:
+    """Las cifras que se dibujan sobre el eje `ref` («y», «y2», «x»…) y si hay barras
+    (las barras nacen en cero, así que el cero entra en el rango)."""
+    apiladas = getattr(fig.layout, "barmode", None) in ("stack", "relative")
+    sumas_pos, sumas_neg, sueltos, hay_barras = {}, {}, [], False
+    for t in fig.data:
+        if (getattr(t, f"{letra}axis", None) or letra) != ref:
+            continue
+        horizontal = getattr(t, "orientation", None) == "h"
+        es_barra = t.type in ("bar", "waterfall")
+        # En una barra horizontal las cifras van en x; en el resto, en y (o en x si es el eje pedido).
+        if es_barra and ((letra == "x") != horizontal):
+            continue
+        vals = _numeros(getattr(t, letra, None))
+        if not len(vals):
+            continue
+        if t.type == "waterfall":
+            vals = np.cumsum(vals)
+        # Un área rellena hasta el cero se dibuja desde el cero: el eje también.
+        if es_barra or getattr(t, "fill", None) in ("tozeroy", "tozerox"):
+            hay_barras = True
+            if apiladas and t.type == "bar":
+                otros = getattr(t, "y" if letra == "x" else "x", None)
+                claves = list(otros) if otros is not None else list(range(len(vals)))
+                for k, v in zip(claves, vals):
+                    destino = sumas_pos if v >= 0 else sumas_neg
+                    destino[k] = destino.get(k, 0.0) + v
+                continue
+        sueltos.extend(vals.tolist())
+    todos = sueltos + list(sumas_pos.values()) + list(sumas_neg.values())
+    return np.asarray(todos, dtype=float), hay_barras
+
+
+def _eje_de_cifras(fig, nombre: str, eje) -> None:
+    letra, ref = nombre[0], nombre[0] + nombre[5:]
+    rango = getattr(eje, "range", None)
+    if rango is not None and len(rango) == 2 and all(isinstance(r, (int, float)) for r in rango):
+        lo, hi = float(min(rango)), float(max(rango))
+    else:
+        vals, barras = _valores_en_eje(fig, letra, ref)
+        if not len(vals):
+            return
+        lo, hi = float(vals.min()), float(vals.max())
+        if barras:
+            lo, hi = min(lo, 0.0), max(hi, 0.0)
+        holgura = (hi - lo) * 0.08 or abs(hi) * 0.1 or 1.0
+        lo, hi = lo - (0 if (barras and lo == 0) else holgura), hi + holgura
+    paso = _paso_redondo(hi - lo)
+    if paso is None:
+        return
+    import math
+    inicio = math.floor(lo / paso) * paso
+    marcas = [inicio + i * paso for i in range(int((hi - inicio) / paso) + 2)]
+    marcas = [0.0 if abs(m) < paso * 1e-9 else round(m, 10) for m in marcas]
+    eje.update(tickmode="array", tickvals=marcas, ticktext=[cifra_eje(m) for m in marcas], tickformat=None)
+
+
+def _fechas_en_eje(fig, letra: str, ref: str) -> pd.Series:
+    fechas = []
+    for t in fig.data:
+        if (getattr(t, f"{letra}axis", None) or letra) != ref:
+            continue
+        vals = getattr(t, letra, None)
+        if vals is None:
+            continue
+        f = pd.to_datetime(pd.Series(list(vals)), errors="coerce").dropna()
+        fechas.extend(f.tolist())
+    return pd.Series(fechas, dtype="datetime64[ns]")
+
+
+def _eje_de_fechas(fig, nombre: str, eje, formato: str) -> None:
+    letra, ref = nombre[0], nombre[0] + nombre[5:]
+    f = _fechas_en_eje(fig, letra, ref)
+    if f.empty:
+        return
+    lo, hi = f.min(), f.max()
+    # «15 feb» sin año es ambiguo si el eje cubre más de un año: ahí se marca por mes.
+    if "%d" in formato and (hi - lo).days <= 300:
+        # Por día: unas 8 marcas repartidas, «12 mar».
+        dias = max((hi - lo).days, 1)
+        paso = max(1, round(dias / 7))
+        marcas = list(pd.date_range(lo.normalize(), hi.normalize(), freq=f"{paso}D"))
+        textos = [f"{m.day} {MESES_CORTOS[m.month - 1]}" for m in marcas]
+    else:
+        # Por mes: el primer día de cada mes, de a 1, 2, 3, 6 o 12 meses según cuántos haya.
+        meses = (hi.year - lo.year) * 12 + hi.month - lo.month + 1
+        paso = next((p for p in (1, 2, 3, 6, 12) if meses / p <= 12), 12)
+        inicio = pd.Timestamp(lo.year, lo.month, 1)
+        marcas = list(pd.date_range(inicio, hi, freq=f"{paso}MS"))
+        solo_anio = formato.strip() == "%Y"
+        textos = [str(m.year) if solo_anio else f"{MESES_CORTOS[m.month - 1]} {m.year}" for m in marcas]
+    if marcas:
+        eje.update(tickmode="array", tickvals=marcas, ticktext=textos, tickformat=None)
+
+
+def en_espanol(fig):
+    """Pone en español las marcas de los ejes de cifras («~s») y de fechas con mes.
+
+    Nunca rompe un gráfico: si algo no se puede leer, el eje queda como estaba."""
+    if fig is None:
+        return fig
+    try:
+        for nombre in [k for k in fig.layout.to_plotly_json() if k.startswith(("xaxis", "yaxis"))] or []:
+            eje = getattr(fig.layout, nombre, None)
+            if eje is None:
+                continue
+            formato = getattr(eje, "tickformat", None) or ""
+            try:
+                if formato == "~s":
+                    _eje_de_cifras(fig, nombre, eje)
+                elif "%b" in formato or (formato.strip() == "%Y" and getattr(eje, "type", None) == "date"):
+                    _eje_de_fechas(fig, nombre, eje, formato)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return fig
 
 
 def _periodize(df, date_col, grain):
@@ -645,18 +819,11 @@ def ranking(df, schema, metric=None, dimension=None, top_n=10, agg="Suma"):
     else:
         x = grouped.sum()
     x = x.sort_values(m, ascending=False).head(int(top_n)).sort_values(m, ascending=True)
-    # Semáforo visual: líder, zona media y rezagado.
-    colors = []
-    n = len(x)
-    for i in range(n):
-        if n == 1:
-            colors.append(PRIMARY)
-        elif i == n - 1:
-            colors.append(PRIMARY)
-        elif i == 0:
-            colors.append(RED)
-        else:
-            colors.append(TEAL)
+    # Un solo color: es una sola serie y el largo de la barra ya dice el
+    # orden. Antes iba el primero en el rojo de marca, el último en coral y el
+    # resto en verde: el líder parecía una alarma y el color repetía, con
+    # otro código, lo que ya decía la barra. La referencia es la mediana.
+    colors = [TEAL] * len(x)
     fmt = _number_format(x[m])
     fig = go.Figure(go.Bar(
         x=x[m], y=x[c], orientation="h", marker=dict(color=colors, line=dict(width=0)),
@@ -669,7 +836,9 @@ def ranking(df, schema, metric=None, dimension=None, top_n=10, agg="Suma"):
                       + "}</b><br><i>Clic para ver los registros</i><extra></extra>",
     ))
     fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title=None, bargap=.26, uniformtext_minsize=9, uniformtext_mode="hide")
-    fig.update_xaxes(tickformat="~s")
+    # Aire a la derecha para la cifra escrita al final de la barra (se cortaba: «4.»).
+    tope = float(x[m].max()) if len(x) else 0.0
+    fig.update_xaxes(tickformat="~s", **({"range": [0, tope * 1.32]} if tope > 0 and float(x[m].min()) >= 0 else {}))
     fig = _base(fig, max(330, 34 * len(x) + 100), show_xgrid=True)
     # La mediana como referencia: convierte el ranking en una lectura de
     # "quién está por encima y quién por debajo de lo normal", que es lo que
@@ -1401,21 +1570,28 @@ def period_compare_bar(df, schema, metric=None, dimension=None, grain="Mes", agg
     fig = go.Figure()
     prev_label = format_month_year(previous)
     curr_label = format_month_year(current)
+    # Lado a lado y no apiladas: apiladas, julio quedaba ENCIMA de junio
+    # como si se sumaran, y la pregunta del gráfico («¿quién explica la
+    # subida?») se lee comparando las dos barras de cada uno.
     fig.add_trace(go.Bar(
         x=y.index.astype(str), y=y[previous], name=f"Anterior · {prev_label}",
-        marker_color="#64748B", hovertemplate="<b>%{x}</b><br>Anterior: %{y:,.0f}<extra></extra>"
+        marker_color="#A7B1C2", customdata=[_compact_number(v) for v in y[previous]],
+        hovertemplate="<b>%{x}</b><br>" + prev_label + ": %{customdata}<extra></extra>"
     ))
     fig.add_trace(go.Bar(
         x=y.index.astype(str), y=y[current], name=f"Actual · {curr_label}",
-        marker_color=PRIMARY, hovertemplate="<b>%{x}</b><br>Actual: %{y:,.0f}<extra></extra>"
+        marker_color=PRIMARY, customdata=[_compact_number(v) for v in y[current]],
+        hovertemplate="<b>%{x}</b><br>" + curr_label + ": %{customdata}<extra></extra>"
     ))
     fig.update_layout(
-        barmode="stack",
-        xaxis_title=_label(schema, dimension),
-        yaxis_title=_label(schema, metric),
+        barmode="group", bargap=0.28, bargroupgap=0.06,
+        xaxis_title=None,
+        yaxis_title=None,
         legend=dict(orientation="h", y=1.02, x=0),
     )
-    return _base(fig, 390, show_xgrid=False)
+    fig = _base(fig, 390, show_xgrid=False)
+    fig.update_yaxes(tickformat="~s")
+    return realzar_barras(fig, horizontal=False, radio=4)
 
 def comparison(df, schema, metric=None, period="Mes"):
     dates = schema.get("dates", [])

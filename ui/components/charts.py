@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import streamlit as st
+from visualization.charts import en_espanol
 
 
 def _puntos_seleccionados(evento):
@@ -109,6 +110,9 @@ def chart_card(
         unsafe_allow_html=True,
     )
     if fig is not None:
+        # Cifras y meses de los ejes en español («1 mil M», «ene 2025») y no
+        # como los escribe plotly («1G», «Jan 2025»). Ver visualization/charts.en_espanol.
+        en_espanol(fig)
         # Streamlit exige claves únicas por elemento; el gráfico y su botón
         # de explicación son dos elementos distintos y nunca deben compartir
         # clave.

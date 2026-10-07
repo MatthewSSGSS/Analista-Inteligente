@@ -289,8 +289,21 @@ def _titular(filas, en_riesgo, cayendo, crecimiento_total) -> str:
                 f"{'concentra' if len(en_riesgo) == 1 else 'concentran'} el {peso:.0f}% del negocio "
                 f"y {'está cayendo' if len(en_riesgo) == 1 else 'están cayendo'}. Es la prioridad del periodo.")
     if cayendo:
-        return (f"Ningún canal grande está en caída. {len(cayendo)} de {len(filas)} retroceden, "
-                f"pero pesan poco: la decisión ahí es de continuidad, no de urgencia.")
+        # «Pesan poco» solo si de verdad es poco. Con 4 canales «grande» es más
+        # del 25%, y un canal con el 20% del negocio cayendo 13% salía como
+        # «pesan poco» mientras su tarjeta decía CRÍTICO al lado.
+        peso = sum(f["participacion"] for f in cayendo)
+        nombres = _lista([f["canal"] for f in cayendo[:3]])
+        uno = len(cayendo) == 1
+        if peso < 10:
+            return (f"Ningún canal grande está en caída. {nombres} {'retrocede' if uno else 'retroceden'}, "
+                    f"pero entre todos pesan el {peso:.0f}% del negocio: la decisión ahí es de continuidad, no de urgencia.")
+        peor = min(cayendo, key=lambda f: f["crecimiento"] or 0)
+        cuanto = (f"cae {peor['crecimiento']:+.1f}%" if uno else
+                  f"caen (el que más, {peor['canal']}: {peor['crecimiento']:+.1f}%)")
+        return (f"Ningún canal de los más grandes está en caída, pero {nombres} {cuanto} y "
+                f"{'pesa' if uno else 'pesan'} el {peso:.0f}% del negocio: "
+                f"revisar esta semana si es algo puntual o el comienzo de una tendencia.")
     if (crecimiento_total or 0) >= UMBRAL_MOVIMIENTO:
         return (f"Todos los canales sostienen o crecen y el total sube {crecimiento_total:.1f}%. "
                 f"La pregunta pasa a ser dónde poner capacidad antes de que el crecimiento tope.")

@@ -19,7 +19,7 @@ from ui.components.section import section_header
 def _fmt(v):
     if v is None or pd.isna(v): return "—"
     x=float(v); ax=abs(x)
-    if ax>=1e9:return f"{x/1e9:.2f}B"
+    if ax>=1e9:return f"{x/1e9:.2f} mil M"
     if ax>=1e6:return f"{x/1e6:.2f}M"
     if ax>=1e3:return f"{x/1e3:.1f}K"
     return f"{x:,.0f}"

@@ -202,7 +202,7 @@ def _detalle_de_grafico(df, schema, kind):
 def _fmt(v):
     if pd.isna(v): return "—"
     v = float(v)
-    if abs(v) >= 1e9: return f"{v/1e9:.1f}B"
+    if abs(v) >= 1e9: return f"{v/1e9:.1f} mil M"
     if abs(v) >= 1e6: return f"{v/1e6:.1f}M"
     if abs(v) >= 1e3: return f"{v/1e3:.1f}K"
     return f"{v:,.0f}"

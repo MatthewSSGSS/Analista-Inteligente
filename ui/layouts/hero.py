@@ -12,19 +12,27 @@ from __future__ import annotations
 import streamlit as st
 
 
-def hero_app(title: str, subtitle: str, pasos: list[str] | None = None) -> None:
+def hero_app(title: str, subtitle: str, pasos: list[str] | None = None, compacto: bool = False) -> None:
     """Encabezado de marca de la app (`.app-hero`): isotipo, título y lo que
     hace la herramienta en pasos. Reemplaza al `hero(band=True)` de app.py,
     que era una franja gris plana con un emoji por logo.
 
+    `compacto=True` (con un archivo ya abierto): una franja delgada, sin
+    subtítulo ni pasos. Esa presentación sirve la primera vez; después ocupaba
+    ~170 px de lo alto de CADA vista y el gerente, en un portátil, veía la
+    cabecera y la barra de vistas pero no el contenido sin bajar.
+
     El título va en un <div> y no en un <h1>: Streamlit envuelve los h1-h6
     en un <span> con ancla propia que pisaba el color (ver `.hero-band`)."""
     import html as _html
+    if compacto:
+        pasos, subtitle = None, ""
     chips = "".join(f'<span><i>{i}</i>{_html.escape(p)}</span>' for i, p in enumerate(pasos or [], 1))
     st.markdown(
-        f'<div class="app-hero"><div class="app-hero-orb"></div>'
+        f'<div class="app-hero{" compacto" if compacto else ""}"><div class="app-hero-orb"></div>'
         f'<div class="app-hero-txt"><div class="app-hero-kicker">Centro de control comercial</div>'
-        f'<div class="app-hero-title">{_html.escape(title)}</div><p>{_html.escape(subtitle)}</p></div>'
+        f'<div class="app-hero-title">{_html.escape(title)}</div>'
+        + (f'<p>{_html.escape(subtitle)}</p>' if subtitle else "") + '</div>'
         + (f'<div class="app-hero-pasos">{chips}</div>' if chips else "")
         + '</div>',
         unsafe_allow_html=True,

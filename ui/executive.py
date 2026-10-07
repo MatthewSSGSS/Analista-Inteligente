@@ -6,6 +6,7 @@ from ui.layouts.tabs import ir_a, VISTA_ATACAR, VISTA_SEGUIMIENTO
 from core.universal_analysis import dynamic_kpis, smart_chart_questions, period_series
 from core.tracking_engine import project_metric
 from core.dates import format_month_year
+from core.executive import indicadores_gerente
 from visualization.charts import trend, ranking, period_compare_bar, donut, histogram, rangos, scatter, concentracion, metric_candidates, dimension_candidates, _label
 from ui.labels import clean_display_text
 from ui.dashboard import _fmt, _chart_insight, _display_kpi_value, _kpi_style
@@ -75,6 +76,52 @@ def _por_que_y_que_atacar(df, schema, dashboard) -> None:
                           on_click=ir_a, args=(VISTA_SEGUIMIENTO,))
 
 
+def _senales_con_nombres(dashboard, g):
+    """Señales con nombre y cifra («Caribe +148.9M»), no títulos de hallazgos
+    («Dónde se concentra la caída»): quién empujó hacia arriba y quién frenó,
+    sacado del análisis gerencial. Sin él, quedan las de siempre."""
+    ex = dict((dashboard or {}).get("executive") or {})
+    causas = (g or {}).get("causas") or {}
+    nodos, contra = causas.get("nodos") or [], causas.get("compensaron") or []
+    if not (g and g.get("se_movio") and (nodos or contra)):
+        return dashboard
+    subio = (g.get("delta") or 0) > 0
+    suben = nodos if subio else contra
+    bajan = contra if subio else nodos
+    dim = causas.get("etiqueta") or causas.get("dimension") or ""
+
+    def _linea(n):
+        signo = "+" if n["delta"] > 0 else ""
+        return f"{n['nombre']} {signo}{_fmt(n['delta'])}" + (f" ({dim})" if dim else "")
+    positivas = [_linea(n) for n in suben if n.get("delta", 0) > 0][:3]
+    vigilar = [_linea(n) for n in bajan if n.get("delta", 0) < 0][:2]
+    # Lo que no es de una zona (calidad, atípicos, estados) sigue en «a vigilar».
+    vigilar += [w for w in ex.get("watch", []) if w not in vigilar and "caída" not in str(w).lower()][:3 - len(vigilar)]
+    ex["positive"] = positivas or ex.get("positive", [])
+    ex["watch"] = vigilar or ex.get("watch", [])
+    return {**dashboard, "executive": ex}
+
+
+def _kpis_gerente(df, schema, g, m) -> list[str]:
+    """Las tarjetas del gerente (ver core/executive.indicadores_gerente), ya dibujadas."""
+    return [kpi_card(i["etiqueta"], i["valor"], delta=i["detalle"], tone=i["tono"])
+            for i in indicadores_gerente(df, schema, g, m)]
+
+
+def _dimension_de_lectura(df, schema, dims, g):
+    """La dimensión de los gráficos del resumen: la que explica el cambio
+    (la causa del análisis gerencial) y, si no hay, la primera con pocas
+    categorías. Antes era la primera de la lista —que en un archivo de ventas
+    es «Cliente», con 5.000 valores—, y los gráficos mostraban «Cliente 9695»."""
+    causa = ((g or {}).get("causas") or {}).get("dimension")
+    if causa and causa in df.columns:
+        return causa
+    for d in dims:
+        if 2 <= df[d].dropna().astype(str).str.strip().nunique() <= 30:
+            return d
+    return dims[0] if dims else None
+
+
 def _veredicto_con_meses(dashboard, g):
     """El veredicto con los meses nombrados: «frente al periodo anterior» a
     secas obligaba a preguntar cuál; la tarjeta de abajo ya decía los meses."""
@@ -113,6 +160,11 @@ def render_executive(df, schema, dashboard):
 
     def _render_kpi(k):
         label, tone, icon = _kpi_style(k, schema)
+        # El líder se mide sobre TODO el periodo; las demás tarjetas, sobre el
+        # último mes. Sin decirlo, Tolima salía «mejor» aquí y «a vigilar» al
+        # lado (cayó en julio), y parecía una contradicción.
+        if k.get("kind") == "leader" and schema.get("dates"):
+            label = f"{label} · todo el periodo"
         # En la tarjeta de quién va primero, la cifra que lo sostiene
         # ("541 de una meta de 360") va debajo: sin ella no se sabe contra qué.
         delta = k.get("detalle") if k.get("kind") == "leader" else None
@@ -121,13 +173,24 @@ def render_executive(df, schema, dashboard):
         return kpi_card(label, _display_kpi_value(k), delta=delta, tone=tone, icon=icon,
                         small_value=k.get("kind") == "leader")
 
+    g = _gerencia(df, schema, dashboard)
     with main_col:
-        kpis=dynamic_kpis(df,schema,dashboard)[:6]
-        if kpis:
-            kpi_grid(kpis, render=_render_kpi, per_row=3)
-
         metrics=metric_candidates(df,schema); dims=dimension_candidates(df,schema)
-        m=metrics[0] if metrics else None; d=dims[0] if dims else None
+        m=metrics[0] if metrics else None
+        principal = (dashboard or {}).get("primary_metric") if isinstance(dashboard, dict) else None
+        if principal in metrics:
+            m = principal
+        d = _dimension_de_lectura(df, schema, dims, g)
+
+        kpis=dynamic_kpis(df,schema,dashboard)
+        gerente = _kpis_gerente(df, schema, g, m)
+        if len(gerente) >= 3:
+            # Las del gerente, más quién va primero (con su base justa).
+            lider = [k for k in kpis if k.get("kind") == "leader"][:1]
+            tarjetas = gerente[:5] + [_render_kpi(k) for k in lider]
+            kpi_grid(tarjetas, render=lambda t: t, per_row=3)
+        elif kpis:
+            kpi_grid(kpis[:6], render=_render_kpi, per_row=3)
         if m:
             specs=smart_chart_questions(df,schema,m,d)
             rendered=0
@@ -161,9 +224,11 @@ def render_executive(df, schema, dashboard):
 
     with side_col:
         ex=dashboard.get("executive",{}) if isinstance(dashboard,dict) else {}
+        con_nombres = _senales_con_nombres(dashboard, _gerencia(df, schema, dashboard))
+        ex = con_nombres.get("executive", {}) if isinstance(con_nombres, dict) else {}
         if ex.get("positive") or ex.get("watch"):
             st.markdown(section_header("Señales", compact=True), unsafe_allow_html=True)
-            executive_signals(dashboard)
+            executive_signals(con_nombres)
 
         # ── Proyección: "a este ritmo, ¿a cuánto llegarías?" ────────────────
         # Reutiliza project_metric() (regresión lineal simple), que ya existía
@@ -186,21 +251,31 @@ def render_executive(df, schema, dashboard):
                     # ruidosa, y presentarlo con el mismo peso que una
                     # proyección confiable sería engañoso.
                     confidence = "alta" if r2 >= 0.6 else "media" if r2 >= 0.3 else "baja"
-                    trend_word = {"creciente": "creciente", "decreciente": "decreciente", "estable": "estable"}.get(proj.get("trend"), "reciente")
                     st.markdown(section_header("Proyección", compact=True), unsafe_allow_html=True)
                     metric_label = _label(schema, m)
+                    # La dirección se dice frente al ÚLTIMO dato real, que es
+                    # lo que el gerente tiene en la cabeza. Antes decía «la
+                    # tendencia creciente» (la de la recta de 19 meses) y daba
+                    # una cifra menor que la del último mes.
+                    ultimo = float(ps.iloc[-1][m])
+                    cambio = (proj["projected"] - ultimo) / abs(ultimo) * 100 if ultimo else None
+                    rumbo = ("" if cambio is None else
+                             f", {'por encima' if cambio > 1 else 'por debajo' if cambio < -1 else 'cerca'} "
+                             f"de {format_month_year(last_period, full=True).lower()} ({cambio:+.0f}%)")
                     text = (
-                        f"Si la tendencia {trend_word} de los últimos {proj['points']} periodos se mantiene, "
-                        f"<b>{metric_label}</b> llegaría a aproximadamente "
-                        f"<b>{_fmt(proj['projected'])}</b> para {format_month_year(target, full=True)} "
-                        f"(confianza {confidence}, basada en {proj['points']} periodos de historia)."
+                        f"A este ritmo, <b>{metric_label}</b> estaría en <b>≈ {_fmt(proj['projected'])}</b> en "
+                        f"{format_month_year(target, full=True).lower()}{rumbo}. Confianza {confidence}: "
+                        f"sale de la tendencia de {proj['points']} meses. El detalle, en «🔮 Proyección»."
                     )
                     st.markdown(insight_card(text, title="A este ritmo...", kind="info"), unsafe_allow_html=True)
 
         insights=dashboard.get("insights",[]) if isinstance(dashboard,dict) else []
         if insights:
             st.markdown(section_header("Lectura analítica", compact=True), unsafe_allow_html=True)
-            for x in insights[:4]:
+            # Primero lo que pide acción (alertas y mejoras); lo informativo
+            # («El valor acumulado es…») solo si queda sitio.
+            orden = {"warning": 0, "positive": 1}
+            for x in sorted(insights, key=lambda i: orden.get(i.get("kind"), 2))[:3]:
                 title=clean_display_text(x.get("title") or x.get("label") or "Hallazgo")
                 finding=clean_display_text(x.get("finding") or x.get("message") or x.get("text") or x.get("description") or "Sin detalle disponible.")
                 action=clean_display_text(x.get("action")) if x.get("action") else None

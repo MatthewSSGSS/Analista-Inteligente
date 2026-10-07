@@ -92,13 +92,28 @@ def _filtros_activos() -> list[str]:
 
 
 def _base_de_comparacion(cuadro: dict) -> None:
+    """Contra qué se compara: una línea a la vista y el detalle plegado.
+
+    Eran seis párrafos fijos encima de los resultados; un gerente no los lee
+    y empujaban las cifras hacia abajo. La línea dice lo esencial (qué se
+    mide y contra qué); el resto sigue a un clic."""
+    etiqueta = _ETIQUETA_CONTEO if cuadro["conteo"] else str(cuadro["metrica"])
+    if cuadro["base"] == "meta":
+        vara = f"su meta («{cuadro['meta_col']}»)"
+    else:
+        vara = f"el promedio de los {cuadro['total_grupo']} ({_fmt(cuadro['promedio'])}), no solo de los elegidos"
+    st.markdown(f'<div class="chart-reading"><b>Cómo se compara:</b> {html.escape(etiqueta)} de cada '
+                f'{html.escape(str(cuadro["dimension"]))} contra {html.escape(vara)}. '
+                f'Verde = por encima · amarillo = cerca (±{UMBRAL_PROMEDIO:.0f}%) · rojo = por debajo.</div>',
+                unsafe_allow_html=True)
     items = "".join(
         f'<div class="cuadro-base-item"><span class="cuadro-base-icono">{b["icono"]}</span>'
         f'<div><b>{html.escape(b["titulo"])}</b><div class="cuadro-base-texto">{html.escape(b["texto"])}</div></div></div>'
         for b in base_de_comparacion(cuadro, _filtros_activos())
     )
-    st.markdown(f'<div class="cuadro-base"><div class="cuadro-base-titulo">Base de la comparación</div>'
-                f'<div class="cuadro-base-grid">{items}</div></div>', unsafe_allow_html=True)
+    with st.expander("Ver la base completa de la comparación (periodo, datos usados, a quiénes)", expanded=False):
+        st.markdown(f'<div class="cuadro-base"><div class="cuadro-base-titulo">Base de la comparación</div>'
+                    f'<div class="cuadro-base-grid">{items}</div></div>', unsafe_allow_html=True)
 
 
 def _controles(df: pd.DataFrame, schema: dict):
@@ -221,7 +236,21 @@ def _kpis(cuadro: dict) -> None:
                          tone="positive", small_value=True), unsafe_allow_html=True)
     c2.markdown(kpi_card("Va último", html.escape(ultimo["nombre"]), delta=cifra(ultimo),
                          tone="negative", small_value=True), unsafe_allow_html=True)
-    c3.markdown(kpi_card("Distancia primero–último", brecha, delta=brecha_detalle), unsafe_allow_html=True)
+    # Si hay variación del último mes, la tercera tarjeta es quién más cayó:
+    # el acumulado esconde que el primero puede venir desplomándose (en el
+    # archivo de prueba, la líder cayó 30% en julio y solo se veía en la tabla).
+    movimientos = [f for f in filas if f.get("variacion") is not None and pd.notna(f.get("variacion"))]
+    if cuadro.get("periodo_label") and movimientos:
+        peor = min(movimientos, key=lambda f: f["variacion"] * (-1 if cuadro["menos_es_mejor"] else 1))
+        mejor = max(movimientos, key=lambda f: f["variacion"] * (-1 if cuadro["menos_es_mejor"] else 1))
+        malo = (peor["variacion"] > 0) if cuadro["menos_es_mejor"] else (peor["variacion"] < 0)
+        c3.markdown(kpi_card(f"{'Más cayó' if malo else 'Menos creció'} · {cuadro['periodo_label']}",
+                             html.escape(peor["nombre"]),
+                             delta=(f"{_pct(peor['variacion'], signo=True)} · el que más subió: "
+                                    f"{html.escape(mejor['nombre'])} {_pct(mejor['variacion'], signo=True)}"),
+                             tone="negative" if malo else "neutral", small_value=True), unsafe_allow_html=True)
+    else:
+        c3.markdown(kpi_card("Distancia primero–último", brecha, delta=brecha_detalle), unsafe_allow_html=True)
     c4.markdown(kpi_card(cuarta[0], cuarta[1], delta=cuarta[3], tone=tono_kpi[cuarta[2]]), unsafe_allow_html=True)
 
 
@@ -272,16 +301,29 @@ def figura_evolucion(cuadro: dict):
     if len(cuadro["periodos"]) < 2:
         return None
     fig = go.Figure()
-    for i, f in enumerate(cuadro["filas"]):
-        if not f["serie"]:
-            continue
+    filas = [f for f in cuadro["filas"] if f["serie"]]
+    # Con más de tres líneas de colores el gráfico era un enredo que no se
+    # podía leer. Se resaltan el primero (verde) y el último (rojo) del cuadro
+    # y el resto va en gris fino: siguen ahí (cursor y leyenda), pero la
+    # lectura de un vistazo es «quién va arriba, quién va abajo y el promedio».
+    enfasis = len(filas) > 3
+    destacados = {filas[0]["nombre"]: "#16A34A", filas[-1]["nombre"]: "#DC2626"} if enfasis else {}
+    for i, f in enumerate(filas):
         puntos = sorted(f["serie"].items())
-        color = CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)]
+        color = destacados.get(f["nombre"]) or ("#C5CDD8" if enfasis else CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)])
+        resaltada = not enfasis or f["nombre"] in destacados
         fig.add_trace(go.Scatter(
-            x=[p for p, _ in puntos], y=[v for _, v in puntos], mode="lines+markers", name=f["nombre"],
-            line=dict(color=color, width=2.8), marker=dict(size=6, color=color),
-            hovertemplate=f"<b>{html.escape(f['nombre'])}</b>: %{{y:,.0f}}<extra></extra>",
+            x=[p for p, _ in puntos], y=[v for _, v in puntos],
+            mode="lines+markers" if resaltada else "lines", name=f["nombre"],
+            line=dict(color=color, width=2.8 if resaltada else 1.4), marker=dict(size=6, color=color),
+            opacity=1 if resaltada else 0.9,
+            customdata=[_fmt(v) for _, v in puntos],
+            hovertemplate=f"<b>{html.escape(f['nombre'])}</b>: %{{customdata}}<extra></extra>",
         ))
+        if enfasis and resaltada:
+            # El nombre al final de la línea: no hace falta ir a la leyenda.
+            fig.add_annotation(x=puntos[-1][0], y=puntos[-1][1], text=f"  {html.escape(f['nombre'])}",
+                               showarrow=False, xanchor="left", font=dict(size=11, color=color))
     if not fig.data:
         return None
     # Referencia: el promedio mensual de TODO el grupo, no de las líneas visibles.
@@ -289,13 +331,15 @@ def figura_evolucion(cuadro: dict):
     if len(prom) >= 2:
         fig.add_trace(go.Scatter(
             x=[p for p, _ in prom], y=[v for _, v in prom], mode="lines", name=f"Promedio de los {cuadro['total_grupo']}",
-            line=dict(color="#64748B", width=2.2, dash="dash"),
-            hovertemplate=f"<b>Promedio de los {cuadro['total_grupo']}</b>: %{{y:,.0f}}<extra></extra>",
+            line=dict(color="#475569", width=2.2, dash="dash"),
+            customdata=[_fmt(v) for _, v in prom],
+            hovertemplate=f"<b>Promedio de los {cuadro['total_grupo']}</b>: %{{customdata}}<extra></extra>",
         ))
     # Una marca por mes: con pocos meses Plotly repetía la misma etiqueta.
     fig.update_xaxes(tickformat="%b %Y", dtick="M1")
     fig.update_yaxes(tickformat="~s", title=None)
-    return _base(fig, 380).update_layout(margin=dict(b=_MARGEN_EJE))
+    # Margen derecho para el nombre escrito al final de las líneas resaltadas.
+    return _base(fig, 380).update_layout(margin=dict(b=_MARGEN_EJE, r=110 if enfasis else 18))
 
 
 def figura_meta(cuadro: dict):
@@ -384,8 +428,10 @@ def render_cuadro_comparativo(df: pd.DataFrame, schema: dict) -> None:
     evolucion = figura_evolucion(cuadro)
     if evolucion is not None:
         suma_mes = "sumada" if cuadro["aditiva"] else "promediada"
+        resalta = (" · en verde el primero, en rojo el último y en gris el resto (pasa el cursor para verlos)"
+                   if len([f for f in cuadro["filas"] if f["serie"]]) > 3 else f" · una línea por cada {dimension} elegido")
         chart_card("Evolución mes a mes",
-                   f"{etiqueta} {suma_mes} por mes · una línea por cada {dimension} elegido · "
+                   f"{etiqueta} {suma_mes} por mes{resalta} · "
                    f"discontinua = promedio de los {cuadro['total_grupo']}",
                    evolucion, key="cuadro_evolucion", visual_type="TENDENCIA",
                    badge_text=f"{len(cuadro['periodos'])} meses")

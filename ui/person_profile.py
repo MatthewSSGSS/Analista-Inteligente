@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 import numpy as np
 import pandas as pd
@@ -26,7 +27,7 @@ def _fmt(v):
     except Exception:
         return str(v)
     ax = abs(x)
-    if ax >= 1e9: return f"{x/1e9:.2f}B"
+    if ax >= 1e9: return f"{x/1e9:.2f} mil M"
     if ax >= 1e6: return f"{x/1e6:.2f}M"
     if ax >= 1e3: return f"{x/1e3:.1f}K"
     return f"{x:,.0f}"
@@ -224,6 +225,37 @@ def _observaciones(data, schema, person_col, selected, primary):
             unsafe_allow_html=True)
 
 
+def _caso_que_pide_atencion(data, schema, columna, metrica):
+    """(nombre, frase) del que más cayó entre los dos últimos meses, o (None, "").
+
+    La vista abría en el primero por orden alfabético («Cliente 1001», con 2
+    registros): el gerente tenía que buscar a ciegas. Abrir en el que más
+    cayó pone delante, sin buscar, el caso que pide una conversación."""
+    from core.dates import format_month_year
+    fechas = [d for d in schema.get("dates", []) if d in data.columns]
+    if not fechas or not metrica or metrica not in data.columns:
+        return None, ""
+    x = pd.DataFrame({"q": data[columna].astype(str).str.strip(),
+                      "f": pd.to_datetime(data[fechas[0]], errors="coerce").dt.to_period("M"),
+                      "v": pd.to_numeric(data[metrica], errors="coerce")}).dropna()
+    meses = sorted(x["f"].unique())
+    if len(meses) < 2:
+        return None, ""
+    a, b = meses[-2], meses[-1]
+    tabla = x[x["f"].isin([a, b])].pivot_table(index="q", columns="f", values="v", aggfunc="sum").fillna(0)
+    if a not in tabla.columns or b not in tabla.columns:
+        return None, ""
+    delta = (tabla[b] - tabla[a]).sort_values()
+    if delta.empty or delta.iloc[0] >= 0:
+        return None, ""
+    nombre = str(delta.index[0])
+    antes = float(tabla.at[nombre, a])
+    pct = f" ({delta.iloc[0] / antes * 100:+.0f}%)" if antes else ""
+    return nombre, (f"Abre en <b>{html.escape(nombre)}</b>: el que más cayó en "
+                    f"{format_month_year(b.to_timestamp(), full=True).lower()}, {_fmt(delta.iloc[0])}{pct}. "
+                    f"Puedes elegir cualquier otro en la lista.")
+
+
 def render_person_profile(df, schema, dashboard=None):
     """Perfil universal de UNA entidad: todo lo que el archivo puede decir
     legítimamente sobre ella. La entidad es una persona cuando el archivo
@@ -272,10 +304,15 @@ def render_person_profile(df, schema, dashboard=None):
     if detected:
         st.caption("Entidad detectada automáticamente · " + describe_entity(detected).replace("**", ""))
 
+    metrica_principal = (dashboard or {}).get("primary_metric") if isinstance(dashboard, dict) else None
+    sugerido, por_que = _caso_que_pide_atencion(data, schema, person_col, metrica_principal)
     selected = st.selectbox(
         f"Buscar y seleccionar {'nombre completo' if noun == 'persona' else noun}",
         names, key="profile_person_selector_inline", placeholder="Escribe para buscar…",
+        index=names.index(sugerido) if sugerido in names else 0,
     )
+    if por_que and selected == sugerido:
+        st.markdown(f'<div class="chart-reading">🔎 {por_que}</div>', unsafe_allow_html=True)
     rows = data[data[person_col].astype(str).str.strip().eq(str(selected).strip())].copy()
     if rows.empty:
         return

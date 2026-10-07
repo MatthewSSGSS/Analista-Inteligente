@@ -24,7 +24,7 @@ def _fmt(v):
     except Exception:
         return str(v)
     if abs(v) >= 1_000_000_000:
-        return f"{v/1_000_000_000:.1f}B"
+        return f"{v/1_000_000_000:.1f} mil M"
     if abs(v) >= 1_000_000:
         return f"{v/1_000_000:.1f}M"
     if abs(v) >= 1_000:

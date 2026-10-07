@@ -11,10 +11,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core.dates import format_month_year
 from core.forecast import pronosticar, explicar, atribuir, explicar_atribucion, NOMBRES_METODO
-from visualization.charts import metric_candidates, _base, _label
+from visualization.charts import metric_candidates, _base, _label, cifra_eje, en_espanol
 from ui.components.cards import kpi_card
-from ui.components.section import section_header
+from ui.components.section import decision_strip, section_header
 from ui.labels import clean_display_text
 from ui.layouts.columns import kpi_grid
 
@@ -23,6 +24,12 @@ from ui.layouts.columns import kpi_grid
 _TONO = {"alta": ("#0f8a5f", "Confianza alta"),
          "media": ("#b45309", "Confianza media"),
          "baja": ("#be123c", "Confianza baja")}
+
+
+def _mes(valor, completo: bool = False) -> str:
+    """«ago 2026» / «Agosto 2026»: la tabla y las fichas decían «Aug 2026»."""
+    texto = format_month_year(valor, full=completo)
+    return texto if completo else texto.lower()
 
 
 def _grafico(resultado: dict, schema: dict) -> go.Figure:
@@ -43,6 +50,7 @@ def _grafico(resultado: dict, schema: dict) -> go.Figure:
     # Cada escenario arranca del último dato real: así las tres líneas nacen
     # del mismo punto conocido y se ve cómo se abren hacia adelante.
     x_proy = [ultimo_x] + list(pred["periodo"])
+    meses_proy = [_mes(x) for x in x_proy]
     fig = go.Figure()
 
     # Banda del rango, al fondo.
@@ -58,29 +66,35 @@ def _grafico(resultado: dict, schema: dict) -> go.Figure:
     fig.add_trace(go.Scatter(
         x=x_proy, y=[ultimo_y] + list(pred["maximo"]), mode="lines", name="Si va bien",
         line=dict(color="#0f8a5f", width=1.6, dash="dot"),
-        hovertemplate="<b>%{x|%b %Y}</b><br>Escenario optimista: <b>%{y:,.0f}</b><extra></extra>",
+        customdata=list(zip(meses_proy, [cifra_eje(v) for v in [ultimo_y] + list(pred["maximo"])])),
+        hovertemplate="<b>%{customdata[0]}</b><br>Si va bien: <b>%{customdata[1]}</b><extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=x_proy, y=[ultimo_y] + list(pred["minimo"]), mode="lines", name="Si va mal",
         line=dict(color="#be123c", width=1.6, dash="dot"),
-        hovertemplate="<b>%{x|%b %Y}</b><br>Escenario pesimista: <b>%{y:,.0f}</b><extra></extra>",
+        customdata=list(zip(meses_proy, [cifra_eje(v) for v in [ultimo_y] + list(pred["minimo"])])),
+        hovertemplate="<b>%{customdata[0]}</b><br>Si va mal: <b>%{customdata[1]}</b><extra></extra>",
     ))
     # Histórico: lo que de verdad pasó.
     fig.add_trace(go.Scatter(
         x=historico.index, y=historico.values, mode="lines+markers", name="Histórico (real)",
         line=dict(color="#1e293b", width=2.6), marker=dict(size=6),
-        hovertemplate="<b>%{x|%b %Y}</b><br>" + etiqueta + ": <b>%{y:,.0f}</b><extra></extra>",
+        customdata=list(zip([_mes(x) for x in historico.index], [cifra_eje(v) for v in historico.values])),
+        hovertemplate="<b>%{customdata[0]}</b><br>" + etiqueta + ": <b>%{customdata[1]}</b><extra></extra>",
     ))
-    # Proyección central, con el valor escrito sobre cada punto para poder
-    # leer la cifra sin pasar el mouse (importante al presentar en pantalla).
+    # Proyección central. La cifra va escrita solo en el ÚLTIMO punto: con
+    # una en cada punto («818,278,043» tres veces) se montaban unas sobre
+    # otras y no se leía ninguna. El resto está en la ficha y en la tabla.
+    estimados = list(pred["estimado"])
     fig.add_trace(go.Scatter(
-        x=x_proy, y=[ultimo_y] + list(pred["estimado"]),
+        x=x_proy, y=[ultimo_y] + estimados,
         mode="lines+markers+text", name="Proyección esperada",
         line=dict(color="#e4002b", width=2.8, dash="dash"),
         marker=dict(size=9, symbol="diamond", line=dict(color="#fff", width=1.5)),
-        text=[""] + [f"{v:,.0f}" for v in pred["estimado"]],
-        textposition="top center", textfont=dict(size=11, color="#e4002b"),
-        hovertemplate="<b>%{x|%b %Y}</b><br>Estimado: <b>%{y:,.0f}</b><extra></extra>",
+        text=[""] * len(estimados) + [cifra_eje(estimados[-1])],
+        textposition="top center", textfont=dict(size=12, color="#1e293b"),
+        customdata=list(zip(meses_proy, [cifra_eje(v) for v in [ultimo_y] + estimados])),
+        hovertemplate="<b>%{customdata[0]}</b><br>Estimado: <b>%{customdata[1]}</b><extra></extra>",
     ))
 
     # Frontera entre lo real y lo proyectado.
@@ -90,7 +104,10 @@ def _grafico(resultado: dict, schema: dict) -> go.Figure:
                        font=dict(size=10.5, color="#64748b"))
     fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
                       margin=dict(t=54))
-    return _base(fig, 420)
+    fig = _base(fig, 420)
+    fig.update_yaxes(tickformat="~s")
+    fig.update_xaxes(tickformat="%b %Y")
+    return en_espanol(fig)
 
 
 def _por_que(atribucion: dict | None, schema: dict, resultado: dict) -> None:
@@ -133,8 +150,8 @@ def _por_que(atribucion: dict | None, schema: dict, resultado: dict) -> None:
                 señales.append(f"{impulsor['periodos_bajando']} periodos seguidos a la baja")
             if impulsor["operaciones"]:
                 señales.append(f"{impulsor['operaciones']:,} registros en el histórico")
-            nivel = (f"{impulsor['ultimo']:,.0f} → {impulsor['proyectado']:,.0f}"
-                     if impulsor["ultimo"] else f"→ {impulsor['proyectado']:,.0f}")
+            nivel = (f"{cifra_eje(impulsor['ultimo'])} → {cifra_eje(impulsor['proyectado'])}"
+                     if impulsor["ultimo"] else f"→ {cifra_eje(impulsor['proyectado'])}")
             # En una sola línea a propósito. Con el HTML repartido en líneas
             # indentadas, cuando no había motivo quedaba una línea en blanco:
             # Markdown cerraba ahí el bloque HTML y mostraba el resto como
@@ -152,7 +169,8 @@ def _por_que(atribucion: dict | None, schema: dict, resultado: dict) -> None:
             )
 
     if atribucion.get("compensan"):
-        nombres = ", ".join(f"{c['nombre']} ({c['delta']:+,.0f})" for c in atribucion["compensan"])
+        nombres = ", ".join(f"{c['nombre']} ({'+' if c['delta'] > 0 else ''}{cifra_eje(c['delta'])})"
+                            for c in atribucion["compensan"])
         sentido = "amortiguan la caída" if baja else "frenan el crecimiento"
         st.caption(f"En sentido contrario, {nombres} {sentido}.")
 
@@ -175,8 +193,8 @@ def _base_calculo(resultado: dict, schema: dict, df: pd.DataFrame) -> None:
     """
     metrica = _label(schema, resultado["metric"])
     fecha = resultado.get("columna_fecha") or "—"
-    desde = pd.Timestamp(resultado["desde"]).strftime("%b %Y")
-    hasta = pd.Timestamp(resultado["hasta"]).strftime("%b %Y")
+    desde = _mes(resultado["desde"])
+    hasta = _mes(resultado["hasta"])
     grano = {"Mes": "mes", "Día": "día", "Semana": "semana"}.get(resultado.get("grain", "Mes"), "periodo")
 
     with st.expander("¿En qué se basa esta predicción?", expanded=False):
@@ -240,16 +258,39 @@ def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = Non
     ultimo_real = float(resultado["historico"].iloc[-1])
     primero = float(pred["estimado"].iloc[0])
     variacion = ((primero - ultimo_real) / abs(ultimo_real) * 100) if ultimo_real else None
+    mes_real, mes_prox = _mes(resultado["historico"].index[-1]), _mes(pred["periodo"].iloc[0])
+    mes_real_largo = _mes(resultado["historico"].index[-1], True).lower()
+    mes_prox_largo = _mes(pred["periodo"].iloc[0], True).lower()
+    etiqueta = _label(schema, metrica)
+    # «Lo más probable» = el estimado ± el error que el método tuvo en
+    # promedio con estos mismos datos. El rango de los escenarios usa el PEOR
+    # error medido, que es honesto pero, solo, no sirve para planear (en el
+    # archivo de prueba iba de 232 M a 1.400 M para un mes de ~880 M).
+    error = resultado.get("error_tipico")
+    probable = (max(primero * (1 - error), 0), primero * (1 + error)) if error is not None else None
+
+    # La conclusión primero, en una frase.
+    if variacion is not None:
+        rumbo = "subiría" if variacion > 1 else "bajaría" if variacion < -1 else "se mantendría"
+        frase = (f"Si el comportamiento se mantiene, <b>{etiqueta}</b> {rumbo} en <b>{mes_prox_largo}</b> a "
+                 f"<b>≈ {cifra_eje(primero)}</b> ({variacion:+.1f}% frente a {mes_real_largo})")
+        frase += (f"; lo más probable es que quede entre <b>{cifra_eje(probable[0])}</b> y "
+                  f"<b>{cifra_eje(probable[1])}</b>." if probable else ".")
+        tono = "positive" if variacion > 1 else "negative" if variacion < -1 else "neutral"
+        st.markdown(decision_strip(frase, tone=tono), unsafe_allow_html=True)
 
     # kpi_grid recibe los datos y una función que dibuja cada tarjeta; no
     # tarjetas ya construidas (ver ui/layouts/columns.py).
+    peor = f"{cifra_eje(pred['minimo'].iloc[0])} – {cifra_eje(pred['maximo'].iloc[0])}"
     tarjetas = [
-        {"label": "Último periodo real", "value": f"{ultimo_real:,.0f}", "delta": None},
-        {"label": "Próximo periodo (estimado)", "value": f"{primero:,.0f}",
-         "delta": (f"{variacion:+.1f}%" if variacion is not None else None)},
-        {"label": "Rango posible",
-         "value": f"{pred['minimo'].iloc[0]:,.0f} – {pred['maximo'].iloc[0]:,.0f}", "delta": None},
-        {"label": "Confianza", "value": texto_conf.replace("Confianza ", "").capitalize(), "delta": None},
+        {"label": f"{mes_real} · real", "value": cifra_eje(ultimo_real), "delta": None},
+        {"label": f"{mes_prox} · estimado", "value": cifra_eje(primero),
+         "delta": (f"{variacion:+.1f}% vs {mes_real}" if variacion is not None else None)},
+        {"label": "Lo más probable" if probable else "Rango posible",
+         "value": f"{cifra_eje(probable[0])} – {cifra_eje(probable[1])}" if probable else peor,
+         "delta": f"error típico de {error * 100:.0f}% con tus datos" if probable else None},
+        {"label": "Confianza", "value": texto_conf.replace("Confianza ", "").capitalize(),
+         "delta": f"peor caso: {peor}" if probable else None},
     ]
     kpi_grid(tarjetas, lambda t: kpi_card(t["label"], t["value"], delta=t["delta"]))
 
@@ -272,10 +313,14 @@ def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = Non
     # hacia dónde va la línea, e inmediatamente después de quién es la línea.
     _por_que(atribuir(df, schema, resultado), schema, resultado)
 
-    tabla = pred.copy()
-    tabla["periodo"] = pd.to_datetime(tabla["periodo"]).dt.strftime("%b %Y")
-    tabla.columns = ["Periodo", "Estimado", "Mínimo esperado", "Máximo esperado"]
-    st.dataframe(tabla.round(0), use_container_width=True, hide_index=True)
+    # La tabla con las mismas cifras cortas del resto (antes: «818278043»).
+    tabla = pd.DataFrame({
+        "Periodo": [_mes(p, True) for p in pred["periodo"]],
+        "Estimado": [cifra_eje(v) for v in pred["estimado"]],
+        "Si va mal": [cifra_eje(v) for v in pred["minimo"]],
+        "Si va bien": [cifra_eje(v) for v in pred["maximo"]],
+    })
+    st.dataframe(tabla, use_container_width=True, hide_index=True)
 
     st.caption("Cómo leerlo: la proyección supone que se mantiene el comportamiento del histórico. "
                "No incorpora hechos que el archivo no contenga —una campaña, un cierre, un cambio de "

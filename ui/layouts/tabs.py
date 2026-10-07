@@ -33,6 +33,7 @@ _CLAVE = "nav_vista"
 
 # Nombres de las vistas a las que otras vistas pueden mandar con `ir_a()`.
 # Viven aquí para que el botón y la barra usen exactamente el mismo texto.
+VISTA_RESUMEN = "📋 Resumen"
 VISTA_ATACAR = "🎯 Qué atacar"
 VISTA_SEGUIMIENTO = "🔎 Seguimiento de un caso"
 VISTA_ESTRUCTURA = "🏢 Estructura"

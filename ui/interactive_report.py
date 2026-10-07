@@ -457,7 +457,7 @@ function num(v, dec){ return Number(v).toLocaleString(LOC, {maximumFractionDigit
 function compacto(v){
   if(v === null || v === undefined || !isFinite(v)) return "—";
   var a = Math.abs(v);
-  if(a >= 1e9) return num(v/1e9, 1) + "B";
+  if(a >= 1e9) return num(v/1e9, 1) + " mil M";
   if(a >= 1e6) return num(v/1e6, 1) + "M";
   if(a >= 1e4) return num(v/1e3, 1) + "K";
   return num(v, a < 10 ? 2 : a < 100 ? 1 : 0);

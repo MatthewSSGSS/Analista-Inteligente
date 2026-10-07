@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from visualization.charts import en_espanol
 from ui.labels import pretty_technical
 from ui.components.cards import kpi_card, insight_card
 from ui.components.section import section_header, banner_header
@@ -170,7 +171,7 @@ def render_comparison(result, show_filter_panel: bool = True, key_prefix: str = 
         direct_fig = _direct_comparison_chart(span_metrics, result["first"]["label"], result["last"]["label"])
         if direct_fig is not None:
             st.markdown(section_header("Comparación directa", compact=True), unsafe_allow_html=True)
-            st.plotly_chart(direct_fig, use_container_width=True, key=f"{key_prefix}_direct_chart")
+            st.plotly_chart(en_espanol(direct_fig), use_container_width=True, key=f"{key_prefix}_direct_chart")
 
     if result["signals"]:
         st.markdown('<div class="decision-panel"><div class="decision-panel-title">Lectura ejecutiva</div><div class="decision-panel-subtitle">Cambios detectados automáticamente a partir de variables comparables.</div></div>', unsafe_allow_html=True)
@@ -214,7 +215,7 @@ def render_comparison(result, show_filter_panel: bool = True, key_prefix: str = 
             series=h["serie"]
             fig=px.line(series,x="periodo",y="valor",markers=True,title=f"{h['metrica']} · {h['operacion']}")
             fig.update_layout(height=360,margin=dict(l=20,r=20,t=50,b=20),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",xaxis_title="Periodo",yaxis_title="Valor",font=dict(color=chart_text_color()))
-            st.plotly_chart(fig,use_container_width=True,key=f"{key_prefix}_history_{history_index}")
+            st.plotly_chart(en_espanol(fig),use_container_width=True,key=f"{key_prefix}_history_{history_index}")
     with tabs[3]:
         st.caption(
             "Cada fila real de los archivos comparados (ya con tus filtros aplicados), no un "

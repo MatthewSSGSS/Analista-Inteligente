@@ -145,6 +145,17 @@ always comes from the network (`res["red"]`), never from crossing the columns of
 the base level in the table; higher-level goals live in `res["declaradas"]` (a jefe without its own goal = sum of its
 supervisors'). `tests/estructura_test.py`.
 
+### Manager-facing presentation
+
+Inicio is a manager briefing (`ui/home.render_home(..., df=, schema=)`): month headline put in perspective against
+the year, key figures from `core/executive.indicadores_gerente` (month vs previous, same month last year, YTD vs last
+year, goal compliance, margin, ticket — shared with the Resumen cards), the top opportunities from
+`dashboard["gerencia"]` with their monthly value, and high alerts; file details are folded at the bottom. Charts go
+through `visualization/charts.en_espanol` when drawn (Spanish axis ticks «1.5 mil M», «ene 2025»; plotly's «1G»/«Jan»
+can't be localized otherwise), and short numbers use «mil M» for 10^9 (never «B», which reads as *billones*).
+Don't set `height:auto` on `.stPlotlyChart` (the chart grows unbounded and gets clipped). See FEATURES.md 2.29–2.36
+and `tests/presentacion_test.py`.
+
 ### Filters
 
 One filter engine only: `core/filter_engine.apply_filters`/`cascading_options`. It is shared by the

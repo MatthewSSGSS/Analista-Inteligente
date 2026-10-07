@@ -14,7 +14,7 @@ def _fmt(v):
     v=float(v)
     sign='-' if v < 0 else ''
     v=abs(v)
-    if v>=1_000_000_000: return f"{sign}{v/1_000_000_000:.1f}B"
+    if v>=1_000_000_000: return f"{sign}{v/1_000_000_000:.1f} mil M"
     if v>=1_000_000: return f"{sign}{v/1_000_000:.1f}M"
     if v>=1_000: return f"{sign}{v/1_000:.1f}K"
     return f"{sign}{v:,.0f}"
@@ -130,11 +130,21 @@ def build_executive(df, schema, insights=None, anomalies=None):
                     result['detail']=(f"La variación frente al periodo anterior fue de {pct:+.1f}%, "
                                       f"por debajo del {UMBRAL_CAMBIO:.0f}% que se considera un cambio real. "
                                       + comparacion)
+    # El propio veredicto es la primera señal. Antes las señales salían solo
+    # de los 4 primeros hallazgos: si la mejora venía en el quinto, el panel
+    # decía «Ingresos mejoró 17%» arriba y «No se detectaron mejoras» al lado.
+    if result.get('status')=='positive':
+        result['positive'].append(result['headline'])
+    elif result.get('status')=='negative':
+        result['watch'].append(result['headline'])
     if insights:
-        for i in insights[:4]:
+        for i in insights:
             if i.get('kind')=='positive': result['positive'].append(i.get('title','Mejora'))
             elif i.get('kind')=='warning': result['watch'].append(i.get('title','Revisión'))
-    if anomalies is not None and len(anomalies):
+    # Los atípicos solo si ningún hallazgo los nombró ya: eran dos avisos
+    # seguidos con cifras distintas (los de una columna y los de todas).
+    ya_atipicos = any('atípic' in str(x).lower() for x in result['watch'])
+    if anomalies is not None and len(anomalies) and not ya_atipicos:
         result['watch'].append(f"{len(anomalies):,} valores atípicos requieren revisión")
     return result
 
@@ -200,3 +210,102 @@ def explain_change(df, schema, metric=None):
     # media— y presentarlo como una suma sería afirmar algo falso.
     dimension = factors[0]['dimension'] if factors else None
     return {'metric':metric,'metric_label':_label(schema,metric),'before':float(total0),'after':float(total1),'delta':delta,'pct':pct,'period_before':str(p0)[:10],'period_after':str(p1)[:10],'factors':factors,'additive':bool(additive),'dimension':dimension}
+
+
+def _tono(pct, peor_si_sube=False):
+    """positive / negative / neutral según si el cambio es bueno para el negocio."""
+    if pct is None or abs(pct) < 0.05:
+        return "neutral"
+    return "negative" if (pct > 0) == peor_si_sube else "positive"
+
+
+def _mes_largo(ts) -> str:
+    from .dates import format_month_year
+    return format_month_year(ts, full=True).lower()
+
+
+def _mes_corto(ts) -> str:
+    from .dates import format_month_year
+    return format_month_year(ts).lower()
+
+
+def indicadores_gerente(df, schema, g, metrica) -> list[dict]:
+    """Las cifras que mira un gerente: cómo cerró el último mes, contra el
+    mismo mes del año pasado, el acumulado del año, el margen y el ticket.
+
+    Antes la fila de tarjetas decía «Registros visibles», el total de TODO el
+    archivo (19 meses sumados), la mediana y el máximo de una fila: datos del
+    archivo, no del negocio. Solo se arma con una métrica que se suma y con el
+    análisis gerencial (`g`, que ya resolvió qué meses comparar y el mes a
+    medias); si no, devuelve lista vacía y la vista usa las tarjetas de siempre.
+
+    Cada indicador: {"etiqueta", "valor", "detalle", "tono"} (texto listo)."""
+    from .universal_analysis import semantic_map, ADDITIVE, period_series
+    sem = semantic_map(schema)
+    if not (g and metrica and g.get("metrica") == metrica and sem.get(metrica) in ADDITIVE
+            and g.get("total_b") is not None):
+        return []
+    etiqueta = _label(schema, metrica)
+    peor = bool(PEOR_SI_SUBE.search(str(metrica)))
+    salida = [{"etiqueta": f"{etiqueta} · {g['mes_b']}", "valor": _fmt(g["total_b"]),
+               "detalle": f"{g['pct']:+.1f}% vs {g['mes_a']}" if g.get("pct") is not None else None,
+               "tono": _tono(g.get("pct"), peor), "clave": "mes"}]
+    ps = period_series(df, schema, metrica, "Mes", "Automático")
+    if len(ps) >= 2 and not g.get("parcial"):
+        ps = ps.assign(period=pd.to_datetime(ps["period"]))
+        ultimo = ps.iloc[-1]
+        p = pd.Timestamp(ultimo["period"])
+        valor = float(ultimo[metrica])
+        # Cumplimiento de la meta del mes, si el archivo la trae: es la cifra
+        # por la que se mide a un equipo comercial, va justo después del mes.
+        from .performance import columna_meta
+        meta = columna_meta(df, schema, metrica)
+        if meta:
+            pm = period_series(df, schema, meta, "Mes", "Suma")
+            pm = pm.assign(period=pd.to_datetime(pm["period"])).set_index("period")[meta]
+            if p in pm.index and float(pm[p]) > 0:
+                objetivo = float(pm[p])
+                cumple = valor / objetivo * 100
+                falta = objetivo - valor
+                salida.append({"etiqueta": f"Cumplimiento de meta · {g['mes_b']}", "valor": f"{cumple:.0f}%",
+                               "detalle": (f"faltan {_fmt(falta)} de {_fmt(objetivo)}" if falta > 0
+                                           else f"superó la meta por {_fmt(-falta)}"),
+                               "tono": "positive" if cumple >= 100 else "negative" if cumple < 90 else "neutral",
+                               "clave": "meta"})
+        # El mismo mes del año pasado: quita la temporada del medio.
+        hace_un_anio = ps[ps["period"] == p - pd.DateOffset(years=1)]
+        if not hace_un_anio.empty and float(hace_un_anio[metrica].iloc[0]):
+            antes = float(hace_un_anio[metrica].iloc[0])
+            pct = (valor - antes) / abs(antes) * 100
+            salida.append({"etiqueta": f"Frente a {_mes_largo(p - pd.DateOffset(years=1))}", "valor": f"{pct:+.1f}%",
+                           "detalle": f"{_fmt(valor)} vs {_fmt(antes)}", "tono": _tono(pct, peor), "clave": "anual"})
+        # Acumulado del año contra los mismos meses del año anterior (solo si están todos).
+        este = ps[(ps["period"].dt.year == p.year) & (ps["period"] <= p)]
+        previo = ps[(ps["period"].dt.year == p.year - 1) & (ps["period"].dt.month <= p.month)]
+        if len(este) >= 2 and len(previo) == len(este) and float(previo[metrica].sum()):
+            acum, acum_prev = float(este[metrica].sum()), float(previo[metrica].sum())
+            pct = (acum - acum_prev) / abs(acum_prev) * 100
+            salida.append({"etiqueta": f"Acumulado {p.year} (ene–{_mes_corto(p).split()[0]})", "valor": _fmt(acum),
+                           "detalle": f"{pct:+.1f}% vs {p.year - 1}", "tono": _tono(pct, peor), "clave": "acumulado"})
+        # Margen del último mes, si el archivo trae la utilidad aparte.
+        utilidad = next((c for c, t in sem.items() if t == "profit" and c != metrica and c in df.columns), None)
+        if utilidad and sem.get(metrica) == "revenue" and valor:
+            pu = period_series(df, schema, utilidad, "Mes", "Suma")
+            pu = pu.assign(period=pd.to_datetime(pu["period"])).set_index("period")[utilidad]
+            if p in pu.index:
+                margen = float(pu[p]) / valor * 100
+                anterior = ps.iloc[-2]
+                p_ant = pd.Timestamp(anterior["period"])
+                detalle = None
+                if p_ant in pu.index and float(anterior[metrica]):
+                    puntos = margen - float(pu[p_ant]) / float(anterior[metrica]) * 100
+                    detalle = f"{puntos:+.1f} pts vs {_mes_corto(p_ant)}"
+                salida.append({"etiqueta": f"Margen ({_label(schema, utilidad)}) · {g['mes_b']}",
+                               "valor": f"{margen:.1f}%", "detalle": detalle, "tono": "neutral", "clave": "margen"})
+    # Volumen y ticket: dos problemas distintos que se atacan distinto.
+    pal = g.get("palanca")
+    if pal and pal.get("ticket_b"):
+        salida.append({"etiqueta": f"{str(pal['ticket_nombre']).capitalize()} · {g['mes_b']}", "valor": _fmt(pal["ticket_b"]),
+                       "detalle": f"{pal['ticket_pct']:+.1f}% · {pal['unidad']} {pal['ops_pct']:+.1f}%",
+                       "tono": _tono(pal["ticket_pct"]), "clave": "ticket"})
+    return salida

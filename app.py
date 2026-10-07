@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from ui.styles.theme import inject_theme
 from ui.layouts.hero import hero_app
-from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_SEGUIMIENTO, VISTA_ESTRUCTURA
+from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_RESUMEN, VISTA_SEGUIMIENTO, VISTA_ESTRUCTURA
 from ui.components.section import section_header
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
@@ -141,7 +141,7 @@ if st.session_state.analysis_mode == "territorial":
     st.stop()
 
 hero_app("Panel Analítico Universal", "De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.",
-         ["Qué pasó", "Dónde pasó", "Por qué", "Qué hacer"])
+         ["Qué pasó", "Dónde pasó", "Por qué", "Qué hacer"], compacto=bool(st.session_state.get("workbook")))
 
 with st.sidebar:
     # ── Estructura del menú ───────────────────────────────────────────────
@@ -610,8 +610,9 @@ else:
     _estado=(f'<div class="ctx-estado"><b>✅ Archivo completo</b>'
              f'<div class="ctx-barra"><i style="width:100%"></i></div>'
              f'<small>{seleccion["total"]:,} registros · 100%</small></div>')
-    _nota=('<div class="ctx-nota">Sin filtros activos: usa la barra lateral para acotar por región, canal, '
-           'periodo o cualquier columna, o escribe abajo lo que buscas.</div>')
+    # Sin filtros no hace falta explicarlo en cada vista: la tarjeta de estado
+    # ya dice «Archivo completo» y el buscador está justo debajo.
+    _nota=""
 _cabecera.markdown(
     f'<div class="ctx-top"><div class="ctx-main"><div class="ctx-kicker">Analizando</div>'
     f'<div class="ctx-titulo">{_html.escape(str(_titulo_hoja or sheet))}</div>'
@@ -653,10 +654,10 @@ multi_sheet_enabled = usable_sheet_count >= 2
 # archivo (mapa, seguimiento, comparar archivos) solo aparecen si aplican. En
 # «➕ Más» quedan las herramientas de soporte. Solo se ejecuta la vista
 # abierta (ver ui/layouts/tabs.py): antes se ejecutaban todas en cada clic.
-V_INICIO, V_RESUMEN, V_ATACAR = "🏠 Inicio", "📋 Resumen", VISTA_ATACAR
+V_INICIO, V_RESUMEN, V_ATACAR = "🏠 Inicio", VISTA_RESUMEN, VISTA_ATACAR
 V_CUADRO, V_CANALES, V_PROYECCION, V_EXPORTAR = "📊 Cómo va cada uno", "📈 Canales", "🔮 Proyección", "⬇️ Exportar"
 
-inicio = (V_INICIO, lambda: render_home(wb, sheet, mode_info, dashboard, seleccion=seleccion))
+inicio = (V_INICIO, lambda: render_home(wb, sheet, mode_info, dashboard, seleccion=seleccion, df=df, schema=schema))
 exportar = (V_EXPORTAR, lambda: render_exports(df,dashboard,wb["filename"],sheet,full_df=item["processed"],schema=schema,workbook=wb))
 asistente = ("🤖 Asistente IA", lambda: render_assistant(df, schema, item["profile"], mode_info, dashboard))
 geo = [("🗺️ Georreferenciación", lambda: render_georeferencing(df, schema, wb, sheet))] if geo_enabled else []

@@ -6,7 +6,7 @@ from .diagnostics import diagnosticar
 def _fmt(v):
     v = float(v)
     a = abs(v)
-    if a >= 1_000_000_000: return f"{v/1_000_000_000:.1f}B"
+    if a >= 1_000_000_000: return f"{v/1_000_000_000:.1f} mil M"
     if a >= 1_000_000: return f"{v/1_000_000:.1f}M"
     if a >= 1_000: return f"{v/1_000:.1f}K"
     return f"{v:,.0f}"

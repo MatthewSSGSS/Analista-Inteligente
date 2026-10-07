@@ -2,6 +2,7 @@
 import html
 import pandas as pd
 import streamlit as st
+from visualization.charts import en_espanol
 from visualization.charts import ranking, histogram, metric_candidates, dimension_candidates, _label
 from ui.components.section import section_header
 
@@ -147,7 +148,7 @@ def render_catalog(df, schema, mode_info):
             st.caption(f"El sistema detectó una métrica cuantitativa: {_label(schema, visual_metrics[0])}.")
             fig = histogram(view, schema, visual_metrics[0])
         if fig is not None:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True}, key="catalog_quick_visual")
+            st.plotly_chart(en_espanol(fig), use_container_width=True, config={"displayModeBar": False, "responsive": True}, key="catalog_quick_visual")
 
     with st.expander("📋 Ver tabla completa"):
         st.dataframe(view, use_container_width=True, hide_index=True)
