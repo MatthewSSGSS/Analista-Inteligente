@@ -5,6 +5,7 @@
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const cols = (d.columnas || []).map((c, i) => `
     <div class="an-col" data-revelar="${i * 70}"><span title="${texto(c.n)}">${texto(c.n)}</span>
       <div class="ca-pista"><i style="--ancho:${c.ancho}%"></i></div><b>${c.cuantos}</b><small>${texto(c.tipos)}</small></div>`).join("");

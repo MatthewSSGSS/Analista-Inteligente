@@ -27,6 +27,7 @@ _registradas: dict = {}
 _CSS_EXTRA = {"resumen": ["parte"], "atacar": ["parte"], "cuadro": ["parte"], "canales": ["parte"], "proyeccion": ["parte"], "caso": ["parte"], "calidad": ["parte"], "anomalias": ["parte"], "finanzas": ["parte"], "duelo": ["parte"]}
 
 NO_DISPONIBLE = object()
+_MARCA = {"portada", "modos", "acceso"}
 
 
 def _leer(nombre: str) -> str:
@@ -102,6 +103,11 @@ def escena(nombre: str, datos: dict, clave: str):
     no eligió nada, o `NO_DISPONIBLE` si hay que usar la versión clásica."""
     if not disponible():
         return NO_DISPONIBLE
+    # El color de la sección abierta (ui/components/colores.py); la portada,
+    # los modos y el acceso llevan el de la marca.
+    if nombre not in _MARCA and isinstance(datos, dict) and "acento" not in datos:
+        from ui.components.colores import color_activo
+        datos = {**datos, "acento": color_activo()}
     try:
         resultado = _componente(nombre)(data=datos, key=clave, on_accion_change=lambda: None)
     except Exception:

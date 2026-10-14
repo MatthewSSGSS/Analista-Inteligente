@@ -32,7 +32,7 @@ from core.comercial import (CUADRANTES, UMBRAL_MOVIMIENTO, estado_salud, matriz_
                             oportunidades, puntaje_salud)
 from core.diagnostics import _fmt
 from ui.components.charts import chart_card
-from ui.components.escena import NO_DISPONIBLE, escena
+from ui.components.escena import NO_DISPONIBLE, cabecera, escena
 from ui.components.section import section_header
 from ui.labels import clean_display_text
 from ui.layouts.columns import two_column
@@ -588,12 +588,10 @@ def _datos_canales(matriz: dict, schema: dict) -> dict:
 
 def render_comercial(df: pd.DataFrame, schema: dict, dashboard: dict | None = None) -> None:
     _css()
-    st.markdown(section_header(
-        "Estrategia por canal",
-        eyebrow="LECTURA COMERCIAL",
-        subtitle="Cuánto pesa cada canal y hacia dónde va, en una sola vista. "
-                 "Mirados por separado, un canal grande que cae parece sano.",
-    ), unsafe_allow_html=True)
+    _sub = ("Cuánto pesa cada canal y hacia dónde va, en una sola vista. "
+            "Mirados por separado, un canal grande que cae parece sano.")
+    cabecera("Estrategia por canal", _sub, ceja="Lectura comercial", icono="📈", clave="cab_canales",
+             respaldo_html=section_header("Estrategia por canal", eyebrow="LECTURA COMERCIAL", subtitle=_sub))
 
     matriz = matriz_comercial(df, schema)
     if not matriz:

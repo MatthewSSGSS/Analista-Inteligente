@@ -6,6 +6,7 @@
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const filas = (d.filas || []).map((f, i) => `
     <article class="cu-fila ${texto(f.tono)}" data-revelar="${Math.min(i, 12) * 50}">
       <button class="cu-fila-cab" type="button" aria-expanded="false">

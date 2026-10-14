@@ -4,7 +4,7 @@
 .fi-leyenda i{display:inline-block}
 .fi-leyenda i.caja{width:20px;height:10px;border-radius:4px;background:color-mix(in srgb,var(--purple) 40%,transparent)}
 .fi-leyenda i.mediana{width:3px;height:14px;background:var(--purple)}
-.fi-leyenda i.media{width:10px;height:10px;border-radius:50%;background:var(--blue)}
+.fi-leyenda i.media{width:10px;height:10px;border-radius:50%;background:var(--acc)}
 .fi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
 .fi-tarjeta{padding:18px 20px;border-radius:18px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-md);transition:opacity .6s ease,transform .6s ease}
 .fi-cab{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
@@ -19,8 +19,8 @@
 .fi-caja .caja{height:16px;margin-top:-8px;border-radius:6px;background:color-mix(in srgb,var(--purple) 40%,transparent);
   border:1px solid color-mix(in srgb,var(--purple) 60%,transparent);transform:scaleX(0);transform-origin:left;transition:transform 1s cubic-bezier(.2,.8,.2,1) .2s}
 .fi-caja .mediana{width:3px;height:22px;margin:-11px 0 0 -1.5px;background:var(--purple);border-radius:2px;opacity:0;transition:opacity .4s ease 1s}
-.fi-caja em{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--blue);border:2px solid var(--panel);
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 25%,transparent);opacity:0;transition:opacity .4s ease 1.2s}
+.fi-caja em{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--acc);border:2px solid var(--panel);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 25%,transparent);opacity:0;transition:opacity .4s ease 1.2s}
 .fi-grid.dibujar .fi-caja .caja{transform:scaleX(1)}
 .fi-grid.dibujar .fi-caja .mediana,.fi-grid.dibujar .fi-caja em{opacity:1}
 .fi-ejes{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--muted);margin-top:6px}

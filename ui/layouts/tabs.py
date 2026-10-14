@@ -27,6 +27,8 @@ from typing import Callable
 
 import streamlit as st
 
+from ui.components.colores import color_de, slug
+
 Vista = tuple[str, Callable[[], None]]
 
 _CLAVE = "nav_vista"
@@ -83,15 +85,25 @@ def barra_de_vistas(principales: list[Vista], secundarias: list[Vista] | None = 
     def _elegir(etiqueta: str):
         st.session_state[_CLAVE] = etiqueta
 
+    # Cada vista con su color (ui/components/colores.py): la pestaña activa
+    # se pinta con él, y la página entera toma ese acento (--vista), que usan
+    # la franja de «Analizando», las cejas de sección y los gráficos.
+    reglas = [f"[data-testid=stMain],section[data-testid=stSidebar]{{--vista:{color_de(activa)}}}"]
+    for etiqueta in etiquetas_p + [e for e, _ in secundarias]:
+        c = color_de(etiqueta)
+        for prefijo in ("nav_btn_", "nav_mas_"):
+            reglas.append(f".st-key-{prefijo}{slug(etiqueta)}{{--c:{c}}}")
+    st.markdown(f"<style>{''.join(reglas)}</style>", unsafe_allow_html=True)
+
     with st.container(key="nav_barra", horizontal=True, gap="small", vertical_alignment="center"):
-        for i, etiqueta in enumerate(etiquetas_p):
-            st.button(etiqueta, key=f"nav_btn_{i}", type="primary" if etiqueta == activa else "secondary",
+        for etiqueta in etiquetas_p:
+            st.button(etiqueta, key=f"nav_btn_{slug(etiqueta)}", type="primary" if etiqueta == activa else "secondary",
                       on_click=_elegir, args=(etiqueta,))
         if secundarias:
             activa_mas = activa if activa not in etiquetas_p else None
             with st.popover(f"➕ {activa_mas}" if activa_mas else "➕ Más"):
                 for etiqueta, _ in secundarias:
-                    st.button(etiqueta, key=f"nav_mas_{etiqueta}", use_container_width=True,
+                    st.button(etiqueta, key=f"nav_mas_{slug(etiqueta)}", use_container_width=True,
                               type="primary" if etiqueta == activa else "secondary",
                               on_click=_elegir, args=(etiqueta,))
 

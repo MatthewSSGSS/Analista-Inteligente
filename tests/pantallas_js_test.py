@@ -182,10 +182,29 @@ def test_datos_de_las_vistas():
     check("Finanzas: una tarjeta por métrica con su caja", fi["metricas"] and all(0 <= m["x"]["q1"] <= m["x"]["q3"] <= 100 for m in fi["metricas"]))
 
 
+def test_colores_de_seccion():
+    """Cada vista tiene su color y su clave estable en la barra; verde y rojo
+    quedan para bien/mal, así que ninguna sección los usa."""
+    from ui.components.colores import color_de, slug
+    vistas = ["🏠 Inicio", "📋 Resumen", "🎯 Qué atacar", "📊 Cómo va cada uno", "📈 Canales", "🔮 Proyección",
+              "🗺️ Georreferenciación", "🔎 Seguimiento de un caso", "🤖 Asistente IA", "⬇️ Exportar",
+              "🧮 Datos", "✅ Calidad del dato", "🗂️ Varias hojas", "⚔️ Comparar personas", "🧾 Descripción",
+              "🔬 Analítica", "🚨 Anomalías", "💵 Finanzas", "🏢 Estructura"]
+    claves = [slug(v) for v in vistas]
+    check("cada vista tiene una clave distinta y válida para CSS",
+          len(set(claves)) == len(claves) and all(re.fullmatch(r"[a-z0-9_]+", c) for c in claves))
+    check("las secciones principales tienen colores distintos",
+          len({color_de(v) for v in vistas[:9]}) == 9)
+    check("ninguna sección usa el verde de «va bien»", all(color_de(v).upper() not in {"#22A06B", "#16A34A"} for v in vistas))
+    tabs = (RAIZ / "ui" / "layouts" / "tabs.py").read_text(encoding="utf-8")
+    check("la barra usa claves por nombre (no por posición)", 'key=f"nav_btn_{slug(etiqueta)}"' in tabs)
+
+
 def main():
     test_sin_marcas()
     test_acciones_del_javascript()
     test_todas_las_pantallas_existen()
+    test_colores_de_seccion()
     test_datos_de_las_vistas()
     test_con_v2_monta_la_escena()
     test_version_clasica_sin_v2()

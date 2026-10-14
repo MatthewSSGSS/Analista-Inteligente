@@ -3,7 +3,7 @@
    :root propios, así sigue al modo claro/oscuro sin código extra. */
 :host{display:block}
 *,*::before,*::after{box-sizing:border-box}
-.ai{font-family:var(--font-sans,"Inter",system-ui,sans-serif);color:var(--text);-webkit-font-smoothing:antialiased}
+.ai{--acc:#e4002b;--acc-l:color-mix(in srgb,var(--acc) 62%,#fff);--acc-d:color-mix(in srgb,var(--acc) 30%,#0a0e17);font-family:var(--font-sans,"Inter",system-ui,sans-serif);color:var(--text);-webkit-font-smoothing:antialiased}
 .ai h1,.ai h2,.ai h3{font-family:var(--font-display,"Sora","Inter",sans-serif);letter-spacing:-.025em;margin:0}
 .ai p{margin:0}
 .ai button{font-family:inherit}
@@ -11,12 +11,12 @@
 /* Botón principal: el acento del tema, con brillo que recorre el botón. */
 .ai-cta{position:relative;overflow:hidden;display:inline-flex;align-items:center;gap:10px;border:0;cursor:pointer;
   padding:15px 26px;border-radius:14px;font-size:15px;font-weight:750;color:#fff;
-  background:linear-gradient(180deg,color-mix(in srgb,var(--blue) 82%,#fff),var(--blue));
-  box-shadow:0 10px 28px color-mix(in srgb,var(--blue) 38%,transparent),inset 0 1px 0 rgba(255,255,255,.28);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 82%,#fff),var(--acc));
+  box-shadow:0 10px 28px color-mix(in srgb,var(--acc) 38%,transparent),inset 0 1px 0 rgba(255,255,255,.28);
   transition:transform .18s ease,box-shadow .18s ease}
-.ai-cta:hover{transform:translateY(-2px);box-shadow:0 16px 36px color-mix(in srgb,var(--blue) 45%,transparent),inset 0 1px 0 rgba(255,255,255,.3)}
+.ai-cta:hover{transform:translateY(-2px);box-shadow:0 16px 36px color-mix(in srgb,var(--acc) 45%,transparent),inset 0 1px 0 rgba(255,255,255,.3)}
 .ai-cta:active{transform:translateY(0)}
-.ai-cta:focus-visible{outline:3px solid color-mix(in srgb,var(--blue) 45%,transparent);outline-offset:3px}
+.ai-cta:focus-visible{outline:3px solid color-mix(in srgb,var(--acc) 45%,transparent);outline-offset:3px}
 .ai-cta .flecha{transition:transform .18s ease}
 .ai-cta:hover .flecha{transform:translateX(4px)}
 .ai-cta::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;
@@ -35,7 +35,7 @@
 .ai-foco{position:relative;isolation:isolate}
 .ai-foco::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2;opacity:0;
   transition:opacity .25s ease;
-  background:radial-gradient(360px circle at var(--mx,50%) var(--my,50%),color-mix(in srgb,var(--blue) 14%,transparent),transparent 60%)}
+  background:radial-gradient(360px circle at var(--mx,50%) var(--my,50%),color-mix(in srgb,var(--acc) 14%,transparent),transparent 60%)}
 .ai-foco:hover::before{opacity:1}
 
 .ai-red{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}

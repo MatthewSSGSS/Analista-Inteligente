@@ -84,6 +84,9 @@ Inside `ui/`:
   the view's old header as `respaldo_html`). Screens that reuse parte.css are listed in `escena._CSS_EXTRA`.
   Also Seguimiento (`_datos_caso`), Comparar personas (`_datos_duelo`), Calidad (`_datos_calidad`), Anomalías and
   Finanzas (`ui/anomalies.py`). `render_anomalies` takes the DETECTED anomalies (`dashboard["anomalies"]`), not df.
+- Section colors: `ui/components/colores.py` maps each view to a color; `barra_de_vistas` sets `--vista` on the page
+  (used by theme.py's `pulido_css` and section/chart accents) and `escena()` passes it to screens as `acento`.
+  Green/red are never section colors (they mean good/bad). Nav keys are `nav_btn_<slug>`, not positional.
 - `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
   Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a
   «➕ Más» menu, and **only the active view is executed** (unlike `st.tabs`, which ran every tab on every

@@ -72,6 +72,7 @@ function _lectura(items) {
 export default function (component) {
   const { data, setTriggerValue, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const v = d.veredicto || {};
   const pq = d.porque || {};
 

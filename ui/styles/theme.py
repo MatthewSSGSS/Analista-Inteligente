@@ -624,7 +624,14 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .app-hero-pasos i{font-style:normal;width:20px;height:20px;border-radius:50%;background:#e4002b;color:#ffffff!important;
   display:inline-grid;place-items:center;font-size:10.5px;font-weight:800}
 /* Con un archivo abierto: una franja delgada (ver hero_app(compacto=True)). */
-.app-hero.compacto{padding:9px 18px;margin:10px 0 8px;gap:12px;box-shadow:var(--shadow-md)}
+.app-hero.compacto{padding:9px 18px;margin:10px 0 8px;gap:12px;box-shadow:var(--shadow-md);
+  background:linear-gradient(110deg,#0d1220 0%,#1a2140 40%,color-mix(in srgb,var(--vista,#e4002b) 55%,#151a2e) 80%,#0d1220 100%);
+  background-size:220% 100%;animation:hero-luz 14s ease-in-out infinite alternate}
+@keyframes hero-luz{from{background-position:0% 50%}to{background-position:100% 50%}}
+.app-hero.compacto .app-hero-kicker{color:color-mix(in srgb,var(--vista,#ff8da0) 55%,#fff)!important}
+.app-hero-orb{animation:orb-late 3.4s ease-in-out infinite}
+@keyframes orb-late{0%,100%{box-shadow:0 0 0 5px rgba(255,255,255,.07),inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35)}
+  50%{box-shadow:0 0 0 9px rgba(255,255,255,.03),0 0 22px rgba(228,0,43,.55),inset 0 -3px 6px rgba(0,0,0,.22),inset 0 2px 3px rgba(255,255,255,.35)}}
 .app-hero.compacto:before{width:200px;height:200px;top:-90px;right:-60px}
 .app-hero.compacto .app-hero-orb{width:26px;height:26px;flex:0 0 26px}
 .app-hero.compacto .app-hero-txt{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -639,15 +646,23 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
 .st-key-app_contexto{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);
   border-radius:var(--radius-lg);padding:12px 18px 12px 22px;box-shadow:var(--shadow-md);gap:.5rem;margin-bottom:10px}
 .st-key-app_contexto:before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
-  background:linear-gradient(180deg,#ff3b4e,#e4002b)}
+  background:linear-gradient(180deg,var(--vista,#ff3b4e),color-mix(in srgb,var(--vista,#e4002b) 45%,#7c3aed))}
+.st-key-app_contexto:after{content:"";position:absolute;right:-80px;top:-120px;width:300px;height:300px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,color-mix(in srgb,var(--vista,#e4002b) 12%,transparent),transparent 65%)}
 .ctx-top{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
 .ctx-main{flex:1;min-width:260px}
-.ctx-kicker{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--blue)!important}
+.ctx-kicker{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--vista,var(--blue))!important}
 .ctx-titulo{font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--text)!important;line-height:1.3;margin:2px 0 9px}
 .ctx-fichas{display:flex;flex-wrap:wrap;gap:8px}
 .ctx-ficha{display:inline-flex;align-items:baseline;gap:6px;background:var(--panel-2);border:1px solid var(--line-soft);
   border-radius:10px;padding:5px 11px;font-size:13px}
 .ctx-ficha small{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)!important}
+/* Cada ficha con su color: métrica azul, registros morado, periodo verde azulado, hoja ámbar. */
+.ctx-ficha{--f:#64748b;background:color-mix(in srgb,var(--f) 8%,var(--panel))!important;
+  border-color:color-mix(in srgb,var(--f) 22%,transparent)!important;transition:transform .18s ease}
+.ctx-ficha:hover{transform:translateY(-1px)}
+.ctx-ficha:nth-child(1){--f:#2563eb}.ctx-ficha:nth-child(2){--f:#7c3aed}.ctx-ficha:nth-child(3){--f:#0d9488}.ctx-ficha:nth-child(4){--f:#d97706}
+.ctx-ficha small{color:color-mix(in srgb,var(--f) 75%,var(--text))!important}
 .ctx-ficha b{color:var(--text)!important;font-weight:750}
 .ctx-estado{min-width:210px;background:var(--green-soft);border:1px solid color-mix(in srgb,var(--green) 30%,transparent);
   border-radius:12px;padding:9px 13px}
@@ -915,28 +930,49 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
    barra sola no puede quedar pegada porque ese envoltorio mide lo mismo que
    ella, y un elemento sticky no sale de su padre. */
 [data-testid="stLayoutWrapper"]:has(> .st-key-nav_barra){position:sticky;top:3.75rem;z-index:990}
-.st-key-nav_barra{background:var(--panel);border:1px solid var(--line);
-  border-radius:var(--radius-lg);padding:6px 8px;box-shadow:var(--shadow-md);margin:4px 0 14px}
-.st-key-nav_barra{flex-wrap:wrap!important;row-gap:4px!important;column-gap:2px!important}
+/* Barra de vistas con el color de cada sección (--c, ver ui/layouts/tabs.py y
+   ui/components/colores.py). Vidrio esmerilado, una línea de color abajo que
+   cambia con la sección abierta, pestañas que se tiñen al pasar el cursor y
+   la activa en un degradado de su color con brillo. */
+.st-key-nav_barra{position:relative;background:color-mix(in srgb,var(--panel) 86%,transparent);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);
+  border-radius:20px;padding:7px 9px;box-shadow:var(--shadow-md),0 10px 30px color-mix(in srgb,var(--vista,var(--blue)) 10%,transparent);margin:4px 0 16px}
+.st-key-nav_barra::after{content:"";position:absolute;left:18px;right:18px;bottom:-1px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,var(--vista,var(--blue)),transparent);opacity:.8}
+.st-key-nav_barra{flex-wrap:wrap!important;row-gap:5px!important;column-gap:3px!important}
 .st-key-nav_barra>[data-testid="stElementContainer"],.st-key-nav_barra>div{flex:0 0 auto!important;width:auto!important}
-/* Pestaña inactiva: texto sobre el panel, sin borde. */
-.st-key-nav_barra .stButton button{min-height:36px;padding:0 12px;border-radius:999px!important;
+.st-key-nav_barra .stButton button{position:relative;min-height:38px;padding:0 14px;border-radius:13px!important;
   border:1px solid transparent!important;background:transparent!important;color:var(--text)!important;
-  font-weight:650;font-size:13px;box-shadow:none!important;white-space:nowrap}
+  font-weight:650;font-size:13px;box-shadow:none!important;white-space:nowrap;
+  transition:background .2s ease,color .2s ease,transform .2s ease,box-shadow .2s ease!important}
 .st-key-nav_barra .stButton button p{color:inherit!important;font-weight:inherit!important;font-size:13px!important}
-.st-key-nav_barra .stButton button:hover{background:var(--panel-2)!important;transform:none}
-/* Pestaña activa: la píldora roja de siempre (botón primario del tema). */
+.st-key-nav_barra .stButton button:hover{background:color-mix(in srgb,var(--c,var(--blue)) 11%,transparent)!important;
+  color:var(--c,var(--blue))!important;transform:translateY(-1px)}
 .st-key-nav_barra .stButton button[kind="primary"]{
-  background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.35),transparent 55%),
-    linear-gradient(180deg,#ff3b4e,#e4002b)!important;color:#fff!important;font-weight:800!important;
-  box-shadow:0 4px 14px rgba(228,0,43,.32)!important}
+  background:radial-gradient(circle at 25% 20%,rgba(255,255,255,.38),transparent 55%),
+    linear-gradient(135deg,color-mix(in srgb,var(--c,var(--blue)) 78%,#fff),var(--c,var(--blue)))!important;
+  color:#fff!important;font-weight:800!important;
+  box-shadow:0 6px 18px color-mix(in srgb,var(--c,var(--blue)) 42%,transparent),inset 0 1px 0 rgba(255,255,255,.3)!important;
+  animation:nav-entra .35s cubic-bezier(.2,.8,.2,1) both}
+@keyframes nav-entra{from{transform:scale(.92);opacity:.6}to{transform:none;opacity:1}}
 .st-key-nav_barra .stButton button[kind="primary"] p{color:#fff!important}
 .st-key-nav_barra [data-testid="stPopover"]{margin-left:auto}
-.st-key-nav_barra [data-testid="stPopover"] button{border-radius:999px!important;min-height:38px;font-weight:700;
-  border:1px solid var(--line)!important;background:var(--panel-2)!important;color:var(--text)!important;
+.st-key-nav_barra [data-testid="stPopover"] button{border-radius:13px!important;min-height:38px;font-weight:700;
+  border:1px dashed color-mix(in srgb,var(--text) 22%,transparent)!important;background:var(--panel-2)!important;color:var(--text)!important;
   box-shadow:none!important;padding:0 16px}
 .st-key-nav_barra [data-testid="stPopover"] button p{color:var(--text)!important;font-size:13px!important}
-[data-testid="stPopoverBody"] .stButton>button{justify-content:flex-start;text-align:left}
+/* El menú «Más»: cada herramienta como una ficha con su color. */
+[data-testid="stPopoverBody"]{border-radius:18px!important;padding:10px!important;box-shadow:0 24px 60px rgba(15,20,40,.22)!important}
+[data-testid="stPopoverBody"] .stButton>button{justify-content:flex-start;text-align:left;border-radius:12px!important;
+  border:1px solid var(--line)!important;border-left:4px solid var(--c,var(--blue))!important;background:var(--panel)!important;
+  color:var(--text)!important;min-height:42px;transition:background .18s ease,transform .18s ease!important}
+[data-testid="stPopoverBody"] .stButton>button p{color:inherit!important}
+[data-testid="stPopoverBody"] .stButton>button>div{justify-content:flex-start!important;width:100%}
+[data-testid="stPopoverBody"] .stButton>button:hover{background:color-mix(in srgb,var(--c,var(--blue)) 10%,var(--panel))!important;
+  transform:translateX(3px)}
+[data-testid="stPopoverBody"] .stButton>button[kind="primary"]{background:linear-gradient(135deg,color-mix(in srgb,var(--c,var(--blue)) 78%,#fff),var(--c,var(--blue)))!important;
+  color:#fff!important;box-shadow:0 6px 16px color-mix(in srgb,var(--c,var(--blue)) 35%,transparent)!important}
+[data-testid="stPopoverBody"] .stButton>button[kind="primary"] p{color:#fff!important}
 
 /* Pestañas anidadas (una barra de pestañas que vive DENTRO de otra, p. ej.
    las pestañas internas de ui/dashboard.py — "📊 Visión general/🔍
@@ -1078,7 +1114,7 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
 [data-testid="stMetric"]{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:16px;
   padding:16px 18px 14px;box-shadow:var(--shadow-md);animation:fadeUp .45s ease both;transition:transform .2s ease,box-shadow .2s ease}
 [data-testid="stMetric"]::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;
-  background:linear-gradient(90deg,var(--blue),color-mix(in srgb,var(--blue) 25%,transparent))}
+  background:linear-gradient(90deg,var(--vista,var(--blue)),color-mix(in srgb,var(--vista,var(--blue)) 25%,transparent))}
 [data-testid="stMetric"]:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
 [data-testid="stMetricLabel"],[data-testid="stMetricLabel"] p{color:var(--muted)!important;font-size:11.5px!important;font-weight:700!important;
   letter-spacing:.02em}
@@ -1229,6 +1265,18 @@ button:disabled{color:var(--soft)!important;background:var(--panel-2)!important;
   transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .pbi-visual:hover{box-shadow:0 14px 28px rgba(228,0,43,.10),var(--glow-ring);border-color:rgba(228,0,43,.2)}
 .pbi-visual:before{width:22px;height:3px;margin-bottom:8px;background:linear-gradient(90deg,var(--blue),var(--teal))}
+/* Acento de la sección abierta (--vista, ver ui/layouts/tabs.py): títulos de
+   sección con una barra de su color, gráficos con su raya y su borde al pasar
+   el cursor. Verde/rojo siguen reservados para bien/mal dentro de cada vista. */
+.section-intro{position:relative;overflow:hidden;padding-left:22px!important}
+.section-intro::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
+  background:linear-gradient(180deg,var(--vista,var(--blue)),color-mix(in srgb,var(--vista,var(--blue)) 40%,#7c3aed))}
+.chart-card:before,.pbi-visual:before{background:linear-gradient(90deg,var(--vista,var(--blue)),color-mix(in srgb,var(--vista,var(--blue)) 35%,#06b6d4))!important}
+.chart-card:hover,.pbi-visual:hover{border-color:color-mix(in srgb,var(--vista,var(--blue)) 28%,transparent)!important;
+  box-shadow:0 14px 30px color-mix(in srgb,var(--vista,var(--blue)) 12%,transparent),var(--glow-ring)!important}
+.pbi-visual .visual-type{color:var(--vista,var(--blue))!important}
+.data-badge{color:var(--vista,var(--red))!important}
+[data-testid="stExpander"] summary svg{color:var(--vista,var(--blue))!important}
 .pbi-visual .chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-height:42px;padding:0 3px 2px}
 .pbi-visual .chart-head-main{min-width:0}
 .pbi-visual .visual-type{display:block;color:var(--blue);font-size:8px;font-weight:800;letter-spacing:.15em;margin-bottom:4px}
@@ -1291,9 +1339,94 @@ def components_css() -> str:
     return css
 
 
+def pulido_css() -> str:
+    """Capa final de presentación: menú lateral, pestañas internas, controles
+    y el chat del asistente, con el color de la sección abierta (--vista, lo
+    pone ui/layouts/tabs.py). Va después de las otras capas, así que gana sin
+    redefinir los tokens de :root."""
+    return """<style>
+/* ── Menú lateral ─────────────────────────────────────────────────────── */
+section[data-testid="stSidebar"]{
+  background:radial-gradient(420px 260px at 0% 0%,color-mix(in srgb,var(--vista,#e4002b) 9%,transparent),transparent 70%),
+             var(--sidebar-bg)!important}
+.sidebar-logo{padding:4px 4px 12px!important}
+.sidebar-logo-mark{animation:orb-late 3.4s ease-in-out infinite}
+.sidebar-logo-text{font-size:14px!important;letter-spacing:-.01em}
+section[data-testid="stSidebar"] .sidebar-group-header{display:flex!important;align-items:center;gap:8px;
+  color:var(--sidebar-text-strong)!important}
+section[data-testid="stSidebar"] .sidebar-group-header::before{content:"";width:16px;height:4px;border-radius:4px;
+  background:linear-gradient(90deg,var(--vista,#e4002b),#7c3aed)}
+/* Territorial y Logística: dos fichas con su color, no dos botones grises. */
+.st-key-switch_to_territorial button,.st-key-switch_to_logistica button{--t:#0891b2;border-radius:12px!important;
+  border:1px solid color-mix(in srgb,var(--t) 35%,transparent)!important;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--t) 14%,var(--sidebar-panel)),var(--sidebar-panel))!important;
+  color:color-mix(in srgb,var(--t) 70%,var(--sidebar-text-strong))!important;font-weight:750!important}
+.st-key-switch_to_logistica button{--t:#d97706}
+.st-key-switch_to_territorial button:hover,.st-key-switch_to_logistica button:hover{
+  background:linear-gradient(135deg,color-mix(in srgb,var(--t) 26%,var(--sidebar-panel)),var(--sidebar-panel))!important;
+  box-shadow:0 6px 16px color-mix(in srgb,var(--t) 25%,transparent)!important;border-color:var(--t)!important}
+.st-key-switch_to_territorial button p,.st-key-switch_to_logistica button p{color:inherit!important;font-weight:750!important}
+section[data-testid="stSidebar"] [data-baseweb="select"]>div,section[data-testid="stSidebar"] [data-baseweb="input"]{
+  border-radius:11px!important;transition:border-color .15s ease,box-shadow .15s ease}
+section[data-testid="stSidebar"] [data-baseweb="select"]>div:focus-within,section[data-testid="stSidebar"] [data-baseweb="input"]:focus-within{
+  border-color:var(--vista,var(--blue))!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--vista,var(--blue)) 18%,transparent)!important}
+section[data-testid="stSidebar"] [data-baseweb="tag"]{background:color-mix(in srgb,var(--vista,var(--blue)) 85%,#000)!important;border-radius:8px!important}
+
+/* ── Controles de la página con el color de la sección ────────────────── */
+[data-testid="stMain"] [data-baseweb="select"]>div,[data-testid="stMain"] [data-baseweb="input"]{border-radius:12px!important;
+  transition:border-color .15s ease,box-shadow .15s ease}
+[data-testid="stMain"] [data-baseweb="select"]>div:focus-within,[data-testid="stMain"] [data-baseweb="input"]:focus-within{
+  border-color:var(--vista,var(--blue))!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--vista,var(--blue)) 16%,transparent)!important}
+[data-testid="stMain"] [data-baseweb="tag"]{background:var(--vista,var(--blue))!important;border-radius:8px!important}
+[data-testid="stMain"] [data-testid="stSlider"] [role="slider"]{background:var(--vista,var(--blue))!important;
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--vista,var(--blue)) 20%,transparent)!important}
+[data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]{gap:6px!important;flex-wrap:wrap}
+[data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label{padding:6px 12px!important;border-radius:999px;
+  border:1px solid var(--line);background:var(--panel);transition:background .15s ease,border-color .15s ease}
+[data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:hover{border-color:var(--vista,var(--blue))}
+[data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"]>label:has(input:checked){
+  background:color-mix(in srgb,var(--vista,var(--blue)) 12%,var(--panel));border-color:var(--vista,var(--blue))}
+[data-testid="stMain"] [data-testid="stDownloadButton"] button:hover{border-color:var(--vista,var(--blue))!important}
+
+/* Pestañas dentro de una vista: píldoras claras y la activa en el color de la sección. */
+[data-testid="stMain"] .stTabs [role="tablist"]{border-bottom:1px solid var(--line)!important}
+[data-testid="stMain"] .stTabs [data-testid="stTab"]{background:var(--panel-2)!important;border:1px solid var(--line)!important;text-shadow:none!important}
+[data-testid="stMain"] .stTabs [data-testid="stTab"],[data-testid="stMain"] .stTabs [data-testid="stTab"] *{color:var(--text)!important}
+[data-testid="stMain"] .stTabs [data-testid="stTab"]:hover{background:color-mix(in srgb,var(--vista,var(--blue)) 10%,var(--panel))!important}
+[data-testid="stMain"] .stTabs [aria-selected="true"]{
+  background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.35),transparent 55%),
+    linear-gradient(135deg,color-mix(in srgb,var(--vista,var(--blue)) 78%,#fff),var(--vista,var(--blue)))!important;
+  border-color:transparent!important;box-shadow:0 6px 16px color-mix(in srgb,var(--vista,var(--blue)) 35%,transparent)!important}
+[data-testid="stMain"] .stTabs [aria-selected="true"],[data-testid="stMain"] .stTabs [aria-selected="true"] *{color:#fff!important}
+[data-testid="stMain"] .stTabs .react-aria-SelectionIndicator,[data-testid="stMain"] .stTabs [data-baseweb="tab-highlight"]{display:none!important}
+
+/* ── Asistente: burbujas y sugerencias ────────────────────────────────── */
+[data-testid="stChatMessage"]{border-radius:18px!important;padding:14px 16px!important;border:1px solid var(--line);
+  background:var(--panel)!important;box-shadow:var(--shadow-sm);animation:fadeUp .35s ease both}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]){
+  background:color-mix(in srgb,var(--vista,var(--blue)) 8%,var(--panel))!important;border-color:color-mix(in srgb,var(--vista,var(--blue)) 25%,var(--line))}
+[data-testid="stChatInput"]{border-radius:16px!important;border:1.5px solid color-mix(in srgb,var(--vista,var(--blue)) 30%,var(--line))!important;
+  box-shadow:0 10px 30px color-mix(in srgb,var(--vista,var(--blue)) 12%,transparent)!important}
+[class*="st-key-assistant_suggest_"] button{min-height:64px!important;border-radius:16px!important;text-align:left!important;
+  justify-content:flex-start!important;white-space:normal!important;border:1px solid var(--line)!important;background:var(--panel)!important;
+  border-left:4px solid var(--s,#c026d3)!important;transition:transform .18s ease,box-shadow .18s ease!important}
+[class*="st-key-assistant_suggest_"] button p{color:var(--text)!important;font-weight:650!important;text-align:left}
+[class*="st-key-assistant_suggest_"] button:hover{transform:translateY(-2px);
+  box-shadow:0 10px 24px color-mix(in srgb,var(--s,#c026d3) 18%,transparent)!important}
+.st-key-assistant_suggest_1 button{--s:#2563eb}.st-key-assistant_suggest_2 button{--s:#ea580c}
+.st-key-assistant_suggest_3 button{--s:#0d9488}.st-key-assistant_suggest_4 button{--s:#7c3aed}.st-key-assistant_suggest_5 button{--s:#db2777}
+.as-intro{display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:18px;margin:4px 0 12px;
+  background:linear-gradient(135deg,color-mix(in srgb,#c026d3 9%,var(--panel)),var(--panel));border:1px solid var(--line)}
+.as-intro b{display:block;font-size:15px;color:var(--text)!important}
+.as-intro p{margin:4px 0 0!important;font-size:13px;color:var(--muted)!important;line-height:1.5}
+.as-intro .as-ico{font-size:26px;line-height:1}
+</style>"""
+
+
 def inject_theme(dark: bool) -> None:
     """Punto de entrada único: inyecta el tema completo (tokens + clases).
     Sustituye a los dos `st.markdown(...)` que antes vivían inline en
     `app.py`."""
     st.markdown(base_layer_css(dark), unsafe_allow_html=True)
     st.markdown(components_css(), unsafe_allow_html=True)
+    st.markdown(pulido_css(), unsafe_allow_html=True)

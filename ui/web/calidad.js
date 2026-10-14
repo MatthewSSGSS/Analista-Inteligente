@@ -4,6 +4,7 @@
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const medidas = (d.medidas || []).map((m, i) => `
     <div class="ca-medida" data-revelar="${200 + i * 80}"><div><span>${texto(m.n)}</span><b data-contar="${m.v.toFixed(0)}%">${m.v.toFixed(0)}%</b></div>
       <div class="ca-pista"><i style="--ancho:${m.v}%"></i></div></div>`).join("");

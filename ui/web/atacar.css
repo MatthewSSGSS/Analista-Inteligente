@@ -36,7 +36,7 @@
   background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-md);transition:box-shadow .2s ease,opacity .6s ease,transform .6s ease}
 .at-op:hover{box-shadow:var(--shadow-lg)}
 .at-op-n{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:var(--font-display,"Sora",sans-serif);
-  font-weight:800;font-size:17px;color:#fff;background:var(--brand-orb,var(--blue));box-shadow:0 8px 18px color-mix(in srgb,var(--blue) 30%,transparent)}
+  font-weight:800;font-size:17px;color:#fff;background:var(--brand-orb,var(--acc));box-shadow:0 8px 18px color-mix(in srgb,var(--acc) 30%,transparent)}
 .at-op-tit{font-size:16px;font-weight:800;color:var(--text)}
 .at-op p{font-size:13.2px;line-height:1.55;color:var(--muted);margin-top:4px}
 .at-op p b.pos,.at-op-acc b.pos{color:var(--green-strong)}

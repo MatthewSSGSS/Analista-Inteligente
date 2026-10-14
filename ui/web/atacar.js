@@ -101,6 +101,7 @@ function _tablero(cols) {
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const g = d.diag;
 
   const raiz = montar(parentElement, "pd at", `

@@ -4,6 +4,7 @@
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const cifras = (d.cifras || []).map((c, i) => `
     <div class="cb-cifra" data-revelar="${200 + i * 90}"><b data-contar="${texto(c.v)}">${texto(c.v)}</b><small>${texto(c.l)}</small></div>`).join("");
   const raiz = montar(parentElement, "cb", `

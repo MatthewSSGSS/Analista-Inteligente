@@ -6,6 +6,7 @@
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const tarjetas = (d.metricas || []).map((m, i) => `
     <article class="fi-tarjeta" data-revelar="${i * 80}">
       <div class="fi-cab"><b>${texto(m.n)}</b><small>${texto(m.cuenta)} valores</small></div>

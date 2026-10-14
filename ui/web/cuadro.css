@@ -16,7 +16,7 @@
 .cu-fila:hover{box-shadow:var(--shadow-md)}
 .cu-fila-cab{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:grid;align-items:center;gap:14px;padding:12px 16px;
   grid-template-columns:34px minmax(110px,1.1fr) minmax(120px,1.4fr) 150px 130px 74px 90px 16px}
-.cu-fila-cab:focus-visible{outline:2px solid var(--blue);outline-offset:-2px;border-radius:16px}
+.cu-fila-cab:focus-visible{outline:2px solid var(--acc);outline-offset:-2px;border-radius:16px}
 .cu-pos{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;
   color:var(--text);background:var(--panel-2);border:1px solid var(--line)}
 .cu-fila:first-child .cu-pos{color:#fff;background:linear-gradient(180deg,#f7c948,#d99a0b);border-color:transparent}

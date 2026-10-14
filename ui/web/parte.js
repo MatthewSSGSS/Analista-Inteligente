@@ -60,6 +60,7 @@ function _alertas(alertas) {
 export default function (component) {
   const { data, setTriggerValue, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const e = d.encabezado || {};
   const c = d.cifra || {};
 

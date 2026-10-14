@@ -31,7 +31,7 @@ function _grafico(puntos) {
     <div class="py-grafico">
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
         <defs><linearGradient id="pyArea" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stop-color="#ff5b6c" stop-opacity=".32"/><stop offset="100%" stop-color="#ff5b6c" stop-opacity="0"/></linearGradient></defs>
+          <stop offset="0%" style="stop-color:var(--acc-l)" stop-opacity=".32"/><stop offset="100%" style="stop-color:var(--acc-l)" stop-opacity="0"/></linearGradient></defs>
         <path class="py-area" d="${area}" fill="url(#pyArea)"/>
         ${futuros.length ? `<path class="py-banda peor" d="${banda("lo", "hi")}"/>` : ""}
         ${futuros.length && futuros[0].plo != null ? `<path class="py-banda probable" d="${banda("plo", "phi")}"/>` : ""}
@@ -51,6 +51,7 @@ function _grafico(puntos) {
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const raiz = montar(parentElement, "pd py", `
     <section class="pd-hero">
       <canvas class="ai-red"></canvas>

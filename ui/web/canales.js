@@ -71,6 +71,7 @@ function _jugadas(lista) {
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const raiz = montar(parentElement, "pd cn", `
     <section class="pd-hero">
       <canvas class="ai-red"></canvas>
@@ -81,7 +82,6 @@ export default function (component) {
             <span>Estrategia por canal · ${texto(d.periodo)}</span>
           </div>
           <h1 class="pd-titular"></h1>
-          <p class="pd-perspectiva" data-revelar="300">Cuánto pesa cada canal y hacia dónde va, en una sola vista: mirados por separado, un canal grande que cae parece sano.</p>
         </div>
         ${_dona(d.dona)}
       </div>

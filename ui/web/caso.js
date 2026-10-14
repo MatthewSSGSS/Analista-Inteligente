@@ -27,8 +27,8 @@ function _lineas(serie) {
   const area = `${ruta("v")} L${x(serie.length - 1).toFixed(1)},${H} L0,${H} Z`;
   return `
     <svg class="cs-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <defs><linearGradient id="csGrad" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#ff5b6c" stop-opacity=".35"/>
-        <stop offset="100%" stop-color="#ff5b6c" stop-opacity="0"/></linearGradient></defs>
+      <defs><linearGradient id="csGrad" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" style="stop-color:var(--acc-l)" stop-opacity=".35"/>
+        <stop offset="100%" style="stop-color:var(--acc-l)" stop-opacity="0"/></linearGradient></defs>
       <path d="${area}" fill="url(#csGrad)"/>
       <path class="cs-grupo" d="${ruta("g")}"/>
       <path class="cs-caso" d="${ruta("v")}"/>
@@ -96,6 +96,7 @@ function _ficha(f) {
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const c = d.cifra || {};
   const raiz = montar(parentElement, "pd cs", `
     <section class="pd-hero">

@@ -15,7 +15,7 @@ from core.dates import format_month_year
 from core.forecast import pronosticar, explicar, atribuir, explicar_atribucion, NOMBRES_METODO
 from visualization.charts import metric_candidates, _base, _label, cifra_eje, en_espanol
 from ui.components.cards import kpi_card
-from ui.components.escena import NO_DISPONIBLE, escena
+from ui.components.escena import NO_DISPONIBLE, cabecera, escena
 from ui.components.section import decision_strip, section_header
 from ui.labels import clean_display_text
 from ui.layouts.columns import kpi_grid
@@ -250,11 +250,9 @@ def _datos_proyeccion(resultado: dict, etiqueta: str, tarjetas: list, frase: str
 
 
 def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = None) -> None:
-    st.markdown(section_header(
-        "Hacia dónde va",
-        eyebrow="PREDICCIONES",
-        subtitle="Proyección del indicador a partir de su propio histórico, con el margen de error medido sobre tus datos.",
-    ), unsafe_allow_html=True)
+    _sub = "Proyección del indicador a partir de su propio histórico, con el margen de error medido sobre tus datos."
+    cabecera("Hacia dónde va", _sub, ceja="Proyección", icono="🔮", clave="cab_proyeccion",
+             respaldo_html=section_header("Hacia dónde va", eyebrow="PREDICCIONES", subtitle=_sub))
 
     metricas = [m for m in metric_candidates(df, schema) if m in df.columns]
     if not metricas:

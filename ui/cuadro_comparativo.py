@@ -30,7 +30,7 @@ from core.cuadro_comparativo import (UMBRAL_PROMEDIO, base_de_comparacion, cuadr
 from core.diagnostics import METRICA_CONTEO, _fmt
 from core.filter_engine import describir_regla
 from ui.components.cards import kpi_card
-from ui.components.escena import NO_DISPONIBLE, escena
+from ui.components.escena import NO_DISPONIBLE, cabecera, escena
 from ui.components.charts import chart_card, empty_state
 from ui.components.section import section_header
 from visualization.charts import CATEGORY_PALETTE, _base, metric_candidates, realzar_barras
@@ -464,11 +464,10 @@ def tabla_cuadro(cuadro: dict) -> pd.DataFrame:
 
 
 def render_cuadro_comparativo(df: pd.DataFrame, schema: dict) -> None:
-    st.markdown(section_header(
-        "Cuadro comparativo", eyebrow="COMPARACIÓN",
-        subtitle="Elige a quiénes comparar y mira cómo va cada uno con la misma vara: su meta si el archivo la trae, "
-                 "o el promedio del grupo si no.",
-    ), unsafe_allow_html=True)
+    _sub = ("Elige a quiénes comparar y mira cómo va cada uno con la misma vara: su meta si el archivo la trae, "
+            "o el promedio del grupo si no.")
+    cabecera("Cómo va cada uno", _sub, ceja="Cuadro comparativo", icono="📊", clave="cab_cuadro",
+             respaldo_html=section_header("Cuadro comparativo", eyebrow="COMPARACIÓN", subtitle=_sub))
 
     _css()
     dimension, metrica, elegidos, manual = _controles(df, schema)

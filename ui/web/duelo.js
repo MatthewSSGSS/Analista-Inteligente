@@ -22,6 +22,7 @@ function _espejo(filas, a, b) {
 export default function (component) {
   const { data, parentElement } = component;
   const d = data || {};
+  acento(d.acento);
   const a = d.a || {}, b = d.b || {};
   const lado = (p, cls) => `
     <div class="du-persona ${cls} ${d.ganador === cls ? "ganador" : ""}" data-revelar="${cls === "a" ? 0 : 120}">

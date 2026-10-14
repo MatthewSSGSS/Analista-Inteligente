@@ -15,7 +15,8 @@ function texto(valor) {
 // datos" de la portada y del acceso. Se pausa cuando no está a la vista.
 function redDeDatos(canvas, opciones = {}) {
   if (!canvas) return () => {};
-  const color = opciones.color || "255,91,108";
+  const raizColor = canvas.closest && canvas.closest(".ai-raiz");
+  const color = opciones.color || (raizColor && raizColor.dataset.accRgb) || "255,91,108";
   const color2 = opciones.color2 || "94,234,212";
   const ctx = canvas.getContext("2d");
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -171,10 +172,23 @@ function acciones(raiz, setTriggerValue, botones = {}) {
 
 // Quita lo montado en un rerun anterior (Streamlit vuelve a llamar a la
 // función de la pantalla con los datos nuevos).
+let _ACENTO = null;
+// El color de la sección (lo pone ui/components/escena.py en data.acento).
+function acento(hex) { _ACENTO = /^#[0-9a-fA-F]{6}$/.test(String(hex || "")) ? hex : null; }
+
+function _rgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+
 function montar(parentElement, clase, html) {
   parentElement.querySelectorAll(".ai-raiz").forEach((n) => n.remove());
   const raiz = document.createElement("div");
   raiz.className = `ai ai-raiz ${clase}`;
+  if (_ACENTO) {
+    raiz.style.setProperty("--acc", _ACENTO);
+    raiz.dataset.accRgb = _rgb(_ACENTO);
+  }
   raiz.innerHTML = html;
   parentElement.appendChild(raiz);
   return raiz;
@@ -240,7 +254,7 @@ function areaSvg(serie, id = "pdGrad") {
   return `
     <svg class="pd-area" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
       <defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">
-        <stop offset="0%" stop-color="#ff5b6c" stop-opacity=".45"/><stop offset="100%" stop-color="#ff5b6c" stop-opacity="0"/>
+        <stop offset="0%" style="stop-color:var(--acc-l)" stop-opacity=".45"/><stop offset="100%" style="stop-color:var(--acc-l)" stop-opacity="0"/>
       </linearGradient></defs>
       <path class="pd-area-relleno" d="${area}" fill="url(#${id})"/>
       <path class="pd-area-linea" d="${linea}" pathLength="1"/>
