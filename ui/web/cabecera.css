@@ -1,0 +1,22 @@
+/* Cabecera animada de las vistas: siempre oscura, como el resto de recuadros. */
+.cb{position:relative;overflow:hidden;border-radius:22px;margin:2px 0 14px;color:#eef1f7;
+  background:radial-gradient(700px 300px at 95% -40%,#2a0d18 0%,transparent 60%),
+             radial-gradient(600px 360px at -10% 140%,#0b2a33 0%,transparent 55%),
+             linear-gradient(160deg,#0a0e17 0%,#0d1220 55%,#0a0d15 100%);
+  box-shadow:0 18px 44px rgba(8,10,20,.22),inset 0 0 0 1px rgba(255,255,255,.06)}
+.cb-cuerpo{position:relative;z-index:1;display:flex;align-items:center;gap:20px;padding:24px 28px}
+.cb-icono{flex:0 0 58px;width:58px;height:58px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:27px;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 0 28px color-mix(in srgb,var(--blue) 35%,transparent),inset 0 1px 0 rgba(255,255,255,.1)}
+.cb-texto{flex:1;min-width:0}
+.cb-ceja{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#ff7a88}
+.cb h1{font-size:clamp(21px,2.1vw,27px);font-weight:800;color:#fff;margin:4px 0 4px;line-height:1.2}
+.cb p{font-size:13.5px;line-height:1.5;color:#b9c0cf}
+.cb-cifras{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.cb-cifra{min-width:104px;padding:10px 14px;border-radius:14px;background:rgba(17,22,35,.7);border:1px solid rgba(255,255,255,.1);text-align:right}
+.cb-cifra b{display:block;font-family:var(--font-display,"Sora",sans-serif);font-size:21px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
+.cb-cifra small{font-size:11px;color:#8f97aa}
+@media (max-width:760px){
+  .cb-cuerpo{flex-wrap:wrap;padding:20px}
+  .cb-cifras{justify-content:flex-start;width:100%}
+}

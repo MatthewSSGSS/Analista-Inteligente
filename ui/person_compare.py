@@ -8,6 +8,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from ui.components.escena import cabecera
 from core.numeric import numeric_series
 from core.universal_analysis import semantic_map, ADDITIVE, period_series
 from visualization.charts import metric_candidates, _label, chart_text_color
@@ -39,7 +40,9 @@ def render_person_compare(df, schema):
     sem = semantic_map(schema)
     preferred = [m for m in metrics if sem.get(m) in {"revenue","profit","quantity","sales","rating"}]
 
-    st.markdown(section_header("Comparar personas", eyebrow="COMPARACIÓN A VS B", subtitle="Compara dos personas lado a lado: mismos indicadores, mismo gráfico."), unsafe_allow_html=True)
+    cabecera("Comparar personas", "Dos personas lado a lado: mismos indicadores, mismo gráfico.",
+             ceja="Comparación A vs B", icono="⚔️", clave="cab_comparar_personas",
+             respaldo_html=section_header("Comparar personas", eyebrow="COMPARACIÓN A VS B", subtitle="Compara dos personas lado a lado: mismos indicadores, mismo gráfico."))
 
     # ── Selección: métrica + las dos personas, lado a lado ─────────────────
     metric = st.selectbox("Métrica a comparar", preferred or metrics, format_func=lambda c:_label(schema,c), key="ab_metric_v52")

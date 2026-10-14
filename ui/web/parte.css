@@ -79,6 +79,8 @@
 .pd-kpi small{font-size:11.5px;font-weight:650;color:var(--muted);line-height:1.3}
 .pd-kpi-cuerpo{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0 6px}
 .pd-kpi-cuerpo b{font-family:var(--font-display,"Sora",sans-serif);font-size:26px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
+/* Un nombre (no una cifra): letra más chica para que no se parta en tres renglones. */
+.pd-kpi.chico .pd-kpi-cuerpo b{font-size:18px;line-height:1.25}
 .pd-kpi em{display:block;font-style:normal;font-size:12px;color:var(--muted);line-height:1.4}
 .pd-kpi em b.pos{color:var(--green-strong)}
 .pd-kpi em b.neg{color:var(--red)}

@@ -30,6 +30,7 @@ from core.cuadro_comparativo import (UMBRAL_PROMEDIO, base_de_comparacion, cuadr
 from core.diagnostics import METRICA_CONTEO, _fmt
 from core.filter_engine import describir_regla
 from ui.components.cards import kpi_card
+from ui.components.escena import NO_DISPONIBLE, escena
 from ui.components.charts import chart_card, empty_state
 from ui.components.section import section_header
 from visualization.charts import CATEGORY_PALETTE, _base, metric_candidates, realzar_barras
@@ -193,7 +194,8 @@ def _puesto(fila: dict, cuadro: dict) -> str:
     return ""
 
 
-def _kpis(cuadro: dict) -> None:
+def _tarjetas(cuadro: dict) -> list[dict]:
+    """Las cuatro tarjetas de arriba como datos (las dibuja el JS o, sin él, `_kpis`)."""
     filas = cuadro["filas"]
     primero, ultimo = filas[0], filas[-1]
     n = len(filas)
@@ -229,13 +231,12 @@ def _kpis(cuadro: dict) -> None:
                   f"promedio de los {cuadro['total_grupo']} (todos): {_fmt(cuadro['promedio'])} "
                   f"(margen ±{UMBRAL_PROMEDIO:.0f}%)")
     tono_kpi = {"bueno": "positive", "medio": "neutral", "malo": "negative"}
-    # El key da la clase .st-key-cuadro_kpis que usa el CSS de _css().
-    with st.container(key="cuadro_kpis"):
-        c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(kpi_card("🥇 Va primero", html.escape(primero["nombre"]), delta=cifra(primero),
-                         tone="positive", small_value=True), unsafe_allow_html=True)
-    c2.markdown(kpi_card("Va último", html.escape(ultimo["nombre"]), delta=cifra(ultimo),
-                         tone="negative", small_value=True), unsafe_allow_html=True)
+    tarjetas = [
+        {"clave": "primero", "etiqueta": "Va primero", "valor": primero["nombre"], "detalle": cifra(primero),
+         "tono": "positive", "chico": True},
+        {"clave": "ultimo", "etiqueta": "Va último", "valor": ultimo["nombre"], "detalle": cifra(ultimo),
+         "tono": "negative", "chico": True},
+    ]
     # Si hay variación del último mes, la tercera tarjeta es quién más cayó:
     # el acumulado esconde que el primero puede venir desplomándose (en el
     # archivo de prueba, la líder cayó 30% en julio y solo se veía en la tabla).
@@ -244,14 +245,91 @@ def _kpis(cuadro: dict) -> None:
         peor = min(movimientos, key=lambda f: f["variacion"] * (-1 if cuadro["menos_es_mejor"] else 1))
         mejor = max(movimientos, key=lambda f: f["variacion"] * (-1 if cuadro["menos_es_mejor"] else 1))
         malo = (peor["variacion"] > 0) if cuadro["menos_es_mejor"] else (peor["variacion"] < 0)
-        c3.markdown(kpi_card(f"{'Más cayó' if malo else 'Menos creció'} · {cuadro['periodo_label']}",
-                             html.escape(peor["nombre"]),
-                             delta=(f"{_pct(peor['variacion'], signo=True)} · el que más subió: "
-                                    f"{html.escape(mejor['nombre'])} {_pct(mejor['variacion'], signo=True)}"),
-                             tone="negative" if malo else "neutral", small_value=True), unsafe_allow_html=True)
+        tarjetas.append({"clave": "movio", "etiqueta": f"{'Más cayó' if malo else 'Menos creció'} · {cuadro['periodo_label']}",
+                         "valor": peor["nombre"],
+                         "detalle": (f"{_pct(peor['variacion'], signo=True)} · el que más subió: "
+                                     f"{mejor['nombre']} {_pct(mejor['variacion'], signo=True)}"),
+                         "tono": "negative" if malo else "neutral", "chico": True})
     else:
-        c3.markdown(kpi_card("Distancia primero–último", brecha, delta=brecha_detalle), unsafe_allow_html=True)
-    c4.markdown(kpi_card(cuarta[0], cuarta[1], delta=cuarta[3], tone=tono_kpi[cuarta[2]]), unsafe_allow_html=True)
+        tarjetas.append({"clave": "distancia", "etiqueta": "Distancia primero–último", "valor": brecha,
+                         "detalle": brecha_detalle, "tono": "neutral"})
+    tarjetas.append({"clave": "grupo", "etiqueta": cuarta[0], "valor": cuarta[1], "detalle": cuarta[3],
+                     "tono": tono_kpi[cuarta[2]]})
+    return tarjetas
+
+
+def _kpis(cuadro: dict) -> None:
+    # El key da la clase .st-key-cuadro_kpis que usa el CSS de _css().
+    with st.container(key="cuadro_kpis"):
+        columnas = st.columns(4)
+    for col, t in zip(columnas, _tarjetas(cuadro)):
+        etiqueta = ("🥇 " if t["clave"] == "primero" else "") + t["etiqueta"]  # el JS pone su propio ícono
+        col.markdown(kpi_card(html.escape(etiqueta), html.escape(t["valor"]), delta=html.escape(t["detalle"]),
+                              tone=t["tono"], small_value=t.get("chico", False)), unsafe_allow_html=True)
+
+
+def _datos_cuadro(cuadro: dict) -> dict:
+    """Lo que dibuja «Cómo va cada uno» en JavaScript (ui/web/cuadro.*)."""
+    filas = cuadro["filas"]
+    dimension = cuadro["dimension"]
+    etiqueta = _ETIQUETA_CONTEO if cuadro["conteo"] else str(cuadro["metrica"])
+    con_meta = cuadro["base"] == "meta"
+    tope_cumpl = max([100.0] + [f["cumplimiento"] for f in filas if f.get("cumplimiento") is not None])
+    tope_valor = max([abs(f["valor"]) for f in filas if f.get("valor") is not None] + [1e-9])
+    filas_js = []
+    for f in filas:
+        if con_meta and f.get("cumplimiento") is not None:
+            principal, secundario = _pct(f["cumplimiento"]), f"{_fmt(f['valor'])} de {_fmt(f['meta'])}"
+            barra = max(0.0, f["cumplimiento"]) / tope_cumpl * 100
+        else:
+            principal = _fmt(f["valor"])
+            secundario = ("" if f.get("vs_promedio") is None else
+                          f"{abs(f['vs_promedio']):.0f}% {'sobre' if f['vs_promedio'] >= 0 else 'bajo'} el promedio")
+            barra = abs(f["valor"] or 0) / tope_valor * 100
+        var = f.get("variacion")
+        if var is not None and pd.notna(var):
+            mejora = (var < 0) if cuadro["menos_es_mejor"] else (var > 0)
+            variacion, var_tono = _pct(var, signo=True), ("pos" if mejora else "neg" if var else "neu")
+        else:
+            variacion, var_tono = "—", "neu"
+        serie = [float(v) for _, v in sorted((f.get("serie") or {}).items()) if v is not None and pd.notna(v)][-12:]
+        detalle = [("Posición", f"{f['posicion_general']}.º de {cuadro['total_grupo']}" if f.get("posicion_general") else "—"),
+                   ("Registros", f"{f['registros']:,}")]
+        if not cuadro["conteo"]:
+            detalle.append(("Por registro", _fmt(f["por_registro"])))
+        if f.get("participacion") is not None:
+            detalle.append(("Participación", f"{f['participacion']:.1f}%"))
+        if f.get("meta"):
+            detalle.append(("Meta", _fmt(f["meta"])))
+        if f.get("vs_promedio") is not None:
+            detalle.append((f"Vs. promedio de los {cuadro['total_grupo']}", f"{f['vs_promedio']:+.0f}%"))
+        if cuadro.get("periodo_label"):
+            detalle.append((f"Variación {cuadro['periodo_label']}", variacion))
+        filas_js.append({"nombre": str(f["nombre"]), "posicion": f.get("posicion") or len(filas_js) + 1,
+                         "principal": principal, "secundario": secundario, "barra": round(barra, 1),
+                         "marca": None, "estado": str(f.get("estado") or ""), "tono": f.get("tono") or "medio",
+                         "variacion": variacion, "var_tono": var_tono, "serie": serie, "detalle": detalle})
+    if con_meta:
+        marca, marca_txt = round(100 / tope_cumpl * 100, 1), "100% de la meta"
+    else:
+        marca = round(abs(cuadro["promedio"] or 0) / tope_valor * 100, 1) if cuadro.get("promedio") is not None else None
+        marca_txt = f"promedio de los {cuadro['total_grupo']}" if marca is not None else ""
+    for f in filas_js:
+        f["marca"] = marca
+    orden = "de menor a mayor (aquí menos es mejor)" if cuadro["menos_es_mejor"] else "de mayor a menor"
+    medida = (f"Cumplimiento de meta ({etiqueta} ÷ {cuadro['meta_col']})" if con_meta else
+              ("Cantidad de registros" if cuadro["conteo"] else
+               f"{etiqueta} {'total' if cuadro['aditiva'] else 'promedio'}"))
+    periodo = (f" · {cuadro['desde']:%d/%m/%Y}–{cuadro['hasta']:%d/%m/%Y}" if cuadro["desde"] is not None else "")
+    return {
+        "kpis": _tarjetas(cuadro),
+        "titulo": f"Cómo va cada uno · {dimension}",
+        "subtitulo": f"{medida}, {orden} · {len(filas)} de {cuadro['total_grupo']}{periodo}",
+        "marca_txt": marca_txt,
+        "filas": filas_js,
+        "lectura": [str(x) for x in cuadro.get("lectura") or []],
+        "aviso": str(cuadro["aviso"]) if cuadro.get("aviso") else "",
+    }
 
 
 def figura_ranking(cuadro: dict):
@@ -408,7 +486,11 @@ def render_cuadro_comparativo(df: pd.DataFrame, schema: dict) -> None:
         return
 
     _base_de_comparacion(cuadro)
-    _kpis(cuadro)
+    # Tarjetas, ranking vivo y lectura en JavaScript (ui/web/cuadro.*); sin
+    # él, las tarjetas, el gráfico de ranking y la lectura de siempre.
+    en_js = escena("cuadro", _datos_cuadro(cuadro), clave="cuadro_js") is not NO_DISPONIBLE
+    if not en_js:
+        _kpis(cuadro)
     etiqueta = _ETIQUETA_CONTEO if cuadro["conteo"] else str(cuadro["metrica"])
     n = len(cuadro["filas"])
     como = "cantidad de registros" if cuadro["conteo"] else (
@@ -422,8 +504,9 @@ def render_cuadro_comparativo(df: pd.DataFrame, schema: dict) -> None:
     else:
         subtitulo = (f"{como} por {dimension}, {orden} · línea punteada = promedio de los {cuadro['total_grupo']}, "
                      f"no solo de los elegidos ({_fmt(cuadro['promedio'])}){periodo}")
-    chart_card(f"Cómo va cada uno · {dimension}", subtitulo, figura_ranking(cuadro),
-               key="cuadro_ranking", visual_type="COMPARACIÓN", badge_text=f"{n} de {cuadro['total_grupo']}")
+    if not en_js:
+        chart_card(f"Cómo va cada uno · {dimension}", subtitulo, figura_ranking(cuadro),
+                   key="cuadro_ranking", visual_type="COMPARACIÓN", badge_text=f"{n} de {cuadro['total_grupo']}")
 
     evolucion = figura_evolucion(cuadro)
     if evolucion is not None:
@@ -475,10 +558,11 @@ def render_cuadro_comparativo(df: pd.DataFrame, schema: dict) -> None:
     st.download_button("⬇️ Descargar cuadro (CSV)", tabla.to_csv(index=False).encode("utf-8-sig"),
                        file_name=f"cuadro_comparativo_{dimension}.csv", mime="text/csv", key="cuadro_descarga")
 
-    st.markdown(section_header("Lectura", compact=True), unsafe_allow_html=True)
-    for frase in cuadro["lectura"]:
-        st.markdown(f"- {frase}")
-    if cuadro["aviso"]:
-        st.warning(cuadro["aviso"])
+    if not en_js:
+        st.markdown(section_header("Lectura", compact=True), unsafe_allow_html=True)
+        for frase in cuadro["lectura"]:
+            st.markdown(f"- {frase}")
+        if cuadro["aviso"]:
+            st.warning(cuadro["aviso"])
     if cuadro["parcial"]:
         st.caption("El último mes parece incompleto, así que la variación compara los dos meses anteriores.")

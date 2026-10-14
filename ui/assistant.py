@@ -1,11 +1,14 @@
 import streamlit as st
 from core.assistant_engine import ask_assistant
 from core.marca import NOMBRE_APP
+from ui.components.escena import cabecera
 from ui.components.section import banner_header
 
 
 def render_assistant(df, schema, profile, mode_info, dashboard):
-    st.markdown(banner_header(f"Asistente de {NOMBRE_APP}", "Datos visibles · lectura y cálculo.", "ciudad_red.jpg"), unsafe_allow_html=True)
+    cabecera(f"Asistente de {NOMBRE_APP}", "Pregúntale en tus palabras: compara, busca registros o pide una recomendación.",
+             ceja="Asistente IA", icono="🤖", cifras=[(f"{len(df):,}", "registros visibles")], clave="cab_asistente",
+             respaldo_html=banner_header(f"Asistente de {NOMBRE_APP}", "Datos visibles · lectura y cálculo.", "ciudad_red.jpg"))
     st.caption("Pregunta sobre lo que está ocurriendo, compara segmentos, busca registros o pide una recomendación. El asistente trabaja sobre la selección actual.")
 
     if "assistant_messages" not in st.session_state:

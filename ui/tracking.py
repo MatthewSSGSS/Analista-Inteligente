@@ -7,6 +7,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from ui.components.escena import cabecera
 
 from core.tracking_engine import (
     export_consolidated,
@@ -173,11 +174,10 @@ def _render_supervisor_view(long_df: pd.DataFrame):
 
 
 def render_tracking(long_df: pd.DataFrame):
-    st.markdown(
-        '<div class="section-intro"><div><span class="eyebrow">ANÁLISIS SEGUIMIENTO</span>'
-        '<h2>Seguimiento y proyección por funcionario</h2></div></div>',
-        unsafe_allow_html=True,
-    )
+    cabecera("Seguimiento y proyección por funcionario", "Varios archivos de seguimiento combinados en una sola historia.",
+             ceja="Seguimiento consolidado", icono="📍", clave="cab_tracking",
+             respaldo_html=('<div class="section-intro"><div><span class="eyebrow">ANÁLISIS SEGUIMIENTO</span>'
+                            '<h2>Seguimiento y proyección por funcionario</h2></div></div>'))
     if long_df is None or long_df.empty:
         st.info("Sube uno o más Excel en la sección \"📍 Análisis de seguimiento\" de la barra lateral para empezar.")
         return

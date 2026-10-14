@@ -32,6 +32,7 @@ from core.comercial import (CUADRANTES, UMBRAL_MOVIMIENTO, estado_salud, matriz_
                             oportunidades, puntaje_salud)
 from core.diagnostics import _fmt
 from ui.components.charts import chart_card
+from ui.components.escena import NO_DISPONIBLE, escena
 from ui.components.section import section_header
 from ui.labels import clean_display_text
 from ui.layouts.columns import two_column
@@ -519,6 +520,72 @@ def _jugadas(matriz: dict) -> None:
         )
 
 
+_PALETA_DONA = ("#E4002B", "#10B9A6", "#6A5BD8", "#F59E0B", "#22A06B", "#3B82F6", "#EC4899", "#94A3B8")
+
+
+def _datos_canales(matriz: dict, schema: dict) -> dict:
+    """Lo que dibuja «Canales» en JavaScript (ui/web/canales.*), en texto plano."""
+    n = len(matriz["filas"])
+    crecimiento = matriz["crecimiento_total"]
+    kpis = [
+        {"clave": "mes", "etiqueta": f"{_label(schema, matriz['metrica'])} · {matriz['periodo_label']}",
+         "valor": _fmt(matriz["total"]),
+         "detalle": f"{crecimiento:+.1f}% vs {matriz['periodo_anterior_label']}" if crecimiento is not None else None,
+         "tono": "neutral" if crecimiento is None else ("positive" if crecimiento >= 0 else "negative")},
+        {"clave": "crecen", "etiqueta": "Canales en crecimiento", "valor": f"{len(matriz['creciendo'])} de {n}",
+         "detalle": None, "tono": "positive" if matriz["creciendo"] else "neutral"},
+        {"clave": "caen", "etiqueta": "Canales en caída", "valor": f"{len(matriz['cayendo'])} de {n}",
+         "detalle": None, "tono": "negative" if matriz["cayendo"] else "neutral"},
+        {"clave": "riesgo", "etiqueta": "Negocio en riesgo", "valor": f"{matriz['peso_en_riesgo']:.0f}%",
+         "detalle": "lo que pesan los canales grandes que están cayendo",
+         "tono": "negative" if matriz["peso_en_riesgo"] else "positive"},
+    ]
+    ordenadas = sorted(matriz["filas"], key=lambda f: f["participacion"], reverse=True)
+    dona = [{"nombre": str(clean_display_text(f["canal"])), "pct": float(f["participacion"]),
+             "color": _PALETA_DONA[i]} for i, f in enumerate(ordenadas[:7])]
+    resto = sum(f["participacion"] for f in ordenadas[7:])
+    if resto > 0:
+        dona.append({"nombre": f"Otros ({len(ordenadas) - 7})", "pct": float(resto), "color": _PALETA_DONA[7]})
+    con_meta = any(f["cumplimiento"] is not None for f in matriz["filas"])
+    escala = (("80% de la meta o menos", "100% de la meta o más") if con_meta else ("cae 5% o más", "crece 5% o más"))
+    mayor = max((f["participacion"] for f in matriz["filas"]), default=1) or 1
+    grupos = []
+    for clave in ORDEN_JUGADAS:
+        grupo = [f for f in matriz["filas"] if f["cuadrante"] == clave]
+        if not grupo:
+            continue
+        tarjetas = []
+        for f in sorted(grupo, key=lambda z: z["participacion"], reverse=True):
+            puntaje = puntaje_salud(f)[0]
+            flecha = _flecha(f["crecimiento"])[0]
+            tarjetas.append({
+                "nombre": str(clean_display_text(f["canal"])), "estado": estado_salud(puntaje),
+                "color": _color_escala(puntaje), "valor": _fmt(f["valor"]), "part": f"{f['participacion']:.1f}%",
+                "crec": "—" if f["crecimiento"] is None else f"{f['crecimiento']:+.1f}%",
+                "crec_color": _color_movimiento(f["crecimiento"]), "flecha": flecha,
+                "meta": f"{f['cumplimiento']:.0f}%" if f["cumplimiento"] is not None else "",
+                "meta_color": (_color_escala(puntaje_salud({"cumplimiento": f["cumplimiento"]})[0])
+                               if f["cumplimiento"] is not None else ""),
+                "ancho": round(f["participacion"] / mayor * 100, 1),
+            })
+        grupos.append({"etiqueta": CUADRANTES[clave]["etiqueta"], "accion": CUADRANTES[clave]["accion"],
+                       "color": COLOR_CUADRANTE[clave], "tarjetas": tarjetas})
+    lista = oportunidades(matriz) or []
+    tope = max((abs(j.get("impacto") or 0) for j in lista), default=0) or 1
+    jugadas = [{
+        "tipo": str(clean_display_text(j["tipo"])),
+        "partes": [["" if t is None else str(t), tono] for t, tono in j["partes"]],
+        "palanca": (lambda t: t[:1].upper() + t[1:])(str(clean_display_text(j["palanca"]))) if j.get("palanca") else "",
+        "palanca_tono": j.get("palanca_tono") or "info",
+        "impacto": _fmt(j["impacto"]), "tono": j.get("tono") or "info",
+        "ancho": round(abs(j.get("impacto") or 0) / tope * 100, 1),
+    } for j in lista]
+    return {"titular": str(clean_display_text(matriz["titular"])), "en_riesgo": bool(matriz["en_riesgo"]),
+            "periodo": f"{matriz['periodo_label']} vs {matriz['periodo_anterior_label']}",
+            "periodo_anterior": matriz["periodo_anterior_label"],
+            "kpis": kpis, "dona": dona, "escala": escala, "grupos": grupos, "jugadas": jugadas}
+
+
 def render_comercial(df: pd.DataFrame, schema: dict, dashboard: dict | None = None) -> None:
     _css()
     st.markdown(section_header(
@@ -559,14 +626,18 @@ def render_comercial(df: pd.DataFrame, schema: dict, dashboard: dict | None = No
         if elegida != matriz["canal"]:
             matriz = matriz_comercial(df, schema, canal=elegida) or matriz
 
-    st.markdown(
-        f"<div style='border-left:4px solid {'#E4002B' if matriz['en_riesgo'] else '#22A06B'};"
-        f"background:var(--panel-2);border-radius:10px;padding:13px 16px;margin:4px 0 14px;"
-        f"font-size:14px;color:var(--text);font-weight:600'>{clean_display_text(matriz['titular'])}</div>",
-        unsafe_allow_html=True,
-    )
-    _kpis(matriz, schema)
-    _semaforo(matriz, schema)
+    # Titular, cifras, participación, semáforo y jugadas en JavaScript
+    # (ui/web/canales.*); sin él, la versión clásica.
+    en_js = escena("canales", _datos_canales(matriz, schema), clave="canales_js") is not NO_DISPONIBLE
+    if not en_js:
+        st.markdown(
+            f"<div style='border-left:4px solid {'#E4002B' if matriz['en_riesgo'] else '#22A06B'};"
+            f"background:var(--panel-2);border-radius:10px;padding:13px 16px;margin:4px 0 14px;"
+            f"font-size:14px;color:var(--text);font-weight:600'>{clean_display_text(matriz['titular'])}</div>",
+            unsafe_allow_html=True,
+        )
+        _kpis(matriz, schema)
+        _semaforo(matriz, schema)
 
     _peso_y_rumbo(matriz, schema)
 
@@ -588,7 +659,8 @@ def render_comercial(df: pd.DataFrame, schema: dict, dashboard: dict | None = No
     with st.expander("Ver el detalle por canal en tabla", expanded=False):
         _tabla(matriz, schema)
 
-    _jugadas(matriz)
+    if not en_js:
+        _jugadas(matriz)
 
     st.caption(f"Comparación entre {matriz['periodo_anterior_label']} y {matriz['periodo_label']}, "
                f"sobre los filtros activos. Un canal que se mueve menos de {UMBRAL_MOVIMIENTO:.0f}% se "

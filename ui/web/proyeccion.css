@@ -1,0 +1,39 @@
+/* Proyección: encima de parte.css. */
+.py-hero{position:relative;z-index:1}
+.py-hero-cab{display:flex;justify-content:space-between;gap:28px;align-items:flex-start}
+.py .pd-titular{font-size:clamp(19px,2vw,25px);min-height:auto}
+.py-grande{flex:0 0 auto;text-align:right;padding:16px 20px;border-radius:18px;background:rgba(17,22,35,.7);border:1px solid rgba(255,255,255,.1)}
+.py-grande small{display:block;font-size:11.5px;color:#8f97aa;font-weight:650}
+.py-grande b{display:block;font-family:var(--font-display,"Sora",sans-serif);font-size:clamp(30px,3vw,42px);font-weight:800;color:#fff;margin:4px 0 8px}
+
+.py-grafico{position:relative;margin-top:22px;padding:8px 4px 0}
+.py-grafico svg{display:block;width:100%;height:240px;overflow:visible;cursor:crosshair;clip-path:inset(-24px 100% -24px -24px)}
+.py-grafico.dibujar svg{animation:pd-revela 2s cubic-bezier(.4,0,.2,1) .2s forwards}
+.py-real{fill:none;stroke:#ff6b7d;stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.py-futuro{fill:none;stroke:#b8a9ff;stroke-width:2.6;stroke-dasharray:7 6;stroke-linecap:round;vector-effect:non-scaling-stroke;
+  animation:rs-hormigas 1.2s linear infinite}
+@keyframes rs-hormigas{to{stroke-dashoffset:-26}}
+.py-banda.peor{fill:rgba(184,169,255,.10);stroke:rgba(184,169,255,.25);stroke-width:1;vector-effect:non-scaling-stroke}
+.py-banda.probable{fill:rgba(184,169,255,.26)}
+.py-hoy{stroke:rgba(255,255,255,.25);stroke-width:1;stroke-dasharray:3 4;vector-effect:non-scaling-stroke}
+.py-pt{fill:#ff6b7d;opacity:0;transition:opacity .15s ease}
+.py-pt.fut{fill:#b8a9ff}
+.py-pt.activo{opacity:1}
+.py-hoy-lbl{position:absolute;top:0;transform:translateX(-50%);font-size:10.5px;font-weight:700;color:#8f97aa;letter-spacing:.06em;text-transform:uppercase}
+.py-ejes{position:relative;height:16px;margin-top:4px}
+.py-ejes span{position:absolute;transform:translateX(-50%);font-size:10.5px;color:#8f97aa;white-space:nowrap}
+.py-ejes span:first-child{transform:none}
+.py-tip{position:absolute;top:6px;transform:translateX(-50%);pointer-events:none;white-space:nowrap;padding:7px 11px;border-radius:10px;
+  background:#fff;color:#131826;font-size:12px;box-shadow:0 8px 20px rgba(0,0,0,.35);line-height:1.35}
+.py-tip b{display:block;font-size:14px}
+.py-tip small{color:#5b6473}
+.py-leyenda{display:flex;flex-wrap:wrap;gap:16px;font-size:11.5px;color:#9aa3b5;margin-top:10px}
+.py-leyenda span{display:inline-flex;align-items:center;gap:6px}
+.py-leyenda i{width:18px;height:4px;border-radius:2px}
+.py-leyenda i.real{background:#ff6b7d}
+.py-leyenda i.fut{background:repeating-linear-gradient(90deg,#b8a9ff 0 5px,transparent 5px 8px)}
+.py-leyenda i.prob{height:10px;background:rgba(184,169,255,.45)}
+.py-leyenda i.peor{height:10px;background:rgba(184,169,255,.16);border:1px solid rgba(184,169,255,.35)}
+
+@media (prefers-reduced-motion:reduce){.py-grafico svg{clip-path:none!important}}
+@media (max-width:760px){.py-hero-cab{flex-direction:column}.py-grande{text-align:left}}

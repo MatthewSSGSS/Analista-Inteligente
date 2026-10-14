@@ -15,6 +15,7 @@ from core.dates import format_month_year
 from core.forecast import pronosticar, explicar, atribuir, explicar_atribucion, NOMBRES_METODO
 from visualization.charts import metric_candidates, _base, _label, cifra_eje, en_espanol
 from ui.components.cards import kpi_card
+from ui.components.escena import NO_DISPONIBLE, escena
 from ui.components.section import decision_strip, section_header
 from ui.labels import clean_display_text
 from ui.layouts.columns import kpi_grid
@@ -131,7 +132,7 @@ def _por_que(atribucion: dict | None, schema: dict, resultado: dict) -> None:
     ), unsafe_allow_html=True)
 
     st.markdown(
-        f"<div style='border-left:4px solid {'#be123c' if baja else '#0f8a5f'};background:#f8fafc;"
+        f"<div style='border-left:4px solid {'#be123c' if baja else '#0f8a5f'};background:var(--panel-2);color:var(--text);"
         f"border-radius:10px;padding:12px 15px;margin:4px 0 12px;font-size:13.5px'>"
         f"{explicar_atribucion(atribucion)}</div>",
         unsafe_allow_html=True,
@@ -220,6 +221,34 @@ def _base_calculo(resultado: dict, schema: dict, df: pd.DataFrame) -> None:
         )
 
 
+def _datos_proyeccion(resultado: dict, etiqueta: str, tarjetas: list, frase: str, tono: str,
+                      probable, error) -> dict:
+    """Lo que dibuja «Proyección» en JavaScript (ui/web/proyeccion.*), en texto plano."""
+    pred = resultado["prediccion"]
+    historico = resultado["historico"].tail(18)
+    puntos = [{"m": _mes(p), "v": float(v), "t": cifra_eje(float(v)), "futuro": False}
+              for p, v in historico.items()]
+    for _, fila in pred.iterrows():
+        est = float(fila["estimado"])
+        punto = {"m": _mes(fila["periodo"]), "v": est, "t": f"≈ {cifra_eje(est)}", "futuro": True,
+                 "lo": float(fila["minimo"]), "hi": float(fila["maximo"])}
+        if error is not None:
+            punto["plo"], punto["phi"] = max(est * (1 - error), 0), est * (1 + error)
+            punto["rango"] = f"lo más probable: {cifra_eje(punto['plo'])} – {cifra_eje(punto['phi'])}"
+        puntos.append(punto)
+    claves = ("real", "estimado", "probable", "confianza")
+    tonos = {"estimado": tono, "confianza": {"alta": "positive", "media": "neutral", "baja": "negative"}
+             .get(resultado["confianza"], "neutral")}
+    return {
+        "frase": frase, "tono": tono, "etiqueta": etiqueta, "confianza": resultado["confianza"],
+        "grande_lbl": tarjetas[1]["label"], "grande": f"≈ {tarjetas[1]['value']}", "delta": tarjetas[1]["delta"],
+        "kpis": [{"clave": c, "etiqueta": t["label"], "valor": t["value"], "detalle": t["delta"],
+                  "tono": tonos.get(c, "neutral"), "chico": c in ("probable", "confianza")}
+                 for c, t in zip(claves, tarjetas)],
+        "puntos": puntos,
+    }
+
+
 def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = None) -> None:
     st.markdown(section_header(
         "Hacia dónde va",
@@ -270,6 +299,7 @@ def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = Non
     probable = (max(primero * (1 - error), 0), primero * (1 + error)) if error is not None else None
 
     # La conclusión primero, en una frase.
+    frase, tono = "", "neutral"
     if variacion is not None:
         rumbo = "subiría" if variacion > 1 else "bajaría" if variacion < -1 else "se mantendría"
         frase = (f"Si el comportamiento se mantiene, <b>{etiqueta}</b> {rumbo} en <b>{mes_prox_largo}</b> a "
@@ -277,7 +307,6 @@ def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = Non
         frase += (f"; lo más probable es que quede entre <b>{cifra_eje(probable[0])}</b> y "
                   f"<b>{cifra_eje(probable[1])}</b>." if probable else ".")
         tono = "positive" if variacion > 1 else "negative" if variacion < -1 else "neutral"
-        st.markdown(decision_strip(frase, tone=tono), unsafe_allow_html=True)
 
     # kpi_grid recibe los datos y una función que dibuja cada tarjeta; no
     # tarjetas ya construidas (ver ui/layouts/columns.py).
@@ -292,10 +321,19 @@ def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = Non
         {"label": "Confianza", "value": texto_conf.replace("Confianza ", "").capitalize(),
          "delta": f"peor caso: {peor}" if probable else None},
     ]
-    kpi_grid(tarjetas, lambda t: kpi_card(t["label"], t["value"], delta=t["delta"]))
+    # Frase, cifra, gráfico y tarjetas en JavaScript (ui/web/proyeccion.*);
+    # sin él, la franja, las tarjetas y el gráfico de plotly de siempre.
+    import re
+    datos = _datos_proyeccion(resultado, etiqueta, tarjetas,
+                              re.sub(r"<[^>]+>", "", frase) or f"Proyección de {etiqueta}", tono, probable, error)
+    en_js = escena("proyeccion", datos, clave="proyeccion_js") is not NO_DISPONIBLE
+    if not en_js:
+        if frase:
+            st.markdown(decision_strip(frase, tone=tono), unsafe_allow_html=True)
+        kpi_grid(tarjetas, lambda t: kpi_card(t["label"], t["value"], delta=t["delta"]))
 
     st.markdown(
-        f"<div style='border-left:4px solid {color};background:#f8fafc;border-radius:10px;"
+        f"<div style='border-left:4px solid {color};background:var(--panel-2);color:var(--text);border-radius:10px;"
         f"padding:12px 15px;margin:12px 0;font-size:13.5px'>{explicar(resultado)}</div>",
         unsafe_allow_html=True,
     )
@@ -306,8 +344,9 @@ def render_forecast(df: pd.DataFrame, schema: dict, dashboard: dict | None = Non
     # preguntar cuando alguien presente este número.
     _base_calculo(resultado, schema, df)
 
-    st.plotly_chart(_grafico(resultado, schema), use_container_width=True,
-                    key="forecast_chart")
+    if not en_js:
+        st.plotly_chart(_grafico(resultado, schema), use_container_width=True,
+                        key="forecast_chart")
 
     # Quién empuja la proyección. Va justo después del gráfico: primero se ve
     # hacia dónde va la línea, e inmediatamente después de quién es la línea.

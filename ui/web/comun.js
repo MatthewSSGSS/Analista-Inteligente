@@ -222,7 +222,7 @@ function alVerse(el, fn) {
 }
 
 // ── Piezas del tablero (parte del día y resumen) ──────────────────────
-const ICONOS_KPI = { mes: "📅", meta: "🎯", anual: "🔁", acumulado: "📈", margen: "💰", ticket: "🧾" };
+const ICONOS_KPI = { mes: "📅", meta: "🎯", anual: "🔁", acumulado: "📈", margen: "💰", ticket: "🧾", primero: "🥇", ultimo: "🔻", movio: "📉", grupo: "👥", distancia: "↔️" };
 
 function areaSvg(serie, id = "pdGrad") {
   // Área de los últimos meses: línea que se dibuja sola y el último punto que late.
@@ -255,10 +255,25 @@ function tarjetaKpi(k, i) {
       <svg class="pd-anillo" viewBox="0 0 44 44"><circle class="fondo" cx="22" cy="22" r="18"/>
         <circle class="avance ${k.tono}" cx="22" cy="22" r="18" pathLength="100" style="--pct:${Math.max(0, Math.min(100, k.pct))}"/></svg>` : "";
   return `
-    <article class="pd-kpi pd-${k.tono}" data-revelar="${i * 80}">
+    <article class="pd-kpi pd-${k.tono}${k.chico ? " chico" : ""}" data-revelar="${i * 80}">
       <div class="pd-kpi-cab"><span class="pd-kpi-ico">${ICONOS_KPI[k.clave] || "•"}</span><small>${texto(k.etiqueta)}</small></div>
-      <div class="pd-kpi-cuerpo"><b data-contar="${texto(k.valor)}">${texto(k.valor)}</b>${anillo}</div>
+      <div class="pd-kpi-cuerpo"><b${k.chico ? "" : ` data-contar="${texto(k.valor)}"`}>${texto(k.valor)}</b>${anillo}</div>
       ${k.detalle ? `<em>${conCifras(k.detalle)}</em>` : ""}
     </article>`;
 }
 
+
+// Texto con **negritas** (las frases de lectura vienen así de core/).
+function conNegritas(valor) {
+  return conCifras(valor).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+}
+
+// Mini gráfico de línea (sin ejes) para una fila.
+function chispa(valores, clase = "") {
+  if (!valores || valores.length < 2) return "";
+  const W = 90, H = 26, min = Math.min(...valores), max = Math.max(...valores), r = max - min || 1;
+  const pts = valores.map((v, i) => `${((i * W) / (valores.length - 1)).toFixed(1)},${(H - 3 - ((v - min) / r) * (H - 6)).toFixed(1)}`);
+  const sube = valores[valores.length - 1] >= valores[valores.length - 2];
+  return `<svg class="chispa ${clase} ${sube ? "sube" : "baja"}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <polyline points="${pts.join(" ")}"/><circle cx="${pts[pts.length - 1].split(",")[0]}" cy="${pts[pts.length - 1].split(",")[1]}" r="2.6"/></svg>`;
+}

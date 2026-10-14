@@ -1,4 +1,5 @@
 import streamlit as st
+from ui.components.escena import cabecera
 import pandas as pd
 import numpy as np
 from ui.labels import clean_display_text
@@ -829,7 +830,9 @@ def render_dashboard(df, dashboard):
     ex = dashboard.get("executive", {})
 
     # ── Vista general: lo primero que se ve, sin necesidad de desplegar nada ──
-    st.markdown(banner_header("Qué está pasando", "Descripción completa · todo recalculado con los filtros actuales.", "ciudad_red.jpg"), unsafe_allow_html=True)
+    cabecera("Qué está pasando", "Descripción completa · todo recalculado con los filtros actuales.",
+             ceja="Descripción", icono="🧾", cifras=[(f"{len(df):,}", "registros")], clave="cab_descripcion",
+             respaldo_html=banner_header("Qué está pasando", "Descripción completa · todo recalculado con los filtros actuales.", "ciudad_red.jpg"))
     # El recuento técnico ("25 registros y 5 columnas, 3 métricas…") pasó a
     # «Contexto y acción»: describe el archivo, no lo que está pasando, y era
     # lo primero que se leía en la pestaña.

@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from ui.components.escena import cabecera
 from visualization.charts import en_espanol
 from ui.labels import pretty_technical
 from ui.components.cards import kpi_card, insight_card
@@ -135,8 +136,10 @@ def render_comparison(result, show_filter_panel: bool = True, key_prefix: str = 
 
     Los 4 llamados existentes (comparación de archivos) no pasan ninguno
     de los dos argumentos, así que siguen exactamente igual que antes."""
-    st.markdown(banner_header("Qué cambió entre los archivos", "Último vs. anterior · primero vs. último.", "ciudad_red.jpg"), unsafe_allow_html=True)
     files = result["files"]
+    cabecera("Qué cambió entre los archivos", "Último contra el anterior y primero contra el último.",
+             ceja="Comparar archivos", icono="⚖️", cifras=[(f"{len(files)}", "archivos")], clave=f"cab_{key_prefix}",
+             respaldo_html=banner_header("Qué cambió entre los archivos", "Último vs. anterior · primero vs. último.", "ciudad_red.jpg"))
     st.caption(" · ".join(f"{i+1}. {f['label']}" for i, f in enumerate(files)))
     if show_filter_panel:
         _render_filter_panel(key_prefix)

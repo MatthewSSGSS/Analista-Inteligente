@@ -79,6 +79,9 @@ Inside `ui/`:
   Inicio (`ui/home._datos_parte` → `ui/web/parte.*`) and Resumen (`ui/executive._datos_resumen` → `ui/web/resumen.*`)
   use the same pattern: a `_datos_*` builder computes plain-text data in Python, the JS only draws it; clicks go
   through hidden native buttons (`escena.botones_ocultos`, with `on_click=ir_a` for navigation).
+  Same for Qué atacar (`_datos_atacar`), Cómo va cada uno (`_datos_cuadro`), Canales (`_datos_canales`) and
+  Proyección (`_datos_proyeccion`); every other view starts with `escena.cabecera(...)` (animated header, with
+  the view's old header as `respaldo_html`). Screens that reuse parte.css are listed in `escena._CSS_EXTRA`.
 - `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
   Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a
   «➕ Más» menu, and **only the active view is executed** (unlike `st.tabs`, which ran every tab on every

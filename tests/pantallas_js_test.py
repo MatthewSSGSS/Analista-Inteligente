@@ -95,9 +95,72 @@ def test_con_v2_monta_la_escena():
     check("y de ahí al panel", at.session_state["analysis_mode"] == "completo" and not at.exception)
 
 
+def test_todas_las_pantallas_existen():
+    """Cada pantalla que la app monta con escena() tiene su .js con la función
+    exportada: un nombre mal escrito dejaba la vista en blanco sin error."""
+    import ast
+    web = RAIZ / "ui" / "web"
+    nombres = set()
+    for py in list((RAIZ / "ui").rglob("*.py")) + [RAIZ / "app.py"]:
+        for nodo in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
+            if (isinstance(nodo, ast.Call) and getattr(nodo.func, "id", None) == "escena"
+                    and nodo.args and isinstance(nodo.args[0], ast.Constant)):
+                nombres.add(nodo.args[0].value)
+    check("las vistas montan sus pantallas", {"portada", "modos", "acceso", "parte", "resumen", "atacar", "cuadro",
+                                              "canales", "proyeccion", "cabecera"} <= nombres)
+    for n in sorted(nombres):
+        js = web / f"{n}.js"
+        check(f"{n}.js existe y exporta su función", js.exists() and "export default function" in js.read_text(encoding="utf-8"))
+
+
+def test_datos_de_las_vistas():
+    """Lo que reciben las pantallas es texto plano (sin HTML: el JS lo escapa)
+    y trae lo que cada una dibuja."""
+    import json
+    import sys
+    from datetime import date
+    sys.path.insert(0, str(RAIZ / "tests"))
+    from presentacion_test import _ventas
+    from core.cuadro_comparativo import cuadro_comparativo
+    from core.dashboard_engine import build_dashboard
+    from core.forecast import pronosticar
+    from core.planes import generar
+    from ui.cuadro_comparativo import _datos_cuadro
+    from ui.forecast import _datos_proyeccion
+    from ui.planes import _clave_plan, _datos_atacar, _signo, filas_plan_de_accion
+
+    df, perfil = _ventas()
+    schema = perfil["schema"]
+    db = build_dashboard(df, perfil)
+
+    r = generar(df, schema, db)
+    filas = filas_plan_de_accion(r["planes"], {}, {_clave_plan(x): [] for x in r["planes"]}, date.today())
+    at = _datos_atacar(r, r["planes"], filas, r.get("gerencia"))
+    check("Qué atacar: diagnóstico, oportunidades, plan y tablero de 3 columnas",
+          at["diag"]["titular"] and at["oportunidades"] and at["plan"]["total"] >= 0 and len(at["tablero"]) == 3)
+    check("Qué atacar: sin HTML", "<" not in json.dumps(at, ensure_ascii=False))
+    check("un efecto que no se movió se dice «0», no «−0»", _signo(0.0) == "0" and _signo(-0.2) == "0")
+
+    cu = _datos_cuadro(cuadro_comparativo(df, schema, "Region", "Ingresos"))
+    check("Cómo va: una fila por región, con barra, estado y mini gráfico",
+          len(cu["filas"]) == 4 and all(0 <= f["barra"] <= 100 and f["estado"] and f["serie"] for f in cu["filas"]))
+    check("Cómo va: la referencia es la meta (100%)", cu["marca_txt"] == "100% de la meta")
+    check("Cómo va: sin HTML", "<" not in json.dumps(cu, ensure_ascii=False))
+
+    res = pronosticar(df, schema, "Ingresos", horizonte=3)
+    tarjetas = [{"label": "jul · real", "value": "1", "delta": None}, {"label": "ago · estimado", "value": "2", "delta": "+1%"},
+                {"label": "Lo más probable", "value": "1 – 3", "delta": None}, {"label": "Confianza", "value": "Media", "delta": None}]
+    py = _datos_proyeccion(res, "Ingresos", tarjetas, "frase", "positive", None, res.get("error_tipico"))
+    futuros = [x for x in py["puntos"] if x["futuro"]]
+    check("Proyección: lo real y los 3 meses estimados con su rango",
+          len(futuros) == 3 and all(x["lo"] <= x["v"] <= x["hi"] for x in futuros))
+
+
 def main():
     test_sin_marcas()
     test_acciones_del_javascript()
+    test_todas_las_pantallas_existen()
+    test_datos_de_las_vistas()
     test_con_v2_monta_la_escena()
     test_version_clasica_sin_v2()
     print("\nPantallas JS test completado sin errores.")

@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from ui.components.escena import cabecera
 
 from core.numeric import numeric_series
 from core.cross_sheet import encontrar_hojas_relacionadas, datos_de_entidad, resumir_filas
@@ -295,7 +296,8 @@ def render_person_profile(df, schema, dashboard=None):
                 if noun == "persona" else
                 f"Selecciona un {noun} y revisa todo lo que el Excel permite conocer sobre él, "
                 f"con sus alertas y su comparación contra el resto.")
-    st.markdown(section_header("Análisis de seguimiento", eyebrow="SEGUIMIENTO", subtitle=subtitle), unsafe_allow_html=True)
+    cabecera("Seguimiento de un caso", subtitle, ceja="Seguimiento", icono="🔎", clave="cab_seguimiento",
+             respaldo_html=section_header("Análisis de seguimiento", eyebrow="SEGUIMIENTO", subtitle=subtitle))
 
     # Cuando la entidad se dedujo de los datos (no es un nombre evidente),
     # se explica en qué se basó: nadie debería preguntarse de dónde salió

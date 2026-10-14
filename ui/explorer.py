@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from ui.components.escena import cabecera
 
 import core.explorador as ex
 from core.diagnostics import _fmt
@@ -429,14 +430,13 @@ def _lente_distribucion(df, schema, dim, metrica, k):
 # ── Pantalla ───────────────────────────────────────────────────────────────
 
 def render_explorer(df, schema):
-    st.markdown(
-        banner_header(
-            "Explorador analítico",
-            "Elige una pregunta, qué medir y cómo agrupar. Cada vista trae su gráfico, lo que dice y la tabla.",
-            "ciudad_red.jpg",
-        ),
-        unsafe_allow_html=True,
-    )
+    cabecera("Explorador analítico",
+             "Elige una pregunta, qué medir y cómo agrupar. Cada vista trae su gráfico, lo que dice y la tabla.",
+             ceja="Analítica", icono="🔬", cifras=[(f"{len(df):,}", "registros")], clave="cab_explorador",
+             respaldo_html=banner_header(
+                 "Explorador analítico",
+                 "Elige una pregunta, qué medir y cómo agrupar. Cada vista trae su gráfico, lo que dice y la tabla.",
+                 "ciudad_red.jpg"))
     _css()
     hoja = st.session_state.get("active_sheet", "")
     k = f"an_{hoja}"

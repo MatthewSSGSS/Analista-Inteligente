@@ -14,6 +14,7 @@ una sola herramienta: la persona sigue eligiendo.
 from __future__ import annotations
 
 import streamlit as st
+from ui.components.escena import cabecera
 
 from core.comparison_engine import (
     recommend_multi_sheet_tool,
@@ -36,10 +37,9 @@ _TOOLS = [
 def render_multi_sheet(workbook: dict) -> None:
     rec = recommend_multi_sheet_tool(workbook)
     names = rec["sheet_names"]
-    st.markdown(
-        banner_header("Varias hojas", "Busca, combina o compara información repartida en distintas hojas del mismo Excel.", "ciudad_red.jpg"),
-        unsafe_allow_html=True,
-    )
+    cabecera("Varias hojas", "Busca, combina o compara información repartida en distintas hojas del mismo archivo.",
+             ceja="Herramientas", icono="🗂️", cifras=[(f"{len(names)}", "hojas con datos")], clave="cab_hojas",
+             respaldo_html=banner_header("Varias hojas", "Busca, combina o compara información repartida en distintas hojas del mismo Excel.", "ciudad_red.jpg"))
     if len(names) < 2:
         st.info("Necesitas al menos 2 hojas con datos utilizables para usar estas herramientas.")
         return

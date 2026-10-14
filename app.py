@@ -5,6 +5,7 @@ from ui.styles.theme import inject_theme
 from ui.layouts.hero import hero_app
 from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_RESUMEN, VISTA_SEGUIMIENTO, VISTA_ESTRUCTURA
 from ui.components.section import section_header
+from ui.components.escena import cabecera
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
 from core.version import etiqueta_version
@@ -700,7 +701,9 @@ else:
         secundarias = soporte
     else:
         def _render_finanzas():
-            st.markdown(section_header("Lectura financiera", eyebrow="ANÁLISIS", compact=True), unsafe_allow_html=True)
+            cabecera("Lectura financiera", "Estadísticas de las métricas detectadas automáticamente.", ceja="Finanzas",
+                     icono="💵", clave="cab_finanzas",
+                     respaldo_html=section_header("Lectura financiera", eyebrow="ANÁLISIS", compact=True))
             st.dataframe(dashboard["statistics"],use_container_width=True,hide_index=True)
             st.caption("Esta vista utiliza las métricas detectadas automáticamente; no presupone que el archivo sea de ventas.")
 

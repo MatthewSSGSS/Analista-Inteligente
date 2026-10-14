@@ -22,6 +22,7 @@ import traceback
 
 import pandas as pd
 import streamlit as st
+from ui.components.escena import cabecera
 
 from core import estructura as E
 from core.loader import load_workbook
@@ -153,8 +154,10 @@ def render_estructura(df: pd.DataFrame, res: dict | None) -> None:
     subtitulo = f"{len(res['archivos'])} archivos cruzados"
     if c:
         subtitulo += f" · datos al {c['fecha']:%d/%m/%Y} (día {c['dia']} de {c['dias_mes']})"
-    st.markdown(section_header("Estructura comercial", subtitle=subtitulo,
-                               badge=" › ".join(E.ETIQUETAS[n] for n in niveles)), unsafe_allow_html=True)
+    cabecera("Estructura comercial", f"{subtitulo} · {' › '.join(E.ETIQUETAS[n] for n in niveles)}",
+             ceja="Estructura", icono="🏢", cifras=[(f"{len(df):,}", "registros")], clave="cab_estructura",
+             respaldo_html=section_header("Estructura comercial", subtitle=subtitulo,
+                                          badge=" › ".join(E.ETIQUETAS[n] for n in niveles)))
 
     _avisos(res)
     _lo_que_entendi(res)

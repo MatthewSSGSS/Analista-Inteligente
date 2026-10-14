@@ -2,6 +2,7 @@ import html as _html
 import re
 import pandas as pd
 import streamlit as st
+from ui.components.escena import cabecera
 from core.dashboard_engine import build_dashboard
 from ui.components.descarga import preparar_y_descargar as _preparar_y_descargar, tamano_mb as _mb
 from ui.components.section import section_header
@@ -80,10 +81,11 @@ def _cabecera(icono: str, titulo: str, descripcion: str, chips: list = (), eyebr
 
 def render_exports(df, dashboard, filename, sheet, full_df=None, schema=None, workbook=None):
     st.markdown(_CSS, unsafe_allow_html=True)
-    st.markdown(section_header(
-        "Centro de exportación",
-        subtitle="Informes listos para presentar al equipo y datos para seguir trabajando.",
-    ), unsafe_allow_html=True)
+    cabecera("Centro de exportación", "Informes listos para presentar al equipo y datos para seguir trabajando.",
+             ceja="Exportar", icono="⬇️", cifras=[(f"{len(df):,}", "registros en la vista")], clave="cab_exportar",
+             respaldo_html=section_header(
+                 "Centro de exportación",
+                 subtitle="Informes listos para presentar al equipo y datos para seguir trabajando."))
 
     # ── Destacado: el informe con lo que se ve ahora en el panel ──────────
     filters_summary = _active_filters_summary(schema)

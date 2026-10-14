@@ -24,7 +24,7 @@ _WEB = Path(__file__).resolve().parent.parent / "web"
 _registradas: dict = {}
 # Pantallas que reutilizan los estilos de otra (el resumen usa las tarjetas
 # y el recuadro oscuro del parte del día).
-_CSS_EXTRA = {"resumen": ["parte"]}
+_CSS_EXTRA = {"resumen": ["parte"], "atacar": ["parte"], "cuadro": ["parte"], "canales": ["parte"], "proyeccion": ["parte"]}
 
 NO_DISPONIBLE = object()
 
@@ -77,6 +77,22 @@ def botones_ocultos(botones: dict[str, str], al_pulsar: dict | None = None) -> s
         if st.button(accion, key=clave, on_click=fn, args=args):
             elegida = accion
     return elegida
+
+
+def cabecera(titulo: str, subtitulo: str = "", ceja: str = "", icono: str = "📊",
+             cifras: list | None = None, clave: str = "cabecera_js", respaldo_html: str | None = None) -> None:
+    """Cabecera animada de una vista (ui/web/cabecera.*): recuadro oscuro con la
+    red de datos, ícono, título, subtítulo y hasta cuatro cifras que cuentan
+    (`cifras` = [(valor, etiqueta)]). Sin JavaScript se dibuja `respaldo_html`
+    (la cabecera de siempre de esa vista) o, si no lo hay, un título simple."""
+    datos = {"titulo": str(titulo), "subtitulo": str(subtitulo or ""), "ceja": str(ceja or ""), "icono": str(icono or ""),
+             "cifras": [{"v": str(v), "l": str(l)} for v, l in (cifras or [])[:4]]}
+    if escena("cabecera", datos, clave=clave) is NO_DISPONIBLE:
+        if respaldo_html is None:
+            import html as _html
+            respaldo_html = (f'<div class="section-intro"><div><span class="eyebrow">{_html.escape(ceja or "")}</span>'
+                             f'<h2>{_html.escape(str(titulo))}</h2><p>{_html.escape(str(subtitulo or ""))}</p></div></div>')
+        st.markdown(respaldo_html, unsafe_allow_html=True)
 
 
 def escena(nombre: str, datos: dict, clave: str):

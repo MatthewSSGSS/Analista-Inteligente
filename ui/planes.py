@@ -35,6 +35,7 @@ import streamlit as st
 
 from core.planes import generar
 from ui.components.cards import evidence_list
+from ui.components.escena import NO_DISPONIBLE, escena
 from ui.components.section import section_header
 from ui.labels import clean_display_text
 
@@ -652,6 +653,9 @@ def _monto(v: float) -> str:
 
 
 def _signo(v: float) -> str:
+    # Un efecto que no movió nada se dice «0», no «−0».
+    if abs(v) < 0.5:
+        return "0"
     return ("+" if v > 0 else "−") + _monto(abs(v))
 
 
@@ -746,17 +750,12 @@ def _que_atacar(g: dict) -> None:
                "hasta la mediana: es lo que un plan de un mes puede mover.")
 
 
-def render_planes(df: pd.DataFrame, schema: dict, dashboard: dict) -> None:
-    _css()
+def _render_cabecera_clasica(resultado: dict, planes: list, filas: list, g: dict | None) -> None:
     st.markdown(section_header(
         "Qué atacar para mejorar los números",
         eyebrow="DECISIONES",
         subtitle="Por qué se movió el resultado, qué vale más la pena atacar y el plan para hacerlo.",
     ), unsafe_allow_html=True)
-
-    resultado = generar(df, schema, dashboard or {})
-    planes = resultado["planes"]
-    g = resultado.get("gerencia")
     if g:
         _diagnostico(g)
         _que_atacar(g)
@@ -764,18 +763,130 @@ def render_planes(df: pd.DataFrame, schema: dict, dashboard: dict) -> None:
             "Plan de acción",
             subtitle="Cada frente con su urgencia, lo que vale, quién lo lleva y cómo se sabe que funcionó.",
             compact=True), unsafe_allow_html=True)
-    if not planes:
-        st.success("No hay hallazgos que convertir en plan con los datos visibles. "
-                   "Si esperabas ver algo aquí, revisa los filtros activos.")
-        return
+    if planes:
+        _hero(resultado, planes, filas)
+        _tablero(planes, filas)
 
+
+def _datos_atacar(resultado: dict, planes: list, filas: list, g: dict | None) -> dict:
+    """Todo lo que dibuja «Qué atacar» en JavaScript (ui/web/atacar.*),
+    calculado aquí en texto plano: diagnóstico, oportunidades, plan y tablero."""
+    limpio = lambda t: str(clean_display_text(t or ""))  # noqa: E731
+    datos: dict = {}
+    if g:
+        tono = "neg" if g.get("empeoro") else "pos"
+        delta = None
+        if g.get("pct") is not None and g.get("se_movio"):
+            delta = {"txt": f'{"+" if g["delta"] > 0 else "−"}{abs(g["pct"]):.1f}%', "tono": tono,
+                     "etiqueta": f'{g["mes_b"]} vs {g["mes_a"]}'}
+        sub = f'{g["mes_b"]} frente a {g["mes_a"]} · {g["etiqueta"]}'
+        if g.get("parcial"):
+            sub += " · el último mes está incompleto y se dejó fuera"
+        causa = None
+        c = g.get("causas")
+        if c and c.get("nodos"):
+            mayor = max(abs(n["delta"]) for n in c["nodos"]) or 1
+            filas_causa = []
+            for n in c["nodos"]:
+                peso = (f' · {n["peso"]:.0f}% del cambio' if n.get("peso") is not None and 0 < abs(n["peso"]) <= 300 else "")
+                det = ""
+                if n.get("detalle") and n["detalle"]["segmentos"]:
+                    det = (f'Por {limpio(n["detalle"]["etiqueta"]).lower()}: '
+                           + " · ".join(f'{limpio(x["nombre"])} {_signo(x["delta"])}' for x in n["detalle"]["segmentos"]))
+                filas_causa.append({"nombre": limpio(n["nombre"]), "delta": _signo(n["delta"]),
+                                    "tono": "pos" if n["delta"] >= 0 else "neg",
+                                    "ancho": round(abs(n["delta"]) / mayor * 100, 1),
+                                    "de_a": f'De {_monto(n["antes"])} a {_monto(n["ahora"])}{peso}', "sub": det})
+            nota = ""
+            if c.get("compensaron"):
+                k = c["compensaron"][0]
+                nota = (f'En sentido contrario: {limpio(k["nombre"])} {_signo(k["delta"])} '
+                        f'{"amortiguó la caída" if g["delta"] < 0 else "frenó la subida"}.')
+            causa = {"etiqueta": limpio(c["etiqueta"]).lower(), "filas": filas_causa, "nota": nota}
+        palanca = None
+        p = g.get("palanca")
+        if p:
+            mayor = max(abs(p["efecto_volumen"]), abs(p["efecto_ticket"])) or 1
+            palanca = {"barras": [{"nombre": nombre, "txt": _signo(v), "tono": "pos" if v >= 0 else "neg",
+                                   "ancho": round(abs(v) / mayor * 100, 1)}
+                                  for nombre, v in (("Volumen", p["efecto_volumen"]), ("Ticket", p["efecto_ticket"]))],
+                       "texto": limpio(g.get("texto_palanca")), "accion": limpio(g.get("accion_palanca"))}
+        datos["diag"] = {"titular": limpio(g["titular"]), "sub": sub, "delta": delta, "causa": causa, "palanca": palanca}
+        ops = g.get("oportunidades") or []
+        tope = max((o.get("monto") or 0 for o in ops), default=0) or 1
+        datos["oportunidades"] = [{
+            "titulo": limpio(o["titulo"]), "texto": limpio(o.get("texto")), "accion": limpio(o.get("accion")),
+            "monto": _monto(o["monto"]), "ancho": round((o.get("monto") or 0) / tope * 100, 1),
+            "pct": f'{o["pct_total"]:.0f}% de {g["mes_b"]}' if o.get("pct_total") else "al mes",
+            "quienes": [{"nombre": limpio(q["nombre"]), "monto": _monto(q["monto"])} for q in o.get("quienes") or []],
+        } for o in ops]
+        if ops:
+            datos["nota_oportunidades"] = (
+                "Recuperar lo perdido, cerrar la meta y subir a los rezagados se pueden solapar (un mismo caso puede "
+                "estar en dos), así que no se suman entre sí. «Subir a los rezagados» cuenta solo la mitad del camino "
+                "hasta la mediana: es lo que un plan de un mes puede mover.")
+    if planes:
+        total_pasos = sum(f["total"] for f in filas)
+        hechos = sum(f["hechos"] for f in filas)
+        avance = round(hechos / total_pasos * 100) if total_pasos else 0
+        conteos = {"critico": resultado["criticos"], "atencion": resultado["atencion"],
+                   "mejora": sum(1 for p in planes if p["estado"] == "mejora")}
+        datos["plan"] = {
+            "titulo": f"{len(planes)} {'frente' if len(planes) == 1 else 'frentes'} para trabajar",
+            "resumen": limpio(resultado["resumen"]),
+            "conteos": [{"n": n, "color": _TONO[e]["color"], "etiqueta": _TONO[e]["etiqueta"].lower()} for e, n in conteos.items()],
+            "chips": [{"n": sum(1 for f in filas if f["Alerta"] == "Vencido"), "texto": "vencido(s)", "tono": "rojo"},
+                      {"n": sum(1 for f in filas if f["Alerta"] == "Sin responsable"), "texto": "sin responsable", "tono": "rojo"},
+                      {"n": sum(1 for f in filas if f["Estado"] == "Hecho"), "texto": "terminado(s)", "tono": "verde"}],
+            "avance": avance, "hechos": hechos, "total": total_pasos,
+            "color": _VERDE if avance >= 100 else (_AMBAR if avance > 0 else "#94A3B8"),
+        }
+        columnas = []
+        for estado in ("critico", "atencion", "mejora"):
+            tono = _TONO[estado]
+            tarjetas = []
+            for plan, fila in zip(planes, filas):
+                if plan["estado"] != estado:
+                    continue
+                casos = [limpio(c) for c in fila["A quién afecta"].split(", ") if c and c != "—"]
+                tarjetas.append({
+                    "num": fila["#"], "titulo": limpio(plan["titulo"]), "valor": plan.get("impacto_txt") or "",
+                    "casos": casos[:2], "mas": max(0, len(casos) - 2),
+                    "responsable": limpio(fila["Responsable"]) if fila["Responsable"] else "",
+                    "iniciales": _iniciales(fila["Responsable"]) if fila["Responsable"] else "?",
+                    "fecha": f'{fila["Fecha compromiso"]:%d/%m}' if fila["Fecha compromiso"] else "",
+                    "vencida": fila["Alerta"] == "Vencido",
+                    "alerta": fila["Alerta"] or "", "alerta_roja": fila["Alerta"] in ("Vencido", "Sin responsable"),
+                    "estado": f'{fila["Estado"]} · {fila["hechos"]}/{fila["total"]} pasos', "hecho": fila["Estado"] == "Hecho",
+                    "avance": round(fila["Avance"] * 100), "medir": limpio(plan["medir"]),
+                })
+            columnas.append({"etiqueta": tono["etiqueta"], "icono": tono["icono"], "urgencia": tono["urgencia"],
+                             "color": tono["color"], "tarjetas": tarjetas})
+        datos["tablero"] = columnas
+    return datos
+
+
+def render_planes(df: pd.DataFrame, schema: dict, dashboard: dict) -> None:
+    _css()
+    resultado = generar(df, schema, dashboard or {})
+    planes = resultado["planes"]
+    g = resultado.get("gerencia")
     hoy = date.today()
     asignaciones = st.session_state.setdefault("planes_asignacion", {})
     pasos = {_clave_plan(p): _pasos_hechos(p) for p in planes}
     filas = filas_plan_de_accion(planes, asignaciones, pasos, hoy)
 
-    _hero(resultado, planes, filas)
-    _tablero(planes, filas)
+    # Arriba, en JavaScript (ui/web/atacar.*): diagnóstico, qué atacar, el
+    # plan con su anillo de avance y el tablero por urgencia. Sin
+    # JavaScript, la versión clásica de siempre.
+    en_js = (g or planes) and escena("atacar", _datos_atacar(resultado, planes, filas, g),
+                                     clave="atacar_js") is not NO_DISPONIBLE
+    if not en_js:
+        _render_cabecera_clasica(resultado, planes, filas, g)
+    if not planes:
+        st.success("No hay hallazgos que convertir en plan con los datos visibles. "
+                   "Si esperabas ver algo aquí, revisa los filtros activos.")
+        return
 
     st.markdown(section_header(
         "Asignar responsables y fechas",

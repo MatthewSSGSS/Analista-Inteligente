@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from ui.components.escena import cabecera
 
 from core.geo_engine import geographic_summary
 from visualization.charts import metric_candidates, dimension_candidates, _label, _compact_number, chart_text_color
@@ -750,8 +751,10 @@ def _zona_elegida(evento) -> dict | None:
 def render_georeferencing(df: pd.DataFrame, schema: dict, workbook: dict | None = None, sheet: str | None = None):
     """Mapa del panel: el mapa territorial sobre los datos filtrados, con un
     clic a la consola completa. Si los lugares no son de Colombia, el mapa general."""
-    st.markdown(banner_header("Georeferenciación", "Mapa interactivo · dónde está pasando cada cosa y qué hacer.",
-                              "ciudad_red.jpg"), unsafe_allow_html=True)
+    cabecera("Georreferenciación", "Mapa interactivo: dónde está pasando cada cosa y qué hacer.",
+             ceja="Mapa", icono="🗺️", clave="cab_geo",
+             respaldo_html=banner_header("Georreferenciación", "Mapa interactivo · dónde está pasando cada cosa y qué hacer.",
+                                         "ciudad_red.jpg"))
     try:
         ub, meta = _ubicar(df, schema)
     except Exception:

@@ -1,11 +1,14 @@
 import streamlit as st
+from ui.components.escena import cabecera
 
 
 def render_quality(profile):
     q=profile["quality"]
     score=float(q.get("score",0))
     tone="🟢" if score>=90 else "🟡" if score>=75 else "🔴"
-    st.markdown(f"### {tone} Estado de los datos")
+    cabecera("Estado de los datos", "Estructura, valores faltantes y duplicados del archivo.", ceja="Calidad del dato",
+             icono=tone, cifras=[(f"{score:.0f}%", "calidad general"), (f"{q['completeness']:.0f}%", "completitud")],
+             clave="cab_calidad", respaldo_html=f"<h3>{tone} Estado de los datos</h3>")
     a,b,c,d=st.columns(4)
     a.metric("Calidad general",f"{score:.1f}%")
     b.metric("Completitud",f"{q['completeness']:.1f}%")
