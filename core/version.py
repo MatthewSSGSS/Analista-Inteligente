@@ -82,33 +82,3 @@ def etiqueta_version() -> str:
         return commit
     return "versión no identificada"
 
-
-# ── Código viejo en memoria ───────────────────────────────────────────────
-# En Streamlit Cloud, al subir un commit el código nuevo llega al disco (y por
-# eso la etiqueta de arriba ya dice el commit nuevo), pero el proceso sigue
-# ejecutando los módulos que había cargado: la app se veía igual que antes
-# hasta que alguien hacía «Reboot app». Se guarda el commit con el que se
-# cargó este módulo; si el del disco cambia, app.py descarta los módulos del
-# proyecto y el código de app.py en memoria, y vuelve a cargarlo todo.
-
-COMMIT_AL_CARGAR = commit_actual()
-
-
-def codigo_desactualizado() -> bool:
-    """True si en el disco hay un commit distinto del que está en memoria."""
-    actual = commit_actual()
-    return bool(actual and COMMIT_AL_CARGAR and actual != COMMIT_AL_CARGAR)
-
-
-def descartar_codigo_en_memoria() -> None:
-    """Olvida los módulos del proyecto y el app.py compilado, para que la
-    siguiente ejecución los lea de nuevo del disco. Nunca lanza errores."""
-    import sys
-    for nombre in list(sys.modules):
-        if nombre.split(".")[0] in ("core", "ui", "visualization"):
-            sys.modules.pop(nombre, None)
-    try:
-        import streamlit.runtime as rt
-        rt.get_instance()._script_cache.clear()
-    except Exception:
-        pass

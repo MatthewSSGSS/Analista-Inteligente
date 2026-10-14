@@ -1,12 +1,25 @@
 import streamlit as st
 import pandas as pd
 
-# Si se subió un commit nuevo pero el servidor sigue con el código anterior en
-# memoria (Streamlit Cloud no siempre recarga), se descarta y se vuelve a
-# cargar. Ver core/version.descartar_codigo_en_memoria.
+# Streamlit Cloud baja el commit nuevo al disco y vuelve a leer app.py, pero
+# los módulos importados (core/, ui/, visualization/) se quedan con la versión
+# que tenía en memoria: la app se veía igual que antes hasta un «Reboot app».
+# Aquí se detecta (commit del disco distinto del commit con que se cargaron
+# los módulos) y se descartan para volver a leerlos. Va escrito aquí y no en un módulo, porque el módulo
+# en memoria puede ser justo el viejo.
+import sys as _sys
 import core.version as _version
-if _version.codigo_desactualizado():
-    _version.descartar_codigo_en_memoria()
+# El commit con que se cargaron los módulos se guarda en `sys` (que no se
+# descarta), así se recarga una sola vez por commit y nunca en bucle.
+try:
+    _disco = _version.commit_actual() or ""
+except Exception:
+    _disco = ""
+if getattr(_sys, "_analista_commit", None) != _disco:
+    _sys._analista_commit = _disco
+    for _m in list(_sys.modules):
+        if _m.split(".")[0] in ("core", "ui", "visualization"):
+            _sys.modules.pop(_m, None)
     st.cache_data.clear()
     st.rerun()
 
