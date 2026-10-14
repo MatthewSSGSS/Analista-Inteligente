@@ -14,7 +14,7 @@ from __future__ import annotations
 import streamlit as st
 from core.marca import NOMBRE_APP
 from ui.assets import image_data_uri
-from ui.components.escena import NO_DISPONIBLE, escena
+from ui.components.escena import NO_DISPONIBLE, botones_ocultos, escena
 
 # Foto de portada de cada tarjeta (assets/images/*.jpg, provistas por el
 # usuario): circuito → procesamiento/detección, red de nodos → relaciones
@@ -67,9 +67,11 @@ def _how_step(number: str, title: str, text: str, image: str) -> str:
 def render_landing() -> bool:
     """Dibuja la bienvenida. Devuelve True si el usuario ya le dio a "Comenzar"."""
     imagenes = {foto: image_data_uri(f"{foto}.jpg") for foto in ("circuito", "datos1", "barras", "mapa")}
-    accion = escena("portada", {"nombre": NOMBRE_APP, "imagenes": imagenes}, clave="portada_js")
+    botones = {"comenzar": "landing_start_btn"}
+    accion = escena("portada", {"nombre": NOMBRE_APP, "imagenes": imagenes, "botones": botones}, clave="portada_js")
     if accion is not NO_DISPONIBLE:
-        return accion == "comenzar"
+        # El clic llega por el botón oculto (camino principal) o por el aviso del componente.
+        return botones_ocultos(botones) == "comenzar" or accion == "comenzar"
     return _render_clasico()
 
 

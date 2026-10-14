@@ -52,6 +52,27 @@ def _componente(nombre: str):
     return _registradas[nombre]
 
 
+def botones_ocultos(botones: dict[str, str]) -> str | None:
+    """Botones normales de Streamlit, invisibles, uno por acción
+    ({acción: clave del botón}). Devuelve la acción cuyo botón se pulsó.
+
+    Son el camino principal del clic: el JavaScript de la pantalla busca el
+    botón por su clave (`.st-key-<clave> button`) y lo pulsa. Es el mismo
+    mecanismo de cualquier botón de la app, así que funciona igual en todas
+    las versiones y despliegues; el aviso por `setTriggerValue` queda solo
+    de respaldo. En Streamlit Cloud la portada se quedaba «pegada» en
+    «Comenzar» aunque en local avanzaba."""
+    css = ",".join(f".st-key-{clave}" for clave in botones.values())
+    st.markdown(f"<style>{css}{{position:fixed!important;left:-10000px!important;top:0!important;"
+                "width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important}</style>",
+                unsafe_allow_html=True)
+    elegida = None
+    for accion, clave in botones.items():
+        if st.button(accion, key=clave):
+            elegida = accion
+    return elegida
+
+
 def escena(nombre: str, datos: dict, clave: str):
     """Monta la pantalla `ui/web/<nombre>.*` con `datos`.
 

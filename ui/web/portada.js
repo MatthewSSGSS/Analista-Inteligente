@@ -134,7 +134,7 @@ export default function (component) {
     </section>
   `);
 
-  acciones(raiz, setTriggerValue);
+  acciones(raiz, setTriggerValue, d.botones || {});
   const limpiar = [
     redDeDatos(raiz.querySelector(".ai-red")),
     revelar(raiz),

@@ -57,7 +57,7 @@ export default function (component) {
     <div class="ai-modos-grid">${tarjetas}</div>
   `);
 
-  acciones(raiz, setTriggerValue);
+  acciones(raiz, setTriggerValue, d.botones || {});
   const limpiar = [revelar(raiz), ...[...raiz.querySelectorAll(".ai-modo")].map((t) => foco(t))];
   return () => limpiar.forEach((f) => { try { f(); } catch (e) { /* ya desmontado */ } });
 }

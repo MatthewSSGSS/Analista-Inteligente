@@ -153,13 +153,18 @@ function escribir(el, frase, listo, ms = 26) {
   return () => { vivo = false; };
 }
 
-// Cada botón con data-accion avisa a Python qué se eligió.
-function acciones(raiz, setTriggerValue) {
+// Cada botón con data-accion avisa a Python qué se eligió. Camino principal:
+// pulsar el botón de Streamlit escondido de esa acción (`botones`, desde
+// ui/components/escena.botones_ocultos); si no está, el aviso del componente.
+function acciones(raiz, setTriggerValue, botones = {}) {
   raiz.querySelectorAll("[data-accion]").forEach((b) => {
     b.addEventListener("click", () => {
       raiz.querySelectorAll("[data-accion]").forEach((x) => x.classList.remove("cargando"));
       b.classList.add("cargando");
-      setTriggerValue("accion", b.dataset.accion);
+      const clave = botones[b.dataset.accion];
+      const nativo = clave ? document.querySelector(`.st-key-${clave} button`) : null;
+      if (nativo) nativo.click();
+      else setTriggerValue("accion", b.dataset.accion);
     });
   });
 }

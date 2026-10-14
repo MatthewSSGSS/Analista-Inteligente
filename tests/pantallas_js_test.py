@@ -78,7 +78,15 @@ def test_con_v2_monta_la_escena():
         return
     at = AppTest.from_file(str(RAIZ / "app.py"), default_timeout=120)
     at.run()
-    check("con v2 la portada es la escena, sin el botón clásico", not at.exception and not at.button)
+    check("con v2 la portada es la escena, sin la portada clásica",
+          not at.exception and not any("landing-hero" in m.value for m in at.markdown))
+    # El clic del JavaScript pulsa estos botones ocultos (en Streamlit Cloud el
+    # aviso del componente no llegaba y la portada se quedaba pegada).
+    check("con su botón oculto de respaldo", [b.key for b in at.button] == ["landing_start_btn"])
+    at.button(key="landing_start_btn").click().run()
+    check("que lleva a elegir el modo", {"choose_completo", "choose_territorial", "choose_logistica"} == {b.key for b in at.button})
+    at.button(key="choose_completo").click().run()
+    check("y de ahí al panel", at.session_state["analysis_mode"] == "completo" and not at.exception)
 
 
 def main():

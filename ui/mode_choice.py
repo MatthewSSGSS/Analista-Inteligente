@@ -10,7 +10,7 @@ from __future__ import annotations
 import streamlit as st
 from core.marca import NOMBRE_APP
 from ui.assets import image_data_uri
-from ui.components.escena import NO_DISPONIBLE, escena
+from ui.components.escena import NO_DISPONIBLE, botones_ocultos, escena
 
 _MODOS = ("completo", "territorial", "logistica")
 
@@ -20,8 +20,11 @@ def render_mode_choice() -> str | None:
     'logistica' si el usuario eligió una, o None si sigue sin elegir."""
     imagenes = {"completo": image_data_uri("mapa.jpg"), "territorial": image_data_uri("ciudad_red.jpg"),
                 "logistica": image_data_uri("datos1.jpg")}
-    accion = escena("modos", {"nombre": NOMBRE_APP, "imagenes": imagenes}, clave="modos_js")
+    botones = {modo: f"choose_{modo}" for modo in _MODOS}
+    accion = escena("modos", {"nombre": NOMBRE_APP, "imagenes": imagenes, "botones": botones}, clave="modos_js")
     if accion is not NO_DISPONIBLE:
+        # El clic llega por el botón oculto (camino principal) o por el aviso del componente.
+        accion = botones_ocultos(botones) or accion
         return accion if accion in _MODOS else None
     return _render_clasico()
 
