@@ -1,5 +1,15 @@
 import streamlit as st
 import pandas as pd
+
+# Si se subió un commit nuevo pero el servidor sigue con el código anterior en
+# memoria (Streamlit Cloud no siempre recarga), se descarta y se vuelve a
+# cargar. Ver core/version.descartar_codigo_en_memoria.
+import core.version as _version
+if _version.codigo_desactualizado():
+    _version.descartar_codigo_en_memoria()
+    st.cache_data.clear()
+    st.rerun()
+
 from datetime import datetime
 from ui.styles.theme import inject_theme
 from ui.layouts.hero import hero_app
