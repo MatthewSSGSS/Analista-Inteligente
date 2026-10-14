@@ -1,14 +1,32 @@
 """Pantalla intermedia entre la bienvenida y el resto de la app: elegir entre
-Análisis Completo (el Panel Analítico Universal), Análisis Territorial (el
-mismo panel, entrando directo por el mapa) o Seguimiento de Logística."""
+Análisis Completo (el panel principal), Análisis Territorial (el mismo panel,
+entrando directo por el mapa) o Seguimiento de Logística.
+
+Se dibuja en JavaScript (`ui/web/modos.*` vía `ui/components/escena.py`):
+cada tarjeta entera es el botón, con una figurita animada del modo y luz que
+sigue al cursor. Si JavaScript no está disponible, queda la versión en
+Streamlit puro (`_render_clasico`)."""
 from __future__ import annotations
 import streamlit as st
+from core.marca import NOMBRE_APP
 from ui.assets import image_data_uri
+from ui.components.escena import NO_DISPONIBLE, escena
+
+_MODOS = ("completo", "territorial", "logistica")
 
 
 def render_mode_choice() -> str | None:
     """Muestra las 3 tarjetas. Devuelve 'completo', 'territorial' o
     'logistica' si el usuario eligió una, o None si sigue sin elegir."""
+    imagenes = {"completo": image_data_uri("mapa.jpg"), "territorial": image_data_uri("ciudad_red.jpg"),
+                "logistica": image_data_uri("datos1.jpg")}
+    accion = escena("modos", {"nombre": NOMBRE_APP, "imagenes": imagenes}, clave="modos_js")
+    if accion is not NO_DISPONIBLE:
+        return accion if accion in _MODOS else None
+    return _render_clasico()
+
+
+def _render_clasico() -> str | None:
     # Foto de portada de cada tarjeta (assets/images/*.jpg, provistas por el
     # usuario). "Completo" = mapa mundial.
     completo_cover = image_data_uri("mapa.jpg")
@@ -88,7 +106,7 @@ def render_mode_choice() -> str | None:
               <div class="mode-card-body">
                 <div class="mode-card-icon">🧭</div>
                 <h3>Análisis Completo</h3>
-                <p>Todo el Panel Analítico Universal: qué pasó, por qué y qué atacar, cómo va cada uno,
+                <p>Todo el panel: qué pasó, por qué y qué atacar, cómo va cada uno,
                 proyección, comparaciones y seguimiento, con informes listos para enviar.</p>
                 <ul>
                   <li>Resumen y plan de acción desde el primer momento</li>
@@ -125,7 +143,7 @@ def render_mode_choice() -> str | None:
             """,
             unsafe_allow_html=True,
         )
-        # Lleva al mismo Panel Analítico Universal, pero entrando por el mapa:
+        # Lleva al mismo panel principal, pero entrando por el mapa:
         # el análisis territorial no es un motor aparte, es el mismo archivo
         # leído desde la geografía, así que duplicar la app habría sido
         # mantener dos veces lo mismo.

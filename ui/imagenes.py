@@ -80,7 +80,9 @@ def render_imagenes(wb: dict) -> None:
 
         for img in imagenes:
             clave = img["id"]
-            st.markdown(f"**{html.escape(img['seccion'])}** · hoja «{html.escape(img['hoja'])}»")
+            otras = img.get("tambien_en") or []
+            tambien = (" · también en " + ", ".join(f"«{html.escape(h)}»" for h in otras)) if otras else ""
+            st.markdown(f"**{html.escape(img['seccion'])}** · hoja «{html.escape(img['hoja'])}»{tambien}")
             st.image(img["bytes"], use_container_width=True)
             if clave in usadas:
                 st.success(f"Ya está en el panel como «{usadas[clave]}»: elígela en «Hoja activa».")

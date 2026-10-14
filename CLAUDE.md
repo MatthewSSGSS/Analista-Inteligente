@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Streamlit app ("Panel Analítico Universal") that turns an uploaded Excel/CSV workbook into an
+A Streamlit app ("Analista Inteligente" — the name lives in `core/marca.NOMBRE_APP`; keep it brand-neutral,
+no company names or logos) that turns an uploaded Excel/CSV workbook into an
 interactive analytics dashboard — KPIs, findings, alerts, comparisons, forecasting, georeferencing,
 OCR of embedded images, executive reports — without assuming any fixed schema (sales, HR,
 inventory, catalogs, etc. all work through the same engine). All code, comments and UI copy are in
@@ -70,6 +71,11 @@ Inside `ui/`:
 - `ui/components/` — pure, reusable render helpers (`cards.py`, `charts.py`, `section.py`, `descarga.py` →
   `preparar_y_descargar`, the two-step «Preparar → Descargar» used by Exportar and Territorial). No
   business logic, no reading `core/` directly, no reading business `session_state` keys.
+- `ui/web/` + `ui/components/escena.py` — the landing, mode-choice and login header are HTML/CSS/JS screens mounted
+  with `st.components.v2` (inline in the page, so they inherit the theme tokens). JavaScript only draws and reports
+  clicks via `setTriggerValue("accion", ...)`; Python decides what happens. `escena()` returns `NO_DISPONIBLE` when v2
+  is missing or fails, and each view then draws its classic Streamlit version — keep both paths working
+  (`tests/pantallas_js_test.py`). Login fields stay Streamlit widgets so the password never passes through JS.
 - `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
   Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a
   «➕ Más» menu, and **only the active view is executed** (unlike `st.tabs`, which ran every tab on every

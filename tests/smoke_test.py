@@ -365,10 +365,21 @@ def _navegacion_de_modos():
     import io as _io
 
     import streamlit as _st
+    import ui.mode_choice as _mc
+    from ui.components.escena import NO_DISPONIBLE
     from ui.mode_choice import render_mode_choice
 
-    boton_real = _st.button
+    boton_real, escena_real = _st.button, _mc.escena
     try:
+        # Con JavaScript (ui/web/modos.js): la tarjeta manda su clave y
+        # Python la devuelve tal cual si es un modo que sabe atender.
+        for esperado in ("completo", "territorial", "logistica"):
+            _mc.escena = lambda *a, _v=esperado, **k: _v
+            check(f"la tarjeta '{esperado}' (JavaScript) devuelve su modo", render_mode_choice() == esperado)
+        _mc.escena = lambda *a, **k: "otro"
+        check("una acción desconocida no elige nada", render_mode_choice() is None)
+        # Sin JavaScript: la versión clásica, botón por botón.
+        _mc.escena = lambda *a, **k: NO_DISPONIBLE
         for clave, esperado in (("choose_completo", "completo"),
                                 ("choose_territorial", "territorial"),
                                 ("choose_logistica", "logistica")):
@@ -377,7 +388,7 @@ def _navegacion_de_modos():
         _st.button = lambda *a, **k: False
         check("sin clic no se elige ningún modo", render_mode_choice() is None)
     finally:
-        _st.button = boton_real
+        _st.button, _mc.escena = boton_real, escena_real
 
     # Y que app.py atienda cada modo con una función de render.
     arbol = ast.parse(_io.open("app.py", encoding="utf-8").read())

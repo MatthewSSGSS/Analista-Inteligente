@@ -3,7 +3,8 @@ from __future__ import annotations
 import streamlit as st
 
 import core.auth_engine as auth_engine
-from ui.assets import image_data_uri
+from core.marca import NOMBRE_APP
+from ui.components.escena import NO_DISPONIBLE, escena
 
 # ─────────────────────────────────────────────────────────────────────────
 # INTERRUPTOR TEMPORAL: mientras la conexión a la base de datos esté rota
@@ -19,44 +20,33 @@ BYPASS_AUTH_TEMPORARY = True
 
 
 def render_login():
-    # Foto de fondo (assets/images/oficina_claro.jpg, provista por el
-    # usuario): trae texto de mentira incrustado en la propia imagen
-    # ("Google SSO"/"Microsoft SSO", que esta app no tiene) — por eso NO va
-    # directa y visible. Se pone detrás de un velo crema casi opaco (92%),
-    # así que se ve la escena (oficina, gente, marca Claro) pero ningún
-    # texto de la foto se alcanza a leer. El formulario real de abajo sigue
-    # siendo la única fuente de "qué opciones de login existen".
-    login_bg = image_data_uri("oficina_claro.jpg")
-    # Marcador de texto en vez de f-string: el resto del bloque CSS de abajo
-    # tiene decenas de llaves {} propias (selectores) que un f-string
-    # interpretaría como variables — un solo .replace() al final evita tener
-    # que escapar cada una a mano (alto riesgo de error tipográfico en un
-    # bloque tan largo).
+    # Sin foto de fondo: la que había (una oficina con la marca de una
+    # empresa) ataba la app a una compañía. El fondo es el resplandor del
+    # tema sobre crema, y la cabecera animada (ui/web/acceso.*) pone la marca
+    # neutral de la app. Los campos siguen siendo de Streamlit: la
+    # contraseña va directo a Python, no pasa por JavaScript.
     style_block = """
         <style>
         @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
-        /* Mismo resplandor rojo de siempre, un velo crema casi opaco encima
-           de la foto (para que su texto no se lea) y la foto al fondo. */
+        /* Resplandor del color de acento sobre fondo crema. */
         [data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid="stMain"],html,body{
           background-image:
             radial-gradient(ellipse 900px 500px at 8% 6%, rgba(228,0,43,.20), transparent 60%),
             radial-gradient(ellipse 900px 550px at 92% 96%, rgba(228,0,43,.16), transparent 60%),
             radial-gradient(ellipse 700px 500px at 50% 100%, rgba(228,0,43,.10), transparent 65%),
-            linear-gradient(rgba(250,246,240,.92),rgba(250,246,240,.92)),
-            url(__LOGIN_BG__);
-          background-size: auto, auto, auto, cover, cover;
-          background-position: 8% 6%, 92% 96%, 50% 100%, center, center;
-          background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
-          background-attachment: fixed, fixed, fixed, fixed, fixed;
+            linear-gradient(rgba(250,246,240,1),rgba(250,246,240,1));
+          background-size: auto, auto, auto, cover;
+          background-position: 8% 6%, 92% 96%, 50% 100%, center;
+          background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
+          background-attachment: fixed, fixed, fixed, fixed;
           background-color: #faf6f0 !important;
         }
         [data-testid="stHeader"]{background:transparent!important}
 
         .login-wrap{max-width:440px;margin:7vh auto 0;padding:0 16px;animation:fadeUp .45s ease both;text-align:center}
-        .login-wordmark{font-family:'Sora','Inter',sans-serif;font-weight:800;font-size:44px;color:#e4002b;
+        .login-wordmark{font-family:'Sora','Inter',sans-serif;font-weight:800;font-size:34px;color:#e4002b;
           letter-spacing:-.03em;line-height:1;margin:0 0 18px;display:inline-block}
-        .login-wordmark sup{color:#e4002b;font-size:22px;position:relative;top:-18px;left:1px}
         .login-hero{margin-bottom:26px}
         .login-hero h1{font-size:20px;font-weight:800;font-family:'Sora','Inter',sans-serif;letter-spacing:-.02em;margin:0 0 6px;color:#1a1a1a}
         .login-hero p{font-size:12.5px;color:#6b6b6b;margin:0}
@@ -82,6 +72,11 @@ def render_login():
           padding:12px 14px!important;font-size:14px!important;box-shadow:0 1px 2px rgba(20,20,20,.04)!important}
         .login-card label p{color:#3a3a3a!important;font-weight:650!important;font-size:12.5px!important}
 
+        /* `.login-card` no envuelve de verdad a los widgets (un st.markdown
+           abre el div y Streamlit lo cierra solo), así que el botón «Entrar»
+           tomaba el texto oscuro del tema sobre el rojo: se fuerza blanco. */
+        [data-testid="stMain"] .stButton>button[kind="primary"],
+        [data-testid="stMain"] .stButton>button[kind="primary"] p{color:#fff!important;font-weight:750!important}
         .login-card button[kind="primary"]{background:linear-gradient(180deg,#8c1420,#6e0f19)!important;
           border:none!important;border-radius:12px!important;height:46px!important;font-weight:750!important;
           font-size:14px!important;box-shadow:0 8px 18px rgba(110,15,25,.28)!important}
@@ -89,14 +84,14 @@ def render_login():
           border:none!important;color:#fff!important;border-radius:12px!important;height:46px!important;font-weight:750!important}
         </style>
         """
-    st.markdown(style_block.replace("__LOGIN_BG__", login_bg), unsafe_allow_html=True)
+    st.markdown(style_block, unsafe_allow_html=True)
 
-    st.markdown(
-        '<div class="login-wrap"><div class="login-wordmark">Claro<sup>⚡</sup></div>'
-        '<div class="login-hero"><h1>Panel Analítico Universal Claro</h1>'
-        '<p>Inicia sesión para continuar con tu cuenta Claro</p></div></div>',
-        unsafe_allow_html=True,
-    )
+    if escena("acceso", {"nombre": NOMBRE_APP}, clave="acceso_js") is NO_DISPONIBLE:
+        st.markdown(
+            f'<div class="login-wrap"><div class="login-wordmark">{NOMBRE_APP}</div>'
+            '<div class="login-hero"><p>Inicia sesión para continuar</p></div></div>',
+            unsafe_allow_html=True,
+        )
 
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
@@ -126,7 +121,7 @@ def render_login():
                         st.error(msg)
 
         with tab_signup:
-            st.caption("Crea tu cuenta para entrar al Panel Analítico de tu equipo.")
+            st.caption(f"Crea tu cuenta para entrar a {NOMBRE_APP} con tu equipo.")
             if BYPASS_AUTH_TEMPORARY:
                 st.info("⚠️ Crear cuenta está pausado temporalmente mientras se arregla la conexión a la base de datos. Usa \"Iniciar sesión\" — por ahora te deja entrar sin pedir credenciales reales.")
             new_name = st.text_input("Tu nombre (opcional)", key="signup_name", disabled=BYPASS_AUTH_TEMPORARY)

@@ -1,4 +1,4 @@
-"""AI assistant for Excel Intelligence.
+"""AI assistant for Analista Inteligente (core/marca.NOMBRE_APP).
 
 The assistant never receives the whole workbook by default. It receives a compact
 semantic context and can call safe, read-only pandas tools over the current
@@ -6,6 +6,7 @@ filtered DataFrame. An OpenAI Responses API key is optional; without one, a
 small deterministic fallback handles common questions so the app still runs.
 """
 from __future__ import annotations
+from .marca import NOMBRE_APP
 from .numeric import numeric_series, safe_sum, safe_mean, safe_min, safe_max
 
 import json
@@ -184,7 +185,7 @@ def ask_assistant(question: str, df: pd.DataFrame, schema: dict, profile: dict, 
         from openai import OpenAI
         client = OpenAI(api_key=key)
         context = build_context(df, schema, profile, mode_info, dashboard)
-        instructions = """Eres el asistente de Excel Intelligence. Hablas español claro y profesional. Tu trabajo es ayudar a un jefe a entender un Excel y tomar mejores decisiones.
+        instructions = f"""Eres el asistente de {NOMBRE_APP}. Hablas español claro y profesional. Tu trabajo es ayudar a un jefe a entender un Excel y tomar mejores decisiones.
 
 REGLAS:
 - Usa únicamente los datos que recibes o que obtengas mediante tus herramientas. No inventes cifras.

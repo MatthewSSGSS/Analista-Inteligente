@@ -27,6 +27,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from core.marca import NOMBRE_APP
 from core.quality import assess
 from ui.labels import clean_display_text
 from ui.report_base import (desplegable, documento, esc_limpio, nav, prioridades, seccion, semaforo)
@@ -990,11 +991,11 @@ def build_html_report(df: pd.DataFrame, schema: dict, dashboard: dict, filename:
         (str(criticos) if plan.get("planes") else None,
          "Frentes críticos" if criticos != 1 else "Frente crítico", "neg" if criticos else "pos"),
     ]
-    cover = _cover("Panel Analítico Universal · Informe ejecutivo", sheet, narrative, stats,
+    cover = _cover(f"{NOMBRE_APP} · Informe ejecutivo", sheet, narrative, stats,
                    [("Archivo", filename), ("Alcance", scope_label), ("Periodo", ctx["periodo"]),
                     ("Generado", generated)])
     cuerpo = (cover + "".join(c for *_, c in cuerpo_secciones if c)
-              + "<footer class='footer'>Generado por Panel Analítico Universal · El contenido se adapta a la estructura real del Excel.</footer>")
+              + f"<footer class='footer'>Generado por {NOMBRE_APP} · El contenido se adapta a la estructura real del Excel.</footer>")
     return documento(f"Informe ejecutivo — {sheet} · {filename}", cuerpo, nav_html)
 
 
@@ -1239,7 +1240,7 @@ def build_workbook_html_report(workbook: dict) -> str:
     )
     criticos_total = sum(1 for r in reports for p in (r["plan"] or {}).get("planes") or [] if p.get("estado") == "critico")
     cover = _cover(
-        "Panel Analítico Universal · Informe general",
+        f"{NOMBRE_APP} · Informe general",
         "Resumen de todo el Excel",
         "Lectura completa del libro, sin depender de los filtros activos: cómo va cada hoja, qué atender primero y el detalle de cada una.",
         [(f"{len(reports):,}", "Hojas con datos", ""), (f"{total_rows:,}", "Registros", ""),
@@ -1249,7 +1250,7 @@ def build_workbook_html_report(workbook: dict) -> str:
     )
     cuerpo = (cover + contexto_html + tablero_html + prioridades_html
               + ("".join(sheet_sections) or '<section class="section"><div class="empty">No se encontraron hojas con datos analizables.</div></section>')
-              + "<footer class='footer'>Generado por Panel Analítico Universal · Resumen del libro completo · Los análisis se adaptan a cada hoja.</footer>")
+              + f"<footer class='footer'>Generado por {NOMBRE_APP} · Resumen del libro completo · Los análisis se adaptan a cada hoja.</footer>")
     return documento(f"Informe general del Excel — {filename}", cuerpo, nav_html)
 
 
@@ -1371,7 +1372,7 @@ def build_comparison_html_report(comparison: dict, filters_summary: str = "Sin f
                               f"{len(matches)} variables")),
     ]
     cover = _cover(
-        "Panel Analítico Universal · Informe comparativo",
+        f"{NOMBRE_APP} · Informe comparativo",
         f"Qué cambió entre {len(files)} archivos",
         " → ".join(clean_display_text(f["label"]) for f in files) or "Comparación de archivos",
         [(str(len(files)), "Archivos", ""), (str(subieron), "Métricas al alza", "pos" if subieron else ""),
@@ -1379,7 +1380,7 @@ def build_comparison_html_report(comparison: dict, filters_summary: str = "Sin f
         [("Filtros", filters_summary), ("Generado", generated)],
     )
     cuerpo = (cover + "".join(secciones)
-              + "<footer class='footer'>Generado por Panel Analítico Universal · Refleja los filtros activos al exportar.</footer>")
+              + f"<footer class='footer'>Generado por {NOMBRE_APP} · Refleja los filtros activos al exportar.</footer>")
     return documento(f"Informe comparativo — {len(files)} archivos", cuerpo)
 
 

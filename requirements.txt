@@ -1,4 +1,6 @@
-streamlit>=1.50
+# 1.51+: las pantallas de portada, modos y acceso usan st.components.v2 (ui/components/escena.py);
+# con una versión anterior se dibuja la versión clásica de esas pantallas.
+streamlit>=1.51
 pandas>=2.2
 numpy>=1.26
 openpyxl>=3.1

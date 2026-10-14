@@ -142,6 +142,19 @@ def test_imagenes_del_xlsx():
           and imagenes[0]["hoja"] == "INDICADORES" and imagenes[0]["fila"] == 3)
     check("con sus bytes", imagenes[0]["bytes"][:4] == b"\x89PNG")
 
+    # La misma imagen en tres hojas (pasó con un informe real: el mismo logo)
+    # daba tres botones con la misma clave y el Inicio se caía.
+    otro = Workbook()
+    for i, nombre in enumerate(("Resumen", "Altas", "Recargas")):
+        hoja = otro.active if i == 0 else otro.create_sheet()
+        hoja.title = nombre
+        hoja.add_image(XLImage(io.BytesIO(_tabla_png())), "B4")
+    repetidas = io.BytesIO()
+    otro.save(repetidas)
+    unicas = ocr.imagenes_del_libro(repetidas.getvalue())
+    check("la misma imagen en varias hojas se guarda una vez", len(unicas) == 1 and len({i["id"] for i in unicas}) == 1)
+    check("y dice en qué otras hojas está", unicas[0]["tambien_en"] == ["Altas", "Recargas"])
+
     from core.loader import load_workbook
 
     class Subida:

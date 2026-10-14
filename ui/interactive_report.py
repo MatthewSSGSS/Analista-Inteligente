@@ -40,6 +40,7 @@ import numpy as np
 import pandas as pd
 
 from core.dates import a_datetime
+from core.marca import NOMBRE_APP
 from core.explorador import calculo_automatico, columna_fecha
 from core.meses_largo import meses_a_filas
 from core.numeric import numeric_valid
@@ -336,7 +337,7 @@ def build_interactive_html_report(df: pd.DataFrame, schema: dict, filename: str,
 
     cover = f"""
 <header class="cover">
-  <div class="cover-kicker">Panel Analítico Universal · Informe interactivo</div>
+  <div class="cover-kicker">{NOMBRE_APP} · Informe interactivo</div>
   <h1>{esc(sheet)}</h1>
   <p class="lead" id="cv_lead">Cargando…</p>
   <div class="cover-stats" id="cv_stats"></div>
@@ -358,7 +359,7 @@ def build_interactive_html_report(df: pd.DataFrame, schema: dict, filename: str,
     cuerpo = (cover + filtros + resumen + atacar + graficos + cada_uno + alertas + diagnostico_intro
               + por_que + planes + detalle + ficha
               + f"<footer class='footer'>{config['incluidas']:,} registros incluidos.{esc(recorte)} "
-                "Generado por Panel Analítico Universal.</footer>"
+                f"Generado por {NOMBRE_APP}.</footer>"
               + f"<script>window.__CFG={_json(config)};window.__DATA={_json(data)};</script>"
               + f"<script>{_JS_APP}</script>")
     return documento(f"Informe interactivo — {sheet} · {filename}", cuerpo, nav_html,

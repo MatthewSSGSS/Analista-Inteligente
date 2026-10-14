@@ -1,10 +1,11 @@
 import streamlit as st
 from core.assistant_engine import ask_assistant
+from core.marca import NOMBRE_APP
 from ui.components.section import banner_header
 
 
 def render_assistant(df, schema, profile, mode_info, dashboard):
-    st.markdown(banner_header("Asistente de Excel Intelligence", "Datos visibles · lectura y cálculo.", "ciudad_red.jpg"), unsafe_allow_html=True)
+    st.markdown(banner_header(f"Asistente de {NOMBRE_APP}", "Datos visibles · lectura y cálculo.", "ciudad_red.jpg"), unsafe_allow_html=True)
     st.caption("Pregunta sobre lo que está ocurriendo, compara segmentos, busca registros o pide una recomendación. El asistente trabaja sobre la selección actual.")
 
     if "assistant_messages" not in st.session_state:

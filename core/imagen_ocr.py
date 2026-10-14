@@ -135,12 +135,23 @@ def imagenes_del_libro(data: bytes) -> list[dict]:
                     continue
                 fila = ancla.find(f"{{{_XDR}}}from/{{{_XDR}}}row")
                 contenido = z.read(destino)
+                # La misma imagen pegada en varias hojas (un logo, el mismo
+                # cuadro repetido) se guarda una vez: leerla tres veces no
+                # aporta nada, y con el mismo id sus botones chocaban
+                # (StreamlitDuplicateElementKey tumbaba el Inicio).
+                clave = hashlib.sha1(contenido).hexdigest()[:12]
+                repetida = next((i for i in salida if i["id"] == clave), None)
+                if repetida is not None:
+                    if hoja.get("name") != repetida["hoja"] and hoja.get("name") not in repetida["tambien_en"]:
+                        repetida["tambien_en"].append(hoja.get("name"))
+                    continue
                 salida.append({
                     "hoja": hoja.get("name"),
                     "fila": int(fila.text) if fila is not None and (fila.text or "").isdigit() else 0,
                     "archivo": posixpath.basename(destino),
                     "bytes": contenido,
-                    "id": hashlib.sha1(contenido).hexdigest()[:12],
+                    "id": clave,
+                    "tambien_en": [],
                 })
     return salida
 

@@ -8,6 +8,7 @@ from ui.components.section import section_header
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
 from core.version import etiqueta_version
+from core.marca import NOMBRE_APP
 from core.dates import format_month_year
 
 
@@ -65,7 +66,7 @@ if "theme_mode" not in st.session_state:
     st.session_state.theme_mode = "light"  # el jefe pidió blanco por defecto; oscuro es opcional, elegido por cada quien
 
 st.set_page_config(
-    page_title="Panel Analítico Universal", page_icon="📊", layout="wide",
+    page_title=NOMBRE_APP, page_icon="📊", layout="wide",
     initial_sidebar_state="collapsed" if not st.session_state.app_started else "auto",
 )
 
@@ -140,7 +141,7 @@ if st.session_state.analysis_mode == "territorial":
     render_territorial_page()
     st.stop()
 
-hero_app("Panel Analítico Universal", "De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.",
+hero_app(NOMBRE_APP, "De Excel crudo a decisiones: qué pasó, dónde pasó, qué lo explica y qué conviene revisar.",
          ["Qué pasó", "Dónde pasó", "Por qué", "Qué hacer"], compacto=bool(st.session_state.get("workbook")))
 
 with st.sidebar:
@@ -153,7 +154,7 @@ with st.sidebar:
     # 93% y la versión del código ocupaban tanto espacio —y tanto contraste—
     # como la hoja activa o el periodo, que son los que se usan a diario.
     # Todo lo secundario baja al pie, plegado.
-    st.markdown('<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">Panel Analítico<small>Centro de control universal</small></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sidebar-logo"><div class="sidebar-logo-mark">📊</div><div class="sidebar-logo-text">{NOMBRE_APP}<small>Panel analítico universal</small></div></div>', unsafe_allow_html=True)
 
     st.markdown('<p class="sidebar-group-header">Datos</p>', unsafe_allow_html=True)
     # Los otros modos, uno al lado del otro y con el nombre corto (un botón

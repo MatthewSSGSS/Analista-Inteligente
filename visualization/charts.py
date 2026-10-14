@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# Paleta ejecutiva alineada a la identidad de marca de Claro (rojo vivo +
+# Paleta ejecutiva de la app (rojo vivo +
 # blanco). Los colores adicionales se usan solo cuando comunican una
 # diferencia real (positivo/negativo/alerta), nunca de forma decorativa.
 PRIMARY = "#E4002B"

@@ -1,0 +1,93 @@
+"""Portada, elección de modo y acceso en JavaScript, sin marcas de terceros.
+
+Las tres pantallas se dibujan con `st.components.v2` (ui/components/escena.py
++ ui/web/). Lo que se exige:
+
+- que la app no nombre a ninguna empresa: el acceso decía «Claro», «Panel
+  Analítico Universal Claro», «cuenta Claro» y tenía de fondo una foto con
+  el logo; el nombre vive en `core/marca.NOMBRE_APP`;
+- que cada acción que manda el JavaScript (`data-accion`) sea una que Python
+  sabe atender — un nombre cambiado de un lado dejaría el botón sin efecto;
+- que sin `st.components.v2` (Streamlit viejo) se dibuje la versión clásica
+  con sus botones y el flujo llegue al panel: nunca una pantalla sin salida.
+
+PYTHONPATH=. python tests/pantallas_js_test.py
+"""
+import re
+import warnings
+from pathlib import Path
+
+warnings.filterwarnings("ignore")
+
+RAIZ = Path(__file__).resolve().parent.parent
+
+
+def check(label, condition):
+    if not condition:
+        raise AssertionError(label)
+    print("OK  ", label)
+
+
+def test_sin_marcas():
+    from core.marca import NOMBRE_APP
+    check("el nombre es neutral", NOMBRE_APP and "claro" not in NOMBRE_APP.lower())
+    textos = [p.read_text(encoding="utf-8") for p in (RAIZ / "ui").rglob("*") if p.suffix in (".py", ".js", ".css")]
+    textos.append((RAIZ / "app.py").read_text(encoding="utf-8"))
+    check("ninguna pantalla nombra la marca", not any(re.search(r"Claro<|cuenta Claro|Universal Claro|oficina_claro", t) for t in textos))
+    check("la foto con el logo ya no está", not (RAIZ / "assets" / "images" / "oficina_claro.jpg").exists())
+
+
+def test_acciones_del_javascript():
+    web = RAIZ / "ui" / "web"
+    for nombre in ("portada", "modos", "acceso"):
+        js = (web / f"{nombre}.js").read_text(encoding="utf-8")
+        check(f"{nombre}.js exporta la función de la pantalla", "export default function" in js)
+    portada = (web / "portada.js").read_text(encoding="utf-8")
+    check("la portada manda «comenzar»", set(re.findall(r'data-accion="([a-z]+)"', portada)) == {"comenzar"})
+    modos = (web / "modos.js").read_text(encoding="utf-8")
+    from ui.mode_choice import _MODOS
+    check("cada modo del JavaScript lo atiende Python", set(re.findall(r'clave: "([a-z]+)"', modos)) == set(_MODOS))
+
+
+def test_version_clasica_sin_v2():
+    from streamlit.testing.v1 import AppTest
+    codigo = (
+        "import ui.components.escena as e\n"
+        "e.disponible = lambda: False\n"
+        f"exec(open({str(RAIZ / 'app.py')!r}, encoding='utf-8').read())\n"
+    )
+    import ui.components.escena as escena
+    original = escena.disponible  # AppTest corre en este mismo proceso: se restaura al final
+    try:
+        at = AppTest.from_string(codigo, default_timeout=120)
+        at.run()
+        check("sin v2 la portada clásica tiene su botón", [b.key for b in at.button] == ["landing_start_btn"])
+        at.button(key="landing_start_btn").click().run()
+        check("y los modos clásicos los suyos", {"choose_completo", "choose_territorial", "choose_logistica"} <= {b.key for b in at.button})
+        at.button(key="choose_completo").click().run()
+        check("y el flujo llega al panel", at.session_state["analysis_mode"] == "completo" and not at.exception)
+    finally:
+        escena.disponible = original
+
+
+def test_con_v2_monta_la_escena():
+    from streamlit.testing.v1 import AppTest
+    from ui.components.escena import disponible
+    if not disponible():
+        print("SKIP escena: esta versión de Streamlit no tiene st.components.v2")
+        return
+    at = AppTest.from_file(str(RAIZ / "app.py"), default_timeout=120)
+    at.run()
+    check("con v2 la portada es la escena, sin el botón clásico", not at.exception and not at.button)
+
+
+def main():
+    test_sin_marcas()
+    test_acciones_del_javascript()
+    test_con_v2_monta_la_escena()
+    test_version_clasica_sin_v2()
+    print("\nPantallas JS test completado sin errores.")
+
+
+if __name__ == "__main__":
+    main()

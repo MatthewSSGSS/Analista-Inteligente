@@ -2,11 +2,19 @@
 
 Se activa cuando `st.session_state.app_started` es False. Al hacer clic en
 "Comenzar" se pone en True y la app pasa al flujo normal (sidebar +
-uploader). Reutiliza las clases de estilo definidas en app.py.
+uploader).
+
+Se dibuja en JavaScript (`ui/web/portada.*` vía `ui/components/escena.py`):
+escenario oscuro con la red de datos animada, un parte del día de ejemplo
+que se arma solo, tarjetas que siguen al cursor y aparición al bajar. Si
+JavaScript no está disponible, queda la versión en Streamlit puro de abajo
+(`_render_clasico`), con el mismo botón «Comenzar».
 """
 from __future__ import annotations
 import streamlit as st
+from core.marca import NOMBRE_APP
 from ui.assets import image_data_uri
+from ui.components.escena import NO_DISPONIBLE, escena
 
 # Foto de portada de cada tarjeta (assets/images/*.jpg, provistas por el
 # usuario): circuito → procesamiento/detección, red de nodos → relaciones
@@ -58,6 +66,14 @@ def _how_step(number: str, title: str, text: str, image: str) -> str:
 
 def render_landing() -> bool:
     """Dibuja la bienvenida. Devuelve True si el usuario ya le dio a "Comenzar"."""
+    imagenes = {foto: image_data_uri(f"{foto}.jpg") for foto in ("circuito", "datos1", "barras", "mapa")}
+    accion = escena("portada", {"nombre": NOMBRE_APP, "imagenes": imagenes}, clave="portada_js")
+    if accion is not NO_DISPONIBLE:
+        return accion == "comenzar"
+    return _render_clasico()
+
+
+def _render_clasico() -> bool:
     st.markdown(
         """
         <style>
@@ -113,7 +129,7 @@ def render_landing() -> bool:
 
     st.markdown(
         '<div class="landing-hero"><div class="landing-mark"></div>'
-        '<h1>Panel Analítico Universal</h1>'
+        f'<h1>{NOMBRE_APP}</h1>'
         '<p>Sube cualquier Excel o CSV y obtén, en segundos, KPIs, hallazgos, alertas, comparaciones '
         'y un informe listo para compartir con dirección — sin depender de una estructura fija.</p>'
         '</div>',
