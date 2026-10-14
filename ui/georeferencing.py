@@ -748,6 +748,133 @@ def _zona_elegida(evento) -> dict | None:
     return None
 
 
+_ETIQUETA_REGION = {"Caribe": (10.0, -74.6), "Andina": (6.6, -74.4), "Pacífica": (2.6, -77.9),
+                    "Orinoquía": (4.4, -70.6), "Amazonía": (-0.8, -71.6), "Insular": (12.2, -80.6)}
+_COLOR_REGION = {"Caribe": "#0EA5E9", "Andina": "#7C3AED", "Pacífica": "#0D9488", "Orinoquía": "#D97706",
+                 "Amazonía": "#16A34A", "Insular": "#DB2777"}
+
+
+def _render_regiones(df: pd.DataFrame, schema: dict, info: dict) -> None:
+    """Mapa por REGIÓN NATURAL (Caribe, Andina, Pacífica…): cada departamento
+    pintado con el valor de su región. Antes estos archivos caían en el mapa
+    general, que decía «no son de Colombia» y ubicaba «Caribe» como un punto."""
+    from core.diagnostics import _fmt
+    col = info["columna"]
+    metricas = [m for m in metric_candidates(df, schema) if m in df.columns]
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        metrica = st.selectbox("Métrica del mapa", metricas + [None], key="geo_reg_metrica",
+                               format_func=lambda x: "Número de registros" if x is None else _label(schema, x))
+    calculo = _calculo(df, schema, metrica)
+    with c2:
+        st.markdown(f'<div class="chart-reading" style="margin-top:28px">Por región natural, desde la columna '
+                    f'<b>{_esc(col)}</b></div>', unsafe_allow_html=True)
+
+    region = df[col].astype(str).str.strip().map(info["mapa"])
+    datos = df.assign(_region=region)
+    ubicados = datos[datos["_region"].notna()]
+    if metrica is None:
+        por_region = ubicados.groupby("_region").size().astype(float)
+    else:
+        valores = pd.to_numeric(ubicados[metrica], errors="coerce")
+        g = valores.groupby(ubicados["_region"])
+        por_region = (g.mean() if calculo == "Promedio" else g.sum()).dropna()
+    if por_region.empty:
+        st.info("Ninguna región natural tiene datos con los filtros actuales.")
+        return
+    por_region = por_region.sort_values(ascending=False)
+    total = float(por_region.sum()) or 1.0
+    etiqueta = "Registros" if metrica is None else _label(schema, metrica)
+
+    # Variación del último mes contra el anterior, si hay fechas.
+    variacion = {}
+    fecha_col = next((c for c in schema.get("dates", []) if c in df.columns), None)
+    if fecha_col and metrica is not None:
+        meses = pd.to_datetime(ubicados[fecha_col], errors="coerce").dt.to_period("M")
+        tabla = pd.to_numeric(ubicados[metrica], errors="coerce").groupby([ubicados["_region"], meses]).sum().unstack()
+        if tabla.shape[1] >= 2:
+            a, b = tabla.columns[-2], tabla.columns[-1]
+            for r in tabla.index:
+                if pd.notna(tabla.at[r, a]) and tabla.at[r, a]:
+                    variacion[r] = (tabla.at[r, b] - tabla.at[r, a]) / abs(tabla.at[r, a]) * 100
+
+    sin = datos["_region"].isna().sum()
+    k = st.columns(4)
+    k[0].metric("Regiones con datos", f"{len(por_region)} de 6")
+    k[1].metric("Región líder", por_region.index[0])
+    k[2].metric(f"{etiqueta} de la líder", _fmt(por_region.iloc[0]), f"{por_region.iloc[0] / total * 100:.0f}% del total",
+                delta_color="off")
+    k[3].metric("Registros sin región", f"{sin:,}", ", ".join(info["sin_ubicar"][:3]) or None, delta_color="off")
+
+    # Mapa: cada departamento con el valor de su región.
+    filas = []
+    for r, codigos in T.REGIONES_NATURALES.items():
+        for cod in codigos:
+            filas.append({"cod": cod, "region": r, "valor": float(por_region.get(r, float("nan")))})
+    mapa = pd.DataFrame(filas)
+    deptos = T.departamentos().set_index("cod_dpto")["departamento"]
+    mapa["depto"] = mapa["cod"].map(deptos)
+    con = mapa["valor"].notna()
+    texto = chart_text_color()
+    fig = go.Figure()
+    fig.add_trace(go.Choropleth(
+        geojson=T.departamentos_geojson(), featureidkey="properties.cod_dpto",
+        locations=mapa.loc[~con, "cod"], z=[0] * int((~con).sum()), showscale=False,
+        colorscale=[[0, "rgba(148,163,184,.18)"], [1, "rgba(148,163,184,.18)"]],
+        marker_line_color="rgba(148,163,184,.55)", marker_line_width=0.6,
+        hovertext=[f"<b>{d}</b><br>Región {r}: sin datos" for d, r in zip(mapa.loc[~con, "depto"], mapa.loc[~con, "region"])],
+        hoverinfo="text"))
+    fig.add_trace(go.Choropleth(
+        geojson=T.departamentos_geojson(), featureidkey="properties.cod_dpto",
+        locations=mapa.loc[con, "cod"], z=mapa.loc[con, "valor"],
+        colorscale=[[0, "#C7D2FE"], [0.5, "#6366F1"], [1, "#312E81"]],
+        marker_line_color="rgba(255,255,255,.75)", marker_line_width=0.8,
+        showscale=False,  # la lista de la derecha ya dice la cifra de cada región
+        hovertext=[f"<b>Región {r}</b><br>{d}<br>{etiqueta} de la región: {_fmt(v)}"
+                   for r, d, v in zip(mapa.loc[con, "region"], mapa.loc[con, "depto"], mapa.loc[con, "valor"])],
+        hoverinfo="text"))
+    # El nombre y la cifra de cada región en un punto fijo de su zona (el
+    # centro de sus departamentos dejaba «Andina» encima de «Orinoquía»).
+    for r, v in por_region.items():
+        lat, lon = _ETIQUETA_REGION[r]
+        fig.add_trace(go.Scattergeo(lat=[lat], lon=[lon], mode="text", text=[f"<b>{r}</b><br>{_fmt(v)}"],
+                                    textfont=dict(size=13, color="#ffffff"), hoverinfo="skip", showlegend=False))
+    fig.update_geos(fitbounds="locations", visible=False, bgcolor="rgba(0,0,0,0)")
+    fig.update_layout(height=620, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)",
+                      font=dict(color=texto), dragmode=False)
+    izq, der = st.columns([1.6, 1])
+    with izq:
+        chart_card("Mapa por región natural",
+                   f"Cada departamento lleva el color de su región · {etiqueta} {'promedio' if calculo == 'Promedio' else 'total'} por región",
+                   fig, key="geo_regiones_mapa", visual_type="MAPA", badge_text=f"{len(por_region)} regiones")
+    with der:
+        st.markdown('<div class="geo-reg-lista">' + "".join(
+            f'<div class="geo-reg"><i style="background:{_COLOR_REGION.get(r, "#64748b")}"></i>'
+            f'<div><b>{_esc(r)}</b><small>{len(T.REGIONES_NATURALES[r])} departamentos</small>'
+            f'<div class="geo-reg-barra"><span style="width:{v / por_region.iloc[0] * 100:.0f}%;'
+            f'background:{_COLOR_REGION.get(r, "#64748b")}"></span></div></div>'
+            f'<div class="geo-reg-cifra"><b>{_fmt(v)}</b><small>{v / total * 100:.1f}%'
+            + (f' · <em class="{"pos" if variacion[r] >= 0 else "neg"}">{variacion[r]:+.1f}%</em>' if r in variacion else "")
+            + '</small></div></div>' for r, v in por_region.items()) + "</div>", unsafe_allow_html=True)
+        if info["sin_ubicar"]:
+            st.caption("Sin región natural en el mapa: " + ", ".join(info["sin_ubicar"])
+                       + ". Son nombres propios del archivo (no una región del país), así que no se ubican para no inventar.")
+    st.markdown("""<style>
+.geo-reg-lista{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.geo-reg{display:grid;grid-template-columns:12px 1fr auto;gap:12px;align-items:center;padding:12px 14px;border-radius:14px;
+  background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-sm);animation:fadeUp .4s ease both}
+.geo-reg>i{width:12px;height:38px;border-radius:6px}
+.geo-reg b{font-size:14px;color:var(--text)}
+.geo-reg small{display:block;font-size:11.5px;color:var(--muted)}
+.geo-reg-barra{height:6px;border-radius:999px;background:var(--panel-2);margin-top:6px;overflow:hidden}
+.geo-reg-barra span{display:block;height:100%;border-radius:999px}
+.geo-reg-cifra{text-align:right}
+.geo-reg-cifra em{font-style:normal;font-weight:700}
+.geo-reg-cifra em.pos{color:var(--green-strong)}
+.geo-reg-cifra em.neg{color:var(--red)}
+</style>""", unsafe_allow_html=True)
+
+
 def render_georeferencing(df: pd.DataFrame, schema: dict, workbook: dict | None = None, sheet: str | None = None):
     """Mapa del panel: el mapa territorial sobre los datos filtrados, con un
     clic a la consola completa. Si los lugares no son de Colombia, el mapa general."""
@@ -760,7 +887,12 @@ def render_georeferencing(df: pd.DataFrame, schema: dict, workbook: dict | None 
     except Exception:
         ub, meta = None, {"ubicadas": 0}
     if ub is None or not meta.get("ubicadas") or not meta.get("en_colombia", True):
-        _render_generico(df, schema)
+        # Antes del mapa general: ¿son regiones naturales de Colombia?
+        regiones = T.regiones_naturales(df, schema)
+        if regiones:
+            _render_regiones(df, schema, regiones)
+        else:
+            _render_generico(df, schema)
         return
     st.markdown("<style>" + M.CSS_MAPA + "</style>", unsafe_allow_html=True)
 

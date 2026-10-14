@@ -200,11 +200,29 @@ def test_colores_de_seccion():
     check("la barra usa claves por nombre (no por posición)", 'key=f"nav_btn_{slug(etiqueta)}"' in tabs)
 
 
+def test_regiones_naturales():
+    """«Caribe», «Andina», «Pacífico»… son regiones naturales de Colombia, no
+    lugares de otro país: el mapa decía «no son de Colombia» y las ubicaba mal."""
+    import pandas as pd
+    import core.territorio as T
+    check("se reconocen con sus variantes", [T.region_natural(x) for x in
+          ["Caribe", "REGIÓN PACÍFICO", "Llanos Orientales", "Amazonía", "Centro", "R1", "Antioquia"]]
+          == ["Caribe", "Pacífica", "Orinoquía", "Amazonía", None, None, None])
+    todos = sorted(c for cods in T.REGIONES_NATURALES.values() for c in cods)
+    check("las 6 regiones cubren los 33 departamentos, sin repetir", todos == sorted(T.departamentos()["cod_dpto"]))
+    df = pd.DataFrame({"Region": ["Caribe", "Andina", "Pacífico", "Orinoquía", "Caribe"], "Ventas": [1, 2, 3, 4, 5]})
+    info = T.regiones_naturales(df, {})
+    check("se encuentra la columna de regiones", info and info["columna"] == "Region" and not info["sin_ubicar"])
+    otra = pd.DataFrame({"Zona": ["Norte", "Sur", "Centro", "Caribe"]})
+    check("una columna con solo una región entre muchas no se toma por regiones", T.regiones_naturales(otra, {}) is None)
+
+
 def main():
     test_sin_marcas()
     test_acciones_del_javascript()
     test_todas_las_pantallas_existen()
     test_colores_de_seccion()
+    test_regiones_naturales()
     test_datos_de_las_vistas()
     test_con_v2_monta_la_escena()
     test_version_clasica_sin_v2()

@@ -935,3 +935,66 @@ def lectura(z: dict, crecer: dict, cob: dict, metrica_label: str) -> list[str]:
                       f"10.000 habitantes, frente a {cifra(crecer['penetracion_tipica'])} en un municipio típico de tu "
                       f"red: llevarlo a la mitad del camino vale **{cifra(r0['potencial'])}**.")
     return frases
+
+
+# ── Regiones naturales ────────────────────────────────────────────────────
+# Muchos archivos comerciales no traen municipio ni departamento sino la
+# región natural («Caribe», «Andina», «Pacífico»…). No son lugares puntuales:
+# el mapa los pintaba como «no son de Colombia» y los ubicaba mal. Cada región
+# es un conjunto de departamentos (división del IGAC); el mapa pinta cada
+# departamento con el valor de su región.
+
+REGIONES_NATURALES = {
+    "Caribe": ("08", "13", "20", "23", "44", "47", "70"),
+    "Andina": ("05", "11", "15", "17", "25", "41", "54", "63", "66", "68", "73"),
+    "Pacífica": ("19", "27", "52", "76"),
+    "Orinoquía": ("50", "81", "85", "99"),
+    "Amazonía": ("18", "86", "91", "94", "95", "97"),
+    "Insular": ("88",),
+}
+_ALIAS_REGION = {
+    "caribe": "Caribe", "costa": "Caribe", "costa caribe": "Caribe", "costa atlantica": "Caribe", "atlantica": "Caribe",
+    "andina": "Andina", "andes": "Andina", "region andina": "Andina",
+    "pacifica": "Pacífica", "pacifico": "Pacífica", "costa pacifica": "Pacífica",
+    "orinoquia": "Orinoquía", "orinoquia colombiana": "Orinoquía", "llanos": "Orinoquía", "llanos orientales": "Orinoquía",
+    "amazonia": "Amazonía", "amazonica": "Amazonía",
+    "insular": "Insular", "islas": "Insular",
+}
+
+
+def region_natural(texto) -> Optional[str]:
+    """«Región Caribe», «CARIBE», «Pacífico», «Llanos orientales» → la región
+    natural; None si el texto no es una (p. ej. «Centro», «R1», «Antioquia»)."""
+    if texto is None or (isinstance(texto, float) and math.isnan(texto)):
+        return None
+    t = normalizar(str(texto))
+    for prefijo in ("region ", "zona ", "reg "):
+        if t.startswith(prefijo):
+            t = t[len(prefijo):].strip()
+    return _ALIAS_REGION.get(t)
+
+
+def regiones_naturales(df: pd.DataFrame, schema: dict) -> Optional[dict]:
+    """La columna del archivo que trae regiones naturales, si la hay.
+
+    Devuelve {"columna", "mapa": {valor: región}, "sin_ubicar": [valores]}. Se
+    exige que al menos la mitad de los valores distintos sean regiones, para no
+    confundir una columna cualquiera que tenga «Caribe» entre muchos otros."""
+    candidatas = list(dict.fromkeys(list((schema or {}).get("geo") or []) + list((schema or {}).get("categorical") or [])
+                                     + [c for c in df.columns if df[c].dtype == object]))
+    mejor = None
+    for c in candidatas:
+        if c not in df.columns:
+            continue
+        distintos = [v for v in df[c].dropna().astype(str).str.strip().unique() if v][:60]
+        if not distintos or len(distintos) > 30:
+            continue
+        mapa = {v: region_natural(v) for v in distintos}
+        ok = sum(r is not None for r in mapa.values())
+        if ok >= 2 and ok / len(distintos) >= 0.5 and (mejor is None or ok > mejor[1]):
+            mejor = (c, ok, mapa)
+    if mejor is None:
+        return None
+    c, _, mapa = mejor
+    return {"columna": c, "mapa": {v: r for v, r in mapa.items() if r},
+            "sin_ubicar": sorted(v for v, r in mapa.items() if not r)}

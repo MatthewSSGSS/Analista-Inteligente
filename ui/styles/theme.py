@@ -1400,6 +1400,46 @@ section[data-testid="stSidebar"] [data-baseweb="tag"]{background:color-mix(in sr
 [data-testid="stMain"] .stTabs [aria-selected="true"],[data-testid="stMain"] .stTabs [aria-selected="true"] *{color:#fff!important}
 [data-testid="stMain"] .stTabs .react-aria-SelectionIndicator,[data-testid="stMain"] .stTabs [data-baseweb="tab-highlight"]{display:none!important}
 
+/* ── Campos con los colores del tema (claro y oscuro) ─────────────────────
+   Streamlit envuelve cada campo en una caja con SU tema (config.toml: claro):
+   en modo oscuro el buscador, los selectores, las fechas y los números
+   quedaban como cajas blancas. Se pintan con los tokens del panel. */
+[data-testid="stTextInputRootElement"],[data-testid="stNumberInputContainer"],
+[data-testid="stDateInput"] [data-baseweb="input"],[data-testid="stTimeInput"] [data-baseweb="input"],
+[data-testid="stSelectbox"] .react-aria-ComboBox>div,[data-testid="stMultiSelect"] .react-aria-ComboBox>div,
+[data-testid="stSelectbox"] [data-baseweb="select"]>div,[data-testid="stMultiSelect"] [data-baseweb="select"]>div,
+[data-testid="stTextArea"] [data-baseweb="textarea"]{
+  background:var(--panel)!important;border-color:var(--line)!important;color:var(--text)!important}
+section[data-testid="stSidebar"] [data-testid="stTextInputRootElement"],section[data-testid="stSidebar"] [data-testid="stNumberInputContainer"],
+section[data-testid="stSidebar"] [data-testid="stDateInput"] [data-baseweb="input"],
+section[data-testid="stSidebar"] [data-testid="stSelectbox"] .react-aria-ComboBox>div,section[data-testid="stSidebar"] [data-testid="stMultiSelect"] .react-aria-ComboBox>div,
+section[data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"]>div,section[data-testid="stSidebar"] [data-testid="stMultiSelect"] [data-baseweb="select"]>div{
+  background:var(--sidebar-panel)!important;border-color:var(--sidebar-line)!important}
+.st-key-natural_query_search [data-testid="stTextInputRootElement"]{background:var(--panel-2)!important;border-radius:999px!important}
+[data-testid="stTextInputRootElement"] input,[data-testid="stNumberInputContainer"] input,[data-testid="stDateInput"] input,
+[data-testid="stSelectbox"] input,[data-testid="stMultiSelect"] input,[data-testid="stTextArea"] textarea{
+  background:transparent!important;color:var(--text)!important;-webkit-text-fill-color:var(--text)}
+section[data-testid="stSidebar"] [data-testid="stTextInputRootElement"] input,section[data-testid="stSidebar"] [data-testid="stDateInput"] input,
+section[data-testid="stSidebar"] [data-testid="stSelectbox"] input,section[data-testid="stSidebar"] [data-testid="stMultiSelect"] input{
+  color:var(--sidebar-text-strong)!important;-webkit-text-fill-color:var(--sidebar-text-strong)}
+/* Un botón con ayuda (help=) queda dentro de otro contenedor y perdía el tema
+   (en oscuro salía blanco, p. ej. «Preparar» del informe interactivo). */
+[data-testid="stTooltipHoverTarget"]>button[kind="secondary"]{background:var(--panel)!important;color:var(--text)!important;
+  border:1px solid var(--line)!important}
+[data-testid="stTooltipHoverTarget"]>button[kind="secondary"]:hover{border-color:var(--vista,var(--blue))!important;
+  color:var(--vista,var(--blue))!important}
+[data-testid="stTooltipHoverTarget"]>button[kind="secondary"] p{color:inherit!important}
+/* Las listas que se despliegan al abrir un selector. */
+.react-aria-Popover,[data-baseweb="popover"] [role="listbox"],[role="listbox"]{background:var(--panel)!important;color:var(--text)!important;
+  border:1px solid var(--line)!important;border-radius:12px!important}
+[role="listbox"] [role="option"]{color:var(--text)!important;background:transparent}
+[role="listbox"] [role="option"]:hover,[role="listbox"] [role="option"][data-focused="true"],[role="listbox"] [role="option"][aria-selected="true"]{
+  background:color-mix(in srgb,var(--vista,var(--blue)) 14%,var(--panel))!important}
+/* Fichas de los multiselect ([data-tag]): fondo del color de la sección y
+   texto siempre blanco (el nombre quedaba oscuro sobre el rojo). */
+[data-testid="stMain"] [data-testid="stMultiSelect"] [data-tag]{background:var(--vista,var(--blue))!important}
+[data-testid="stMultiSelect"] [data-tag],[data-testid="stMultiSelect"] [data-tag] *{color:#fff!important}
+
 /* ── Asistente: burbujas y sugerencias ────────────────────────────────── */
 [data-testid="stChatMessage"]{border-radius:18px!important;padding:14px 16px!important;border:1px solid var(--line);
   background:var(--panel)!important;box-shadow:var(--shadow-sm);animation:fadeUp .35s ease both}
@@ -1430,3 +1470,10 @@ def inject_theme(dark: bool) -> None:
     st.markdown(base_layer_css(dark), unsafe_allow_html=True)
     st.markdown(components_css(), unsafe_allow_html=True)
     st.markdown(pulido_css(), unsafe_allow_html=True)
+    if dark:
+        # Las tablas (st.dataframe) se dibujan en un lienzo con el tema propio
+        # de Streamlit, que es el claro (config.toml): en modo oscuro salían
+        # blancas. Se invierten los colores del lienzo (y se gira el tono para
+        # conservar los colores de las barras de progreso).
+        st.markdown('<style>[data-testid="stDataFrame"]{filter:invert(.9) hue-rotate(180deg);'
+                    'background:#ffffff!important;border-color:#d8dce6!important}</style>', unsafe_allow_html=True)
