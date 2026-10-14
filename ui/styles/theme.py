@@ -1429,6 +1429,12 @@ section[data-testid="stSidebar"] [data-testid="stSelectbox"] input,section[data-
 [data-testid="stTooltipHoverTarget"]>button[kind="secondary"]:hover{border-color:var(--vista,var(--blue))!important;
   color:var(--vista,var(--blue))!important}
 [data-testid="stTooltipHoverTarget"]>button[kind="secondary"] p{color:inherit!important}
+/* Fechas en Streamlit nuevo (la nube): el campo es un div [data-testid=stDateInputField]
+   con fondo blanco propio, no un <input> dentro de [data-baseweb=input]. */
+div[data-testid="stDateInputField"]{background:var(--panel)!important;color:var(--text)!important;border-color:var(--line)!important}
+section[data-testid="stSidebar"] div[data-testid="stDateInputField"]{background:var(--sidebar-panel)!important;
+  color:var(--sidebar-text-strong)!important;border-color:var(--sidebar-line)!important}
+div[data-testid="stDateInputField"] *{color:inherit!important}
 /* Las listas que se despliegan al abrir un selector. */
 .react-aria-Popover,[data-baseweb="popover"] [role="listbox"],[role="listbox"]{background:var(--panel)!important;color:var(--text)!important;
   border:1px solid var(--line)!important;border-radius:12px!important}

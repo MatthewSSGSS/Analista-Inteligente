@@ -196,6 +196,10 @@ the selected subset. The selection only decides what's *displayed*; state the gr
   "fix" this silently; it's a deliberate temporary product decision.
 - `core/version.py` reads `.git/HEAD` directly (no `git` subprocess) to show which commit is
   actually deployed, because Streamlit Cloud deploys had silently served stale code before.
+- Stale code on Streamlit Cloud: a new commit reaches the disk and app.py is re-read, but imported modules
+  (core/, ui/, visualization/) stay in memory. The top of app.py compares the disk commit with
+  `sys._analista_commit` and, once per commit, drops those modules from `sys.modules` and reruns. Keep that
+  block self-contained in app.py (a stale module can't be trusted to carry the check — that took prod down once).
 - Missing values in numeric columns are treated as 0 for normal sheets, but **not** for
   report-style tables read via `core/informe.py` (`faltantes_son_cero=False`) — there, a blank
   month means "not yet reported," not zero, otherwise variance calculations show false 100% drops.
