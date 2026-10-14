@@ -179,3 +179,86 @@ function montar(parentElement, clase, html) {
   parentElement.appendChild(raiz);
   return raiz;
 }
+
+// Cuenta hasta la cifra de un texto ya formateado por Python («685.1M»,
+// «+20.2%», «4.7 mil M», «5,032»): anima solo el número y conserva el resto.
+function contarTexto(el, valor, ms = 1300) {
+  if (!el) return;
+  const txt = String(valor == null ? "" : valor);
+  const m = txt.match(/^(.*?)([+\-−]?)(\d[\d,]*(?:\.\d+)?)(.*)$/);
+  if (!m || !MOVIMIENTO) { el.textContent = txt; return; }
+  const [, pre, signo, num, post] = m;
+  const miles = num.includes(",");
+  const dec = (num.split(".")[1] || "").length;
+  const fin = parseFloat(num.replace(/,/g, ""));
+  const fmt = (v) => {
+    let s = v.toFixed(dec);
+    if (miles) { const [e, d] = s.split("."); s = e.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (d ? "." + d : ""); }
+    return pre + signo + s + post;
+  };
+  const t0 = performance.now();
+  const paso = (t) => {
+    const p = Math.min(1, (t - t0) / ms);
+    el.textContent = fmt(fin * (1 - Math.pow(1 - p, 3)));
+    if (p < 1) requestAnimationFrame(paso); else el.textContent = txt;
+  };
+  requestAnimationFrame(paso);
+}
+
+// Texto seguro con los porcentajes y variaciones resaltados por su signo.
+function conCifras(valor) {
+  // Solo una cifra con signo que empieza palabra: «R-4» o «2025-26» no se tocan.
+  return texto(valor).replace(/(^|[\s(])([+\-−]\s?\d[\d,]*(?:\.\d+)?\s?(?:%|pts)?)/g, (_, antes, s) =>
+    `${antes}<b class="${/^[\-−]/.test(s) ? "neg" : "pos"}">${s}</b>`);
+}
+
+// Activa la animación de entrada de un elemento cuando aparece en pantalla.
+function alVerse(el, fn) {
+  if (!el) return () => {};
+  if (!MOVIMIENTO || !("IntersectionObserver" in window)) { fn(); return () => {}; }
+  const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { fn(); io.disconnect(); } }, { threshold: 0.2 });
+  io.observe(el);
+  return () => io.disconnect();
+}
+
+// ── Piezas del tablero (parte del día y resumen) ──────────────────────
+const ICONOS_KPI = { mes: "📅", meta: "🎯", anual: "🔁", acumulado: "📈", margen: "💰", ticket: "🧾" };
+
+function areaSvg(serie, id = "pdGrad") {
+  // Área de los últimos meses: línea que se dibuja sola y el último punto que late.
+  if (!serie || serie.length < 2) return "";
+  const W = 320, H = 120, pad = 6;
+  const vals = serie.map((p) => p.v);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const rango = max - min || 1;
+  const xs = serie.map((_, i) => pad + (i * (W - 2 * pad)) / (serie.length - 1));
+  const ys = vals.map((v) => H - 14 - ((v - min) / rango) * (H - 34));
+  const linea = xs.map((x, i) => `${i ? "L" : "M"}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
+  const area = `${linea} L${xs[xs.length - 1].toFixed(1)},${H} L${xs[0].toFixed(1)},${H} Z`;
+  const ult = xs.length - 1;
+  const puntos = xs.map((x, i) => `<circle class="pd-pt" cx="${x.toFixed(1)}" cy="${ys[i].toFixed(1)}" r="3" data-i="${i}"/>`).join("");
+  return `
+    <svg class="pd-area" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="#ff5b6c" stop-opacity=".45"/><stop offset="100%" stop-color="#ff5b6c" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path class="pd-area-relleno" d="${area}" fill="url(#${id})"/>
+      <path class="pd-area-linea" d="${linea}" pathLength="1"/>
+      ${puntos}
+      <circle class="pd-pt-ult" cx="${xs[ult].toFixed(1)}" cy="${ys[ult].toFixed(1)}" r="4.5"/>
+      <circle class="pd-pt-onda" cx="${xs[ult].toFixed(1)}" cy="${ys[ult].toFixed(1)}" r="4.5"/>
+    </svg>`;
+}
+
+function tarjetaKpi(k, i) {
+  const anillo = k.clave === "meta" && k.pct != null ? `
+      <svg class="pd-anillo" viewBox="0 0 44 44"><circle class="fondo" cx="22" cy="22" r="18"/>
+        <circle class="avance ${k.tono}" cx="22" cy="22" r="18" pathLength="100" style="--pct:${Math.max(0, Math.min(100, k.pct))}"/></svg>` : "";
+  return `
+    <article class="pd-kpi pd-${k.tono}" data-revelar="${i * 80}">
+      <div class="pd-kpi-cab"><span class="pd-kpi-ico">${ICONOS_KPI[k.clave] || "•"}</span><small>${texto(k.etiqueta)}</small></div>
+      <div class="pd-kpi-cuerpo"><b data-contar="${texto(k.valor)}">${texto(k.valor)}</b>${anillo}</div>
+      ${k.detalle ? `<em>${conCifras(k.detalle)}</em>` : ""}
+    </article>`;
+}
+

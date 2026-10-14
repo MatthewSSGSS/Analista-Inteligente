@@ -47,6 +47,12 @@ def test_acciones_del_javascript():
     modos = (web / "modos.js").read_text(encoding="utf-8")
     from ui.mode_choice import _MODOS
     check("cada modo del JavaScript lo atiende Python", set(re.findall(r'clave: "([a-z]+)"', modos)) == set(_MODOS))
+    # Inicio y Resumen: cada botón del JS tiene su botón oculto en Python.
+    home = (RAIZ / "ui" / "home.py").read_text(encoding="utf-8")
+    ejecutivo = (RAIZ / "ui" / "executive.py").read_text(encoding="utf-8")
+    for js, py, nombre in (("parte.js", home, "Inicio"), ("resumen.js", ejecutivo, "Resumen")):
+        en_js = set(re.findall(r'data-accion="([a-z]+)"', (web / js).read_text(encoding="utf-8")))
+        check(f"{nombre}: cada botón del JavaScript tiene su botón oculto", en_js and all(f'"{a}":' in py for a in en_js))
 
 
 def test_version_clasica_sin_v2():

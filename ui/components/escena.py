@@ -22,6 +22,9 @@ import streamlit as st
 
 _WEB = Path(__file__).resolve().parent.parent / "web"
 _registradas: dict = {}
+# Pantallas que reutilizan los estilos de otra (el resumen usa las tarjetas
+# y el recuadro oscuro del parte del día).
+_CSS_EXTRA = {"resumen": ["parte"]}
 
 NO_DISPONIBLE = object()
 
@@ -46,15 +49,17 @@ def _componente(nombre: str):
         from streamlit.components import v2
         _registradas[nombre] = v2.component(
             f"escena_{nombre}",
-            css=_leer("comun.css") + "\n" + _leer(f"{nombre}.css"),
+            css="\n".join(_leer(f"{n}.css") for n in ["comun", *_CSS_EXTRA.get(nombre, []), nombre]),
             js=_leer("comun.js") + "\n" + _leer(f"{nombre}.js"),
         )
     return _registradas[nombre]
 
 
-def botones_ocultos(botones: dict[str, str]) -> str | None:
+def botones_ocultos(botones: dict[str, str], al_pulsar: dict | None = None) -> str | None:
     """Botones normales de Streamlit, invisibles, uno por acción
     ({acción: clave del botón}). Devuelve la acción cuyo botón se pulsó.
+    `al_pulsar` = {acción: (función, args)} corre como `on_click`, antes del
+    rerun (lo que necesita `ir_a` para cambiar de vista).
 
     Son el camino principal del clic: el JavaScript de la pantalla busca el
     botón por su clave (`.st-key-<clave> button`) y lo pulsa. Es el mismo
@@ -68,7 +73,8 @@ def botones_ocultos(botones: dict[str, str]) -> str | None:
                 unsafe_allow_html=True)
     elegida = None
     for accion, clave in botones.items():
-        if st.button(accion, key=clave):
+        fn, args = (al_pulsar or {}).get(accion, (None, ()))
+        if st.button(accion, key=clave, on_click=fn, args=args):
             elegida = accion
     return elegida
 

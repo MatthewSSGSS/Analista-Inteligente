@@ -15,6 +15,7 @@ from ui.components.charts import chart_card
 from ui.components.section import section_header, banner_header
 from ui.layouts.columns import two_column, kpi_grid
 from ui.person_profile import has_entity
+from ui.components.escena import NO_DISPONIBLE, botones_ocultos, escena
 
 
 def _gerencia(df, schema, dashboard):
@@ -137,7 +138,156 @@ def _veredicto_con_meses(dashboard, g):
     return {**dashboard, "executive": ex}
 
 
+def _metrica_principal(df, schema, dashboard):
+    metrics = metric_candidates(df, schema)
+    m = metrics[0] if metrics else None
+    principal = (dashboard or {}).get("primary_metric") if isinstance(dashboard, dict) else None
+    return principal if principal in metrics else m
+
+
+def _proyeccion(df, schema, m) -> dict | None:
+    """«A este ritmo…»: project_metric sobre la serie mensual (ver la versión
+    clásica para el porqué de cada decisión). None si no hay con qué."""
+    if not (m and schema.get("dates")):
+        return None
+    ps = period_series(df, schema, m, "Mes", "Automático")
+    if len(ps) < 3:
+        return None
+    timeline = ps.rename(columns={m: "_num"})
+    last_period = pd.to_datetime(ps["period"]).max()
+    target = last_period + pd.DateOffset(months=3)
+    proj = project_metric(timeline, target)
+    if proj.get("status") != "ok":
+        return None
+    r2 = proj.get("r2", 0) or 0
+    confianza = "alta" if r2 >= 0.6 else "media" if r2 >= 0.3 else "baja"
+    ultimo = float(ps.iloc[-1][m])
+    cambio = (proj["projected"] - ultimo) / abs(ultimo) * 100 if ultimo else None
+    rumbo = ("" if cambio is None else
+             f", {'por encima' if cambio > 1 else 'por debajo' if cambio < -1 else 'cerca'} "
+             f"de {format_month_year(last_period, full=True).lower()} ({cambio:+.0f}%)")
+    texto = (f"A este ritmo, {_label(schema, m)} estaría en ≈ {_fmt(proj['projected'])} en "
+             f"{format_month_year(target, full=True).lower()}{rumbo}. Sale de la tendencia de "
+             f"{proj['points']} meses. El detalle, en «🔮 Proyección».")
+    serie = [{"m": format_month_year(pd.to_datetime(r["period"])).lower(), "v": float(r[m]), "t": _fmt(float(r[m]))}
+             for _, r in ps.tail(8).iterrows()]
+    return {"texto": texto, "confianza": confianza, "serie": serie,
+            "meta": {"m": format_month_year(target).lower(), "v": float(proj["projected"]), "t": _fmt(proj["projected"])}}
+
+
+def _datos_resumen(df, schema, dashboard) -> dict | None:
+    """Todo lo que dibuja el resumen en JavaScript (ui/web/resumen.*),
+    calculado aquí. None si no hay veredicto con qué armarlo."""
+    import re
+    if not (isinstance(dashboard, dict) and dashboard.get("executive")):
+        return None
+    g = _gerencia(df, schema, dashboard)
+    ex = (_veredicto_con_meses(dashboard, g) or {}).get("executive") or {}
+    if not ex.get("headline"):
+        return None
+    limpio = lambda t: clean_display_text(re.sub(r"<[^>]+>", "", str(t or "")))
+    m = _metrica_principal(df, schema, dashboard)
+    status = ex.get("status", "neutral")
+    tono = status if status in ("positive", "negative") else "neutral"
+    estado = ex.get("status_label") or ("Situación favorable" if tono == "positive"
+                                        else "Requiere atención" if tono == "negative" else "Situación estable")
+    frases = []
+    if g and g.get("frases"):
+        frases = [limpio(f) for f in g["frases"]
+                  if not f.startswith("En sentido contrario") and not f.startswith("Le siguen")][:3]
+    kpis = []
+    for i in (indicadores_gerente(df, schema, g, m) if (g and m) else [])[:5]:
+        k = dict(i)
+        if i["clave"] == "meta":
+            try:
+                k["pct"] = float(str(i["valor"]).replace("%", "").replace(",", ""))
+            except ValueError:
+                k["pct"] = None
+        kpis.append(k)
+    lider = [k for k in dynamic_kpis(df, schema, dashboard) if k.get("kind") == "leader"][:1]
+    for k in lider:
+        etiqueta, tone, _ = _kpi_style(k, schema)
+        kpis.append({"clave": "lider", "etiqueta": f"{etiqueta} · todo el periodo" if schema.get("dates") else etiqueta,
+                     "valor": limpio(_display_kpi_value(k)), "detalle": limpio(k.get("detalle")) if k.get("detalle") else None,
+                     "tono": tone if tone in ("positive", "negative") else "neutral"})
+    sen = (_senales_con_nombres(dashboard, g) or {}).get("executive") or {}
+    senales = {"positivas": [limpio(x) for x in (sen.get("positive") or [])[:3]],
+               "vigilar": [limpio(x) for x in (sen.get("watch") or [])[:3]]}
+    orden = {"warning": 0, "positive": 1}
+    lectura = []
+    for x in sorted(dashboard.get("insights") or [], key=lambda i: orden.get(i.get("kind"), 2))[:3]:
+        lectura.append({"titulo": limpio(x.get("title") or x.get("label") or "Hallazgo"),
+                        "texto": limpio(x.get("finding") or x.get("message") or x.get("text") or x.get("description") or ""),
+                        "accion": limpio(x.get("action")) if x.get("action") else None,
+                        "tipo": x.get("kind") if x.get("kind") in ("warning", "positive") else "info"})
+    return {
+        "veredicto": {"titular": limpio(ex["headline"]), "detalle": limpio(ex.get("detail")), "estado": limpio(estado),
+                      "tono": tono, "periodo": f"{g['mes_b']} frente a {g['mes_a']}" if g and g.get("mes_a") else ""},
+        "porque": {"frases": frases},
+        "kpis": kpis,
+        "senales": senales if (senales["positivas"] or senales["vigilar"]) else None,
+        "proyeccion": _proyeccion(df, schema, m),
+        "lectura": lectura,
+        "seguimiento": bool(has_entity(df, schema)),
+    }
+
+
+def _graficos(df, schema, dashboard) -> None:
+    """Los tres gráficos que importan (el primero a todo el ancho)."""
+    metrics = metric_candidates(df, schema)
+    dims = dimension_candidates(df, schema)
+    m = _metrica_principal(df, schema, dashboard)
+    if not m:
+        return
+    d = _dimension_de_lectura(df, schema, dims, _gerencia(df, schema, dashboard))
+    specs = smart_chart_questions(df, schema, m, d)
+    chart_items = []
+    for title, q, kind in specs:
+        if len(chart_items) >= 3:
+            break
+        if kind == "trend": fig = trend(df, schema, m, "Mes", "Automático", False)
+        elif kind == "trend_dia": fig = trend(df, schema, m, "Día", "Automático", False)
+        elif kind == "concentracion" and d: fig = concentracion(df, schema, m, d)
+        elif kind == "ranking" and d: fig = ranking(df, schema, m, d, 8, "Automático")
+        elif kind == "period_compare" and d: fig = period_compare_bar(df, schema, m, d, "Mes", "Automático", 8)
+        elif kind == "donut" and d: fig = donut(df, schema, m, d, 8)
+        elif kind == "rangos": fig = rangos(df, schema, m)
+        elif kind == "histogram": fig = histogram(df, schema, m)
+        else: continue
+        if fig is not None:
+            chart_items.append((title, q, fig, kind, len(chart_items)))
+    if not chart_items:
+        return
+    st.markdown(section_header("Gráficos que importan", eyebrow="ANÁLISIS", compact=True), unsafe_allow_html=True)
+    main_title, main_q, main_fig, main_kind, main_idx = chart_items[0]
+    chart_card(main_title, main_q, main_fig, key=f"executive_{main_kind}_{main_idx}")
+    secondary = chart_items[1:3]
+    if secondary:
+        cols = st.columns(len(secondary))
+        for i, (title, q, fig, kind, idx) in enumerate(secondary):
+            with cols[i]:
+                chart_card(title, q, fig, key=f"executive_{kind}_{idx}")
+
+
 def render_executive(df, schema, dashboard):
+    """Resumen ejecutivo. Arriba, en JavaScript (ui/web/resumen.*): veredicto
+    que se escribe, por qué y qué atacar, cifras que cuentan, señales,
+    proyección que se traza y la lectura analítica; debajo, los gráficos.
+    Sin JavaScript, la versión clásica."""
+    datos = _datos_resumen(df, schema, dashboard)
+    if datos is not None:
+        botones = {"atacar": "ir_atacar_resumen"}
+        if datos["seguimiento"]:
+            botones["seguimiento"] = "ir_seguimiento_res"
+        if escena("resumen", {**datos, "botones": botones}, clave="resumen_js") is not NO_DISPONIBLE:
+            botones_ocultos(botones, {"atacar": (ir_a, (VISTA_ATACAR,)), "seguimiento": (ir_a, (VISTA_SEGUIMIENTO,))})
+            _graficos(df, schema, dashboard)
+            st.caption(f"{len(df):,} registros visibles · los indicadores se recalculan con la selección actual.")
+            return
+    _render_clasico(df, schema, dashboard)
+
+
+def _render_clasico(df, schema, dashboard):
     st.markdown(banner_header("Resumen ejecutivo", "Vista ejecutiva · lectura compacta para decidir rápido. El contenido se adapta al tipo de Excel detectado.", "ciudad_red.jpg"), unsafe_allow_html=True)
 
     # ── Veredicto ejecutivo: lo primero que se lee, antes que cualquier KPI

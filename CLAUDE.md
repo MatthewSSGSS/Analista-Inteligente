@@ -76,6 +76,9 @@ Inside `ui/`:
   clicks via `setTriggerValue("accion", ...)`; Python decides what happens. `escena()` returns `NO_DISPONIBLE` when v2
   is missing or fails, and each view then draws its classic Streamlit version — keep both paths working
   (`tests/pantallas_js_test.py`). Login fields stay Streamlit widgets so the password never passes through JS.
+  Inicio (`ui/home._datos_parte` → `ui/web/parte.*`) and Resumen (`ui/executive._datos_resumen` → `ui/web/resumen.*`)
+  use the same pattern: a `_datos_*` builder computes plain-text data in Python, the JS only draws it; clicks go
+  through hidden native buttons (`escena.botones_ocultos`, with `on_click=ir_a` for navigation).
 - `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
   Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a
   «➕ Más» menu, and **only the active view is executed** (unlike `st.tabs`, which ran every tab on every

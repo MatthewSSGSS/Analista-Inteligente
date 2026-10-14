@@ -119,25 +119,57 @@ def test_canales_no_minimiza_un_canal_grande():
 def test_inicio_es_el_parte_del_dia():
     import streamlit as st
     from streamlit.delta_generator import DeltaGenerator
+    import ui.home as home
+    from ui.components.escena import NO_DISPONIBLE
     from ui.home import render_home
 
     df, perfil = _ventas()
     db = build_dashboard(df, perfil)
     wb = {"filename": "ventas.xlsx", "sheets": {"Ventas": {"processed": df, "profile": perfil}}}
+
+    # Lo que dibuja el JavaScript (ui/web/parte.*) sale de _datos_parte.
+    datos = home._datos_parte(df, perfil["schema"], db)
+    check("el parte en JS trae el titular del mes", datos and datos["titular"] == db["gerencia"]["titular"])
+    check("puesto en perspectiva contra el año (sin HTML)", datos["perspectiva"].startswith("En perspectiva")
+          and "<" not in datos["perspectiva"])
+    check("con el gráfico de los últimos 13 meses", len(datos["serie"]) == 13)
+    check("con las cifras del gerente (meta con su porcentaje para el anillo)",
+          any(k["clave"] == "meta" and k.get("pct") for k in datos["kpis"]))
+    check("con qué lo movió, de mayor a menor", datos["movio"] and
+          [f["delta"] for f in datos["movio"]["filas"]] == sorted((f["delta"] for f in datos["movio"]["filas"]), reverse=True))
+    check("y qué hacer, con lo que vale al mes", any(a["valor"] for a in datos["acciones"]))
+    check("«explican el 273%» no aparece nunca", "%" not in datos["movio"]["subtitulo"]
+          or int(datos["movio"]["subtitulo"].split("el ")[1].split("%")[0]) <= 100)
+
+    # Y la versión clásica (sin JavaScript) sigue diciendo lo mismo.
     textos = []
-    original_st, original_dg = st.markdown, DeltaGenerator.markdown
+    original_st, original_dg, original_escena = st.markdown, DeltaGenerator.markdown, home.escena
     st.markdown = lambda body, *a, **k: textos.append(str(body))
     DeltaGenerator.markdown = lambda self, body, *a, **k: textos.append(str(body))
+    home.escena = lambda *a, **k: NO_DISPONIBLE
     try:
         render_home(wb, "Ventas", {}, db, df=df, schema=perfil["schema"])
     finally:
-        st.markdown, DeltaGenerator.markdown = original_st, original_dg
+        st.markdown, DeltaGenerator.markdown, home.escena = original_st, original_dg, original_escena
     todo = " ".join(textos)
     check("abre con lo que hay que saber", "Lo que tienes que saber" in todo)
     check("con el titular del mes", db["gerencia"]["titular"].split(":")[0] in todo)
     check("puesto en perspectiva contra el año", "En perspectiva" in todo)
     check("y qué hacer, con lo que vale", "Qué hacer ahora" in todo and "al mes" in todo)
     check("ya no abre con «Bienvenido»", "Bienvenido" not in todo)
+
+
+def test_resumen_en_js():
+    from ui.executive import _datos_resumen
+    df, perfil = _ventas()
+    db = build_dashboard(df, perfil)
+    d = _datos_resumen(df, perfil["schema"], db)
+    check("el resumen en JS trae el veredicto con los meses", d and "julio de 2026" in d["veredicto"]["titular"])
+    check("sus tarjetas: las del gerente más quién va primero", d["kpis"][-1]["clave"] == "lider" and len(d["kpis"]) >= 4)
+    check("señales con nombre y cifra", d["senales"] and any("Caribe" in x for x in d["senales"]["positivas"]))
+    check("proyección con la serie real y el punto proyectado", d["proyeccion"] and len(d["proyeccion"]["serie"]) >= 3
+          and d["proyeccion"]["meta"]["v"] > 0)
+    check("ningún texto lleva HTML suelto", "<" not in str(d))
 
 
 def main():
@@ -147,6 +179,7 @@ def main():
     test_indicadores_del_gerente()
     test_canales_no_minimiza_un_canal_grande()
     test_inicio_es_el_parte_del_dia()
+    test_resumen_en_js()
     print("\nPresentación test completado sin errores.")
 
 

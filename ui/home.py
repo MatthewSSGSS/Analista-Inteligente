@@ -18,6 +18,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.components.cards import kpi_card, executive_headline, note_group
+from ui.components.escena import NO_DISPONIBLE, botones_ocultos, escena
 from core.executive import indicadores_gerente
 from ui.imagenes import render_imagenes
 from ui.components.section import section_header, decision_strip
@@ -275,11 +276,108 @@ def _tarjeta_accion(n: int, a: dict, mes: str) -> str:
             + f"</div>{valor}</div>")
 
 
-def _parte_del_dia(df, schema, dashboard) -> bool:
-    """Titular + cifras + qué hacer. Devuelve False si no hay con qué armarlo."""
+def _serie_mensual(df, schema, metrica, meses: int = 13) -> list[dict]:
+    """Total por mes de la métrica, los últimos `meses`: el gráfico del parte."""
+    from core.explorador import columna_fecha
+    from core.territorio import cifra
+    from visualization.charts import MESES_CORTOS
+    fecha = columna_fecha(df, schema)
+    if not fecha or metrica not in df.columns:
+        return []
+    valores = pd.to_numeric(df[metrica], errors="coerce")
+    periodos = pd.to_datetime(df[fecha], errors="coerce").dt.to_period("M")
+    serie = valores.groupby(periodos).sum(min_count=1).dropna().sort_index().tail(meses)
+    return [{"m": f"{MESES_CORTOS[p.month - 1]} {p.year}", "v": float(v), "t": cifra(float(v))}
+            for p, v in serie.items()]
+
+
+def _sin_html(texto) -> str:
+    return re.sub(r"<[^>]+>", "", str(texto or ""))
+
+
+def _datos_parte(df, schema, dashboard) -> dict | None:
+    """Todo lo que dibuja el parte del día en JavaScript (ui/web/parte.*),
+    calculado aquí. None si no hay análisis gerencial con qué armarlo."""
+    from core.territorio import cifra, cifra_signo
     g = dashboard.get("gerencia") if isinstance(dashboard, dict) else None
     if not (g and g.get("titular") and df is not None and schema):
+        return None
+    metrica = g.get("metrica")
+    indicadores = indicadores_gerente(df, schema, g, metrica) if metrica else []
+    por_clave = {i["clave"]: i for i in indicadores}
+    tono = ("negative" if g.get("empeoro") else "positive") if g.get("se_movio") else "neutral"
+    mes = por_clave.get("mes")
+    if mes:
+        cifra_mes = {"etiqueta": mes["etiqueta"], "valor": mes["valor"], "detalle": mes.get("detalle"), "tono": mes["tono"]}
+    else:
+        cifra_mes = {"etiqueta": f"{g.get('etiqueta') or metrica} · {g['mes_b']}", "valor": cifra(g.get("total_b")),
+                     "detalle": f"{g['pct']:+.1f}% vs {g['mes_a']}" if g.get("pct") is not None else None, "tono": tono}
+    kpis = []
+    for i in indicadores:
+        if i["clave"] == "mes":
+            continue
+        k = dict(i)
+        if i["clave"] == "meta":
+            try:
+                k["pct"] = float(str(i["valor"]).replace("%", "").replace(",", ""))
+            except ValueError:
+                k["pct"] = None
+        kpis.append(k)
+    causas = g.get("causas") or {}
+    filas = sorted((causas.get("nodos") or [])[:5] + (causas.get("compensaron") or [])[:3],
+                   key=lambda n: -(n.get("delta") or 0))
+    movio = None
+    if filas:
+        explicado = causas.get("explicado")
+        # Más del 100%: los que subieron suman más que el cambio total porque
+        # otros bajaron; «explican el 273%» no se entiende, se dice así.
+        if explicado and explicado <= 100:
+            alcance = f": explican el {explicado:.0f}% del cambio"
+        elif explicado:
+            alcance = ": unos subieron más que el cambio total y otros lo compensaron bajando"
+        else:
+            alcance = ""
+        movio = {"subtitulo": (f"Por {causas.get('etiqueta') or causas.get('dimension')}{alcance}"
+                               f" de {g['mes_a']} a {g['mes_b']}. Derecha = subió · izquierda = bajó."),
+                 "filas": [{"nombre": str(n["nombre"]), "delta": float(n.get("delta") or 0),
+                            "delta_txt": cifra_signo(n.get("delta")),
+                            "pct_txt": f"{n['pct']:+.1f}%" if n.get("pct") is not None else ""} for n in filas]}
+    acciones = [{**a, "valor": cifra(a["valor"]) if a.get("valor") else None,
+                 "pct": f"{a['pct']:.0f}% de {g['mes_b']}" if a.get("pct") else None} for a in _acciones(g)]
+    alertas = [{"titulo": str(a.get("title", "")), "texto": str(a.get("text", ""))}
+               for a in (dashboard.get("alerts") or []) if a.get("severity") == "Alta"
+               and "caída" not in str(a.get("title", "")).lower()][:2]
+    estado = ("Requiere atención" if g.get("empeoro") else "Va mejor") if g.get("se_movio") else "Estable"
+    return {
+        "encabezado": {"periodo": f"{g.get('etiqueta') or metrica} · {g['mes_b']} frente a {g['mes_a']}",
+                       "estado": estado, "tono": tono},
+        "titular": str(g["titular"]),
+        "perspectiva": _sin_html(_lectura_del_anio(indicadores, g)),
+        "causa": next((f for f in g.get("frases") or [] if f.startswith("La causa")), ""),
+        "nota": f"{g['mes_b']} todavía está en curso: sus cifras son parciales." if g.get("parcial") else "",
+        "cifra": cifra_mes,
+        "serie": _serie_mensual(df, schema, metrica) if metrica else [],
+        "kpis": kpis[:5],
+        "movio": movio,
+        "acciones": acciones,
+        "alertas": alertas,
+    }
+
+
+def _parte_del_dia(df, schema, dashboard) -> bool:
+    """Titular + cifras + qué hacer. Devuelve False si no hay con qué armarlo.
+
+    Se dibuja en JavaScript (ui/web/parte.*: titular que se escribe, cifras
+    que cuentan, gráfico que se traza, barras de «qué lo movió» y acciones
+    que se despliegan sin recargar). Sin JavaScript, la versión de abajo."""
+    datos = _datos_parte(df, schema, dashboard)
+    if datos is None:
         return False
+    botones = {"atacar": "inicio_ir_atacar", "resumen": "inicio_ir_resumen"}
+    if escena("parte", {**datos, "botones": botones}, clave="parte_js") is not NO_DISPONIBLE:
+        botones_ocultos(botones, {"atacar": (ir_a, (VISTA_ATACAR,)), "resumen": (ir_a, (VISTA_RESUMEN,))})
+        return True
+    g = dashboard["gerencia"]
     st.markdown(_CSS_PARTE, unsafe_allow_html=True)
     metrica = g.get("metrica")
     indicadores = indicadores_gerente(df, schema, g, metrica) if metrica else []
