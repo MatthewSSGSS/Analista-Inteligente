@@ -1,12 +1,8 @@
-.ai-acceso{max-width:460px;margin:6vh auto 0;text-align:center}
-.ai-acceso-banda{position:relative;overflow:hidden;border-radius:24px;padding:40px 28px 34px;
-  background:radial-gradient(600px 300px at 90% -20%,#2a0d18 0%,transparent 60%),
-             radial-gradient(500px 300px at -10% 120%,#0b2a33 0%,transparent 60%),
-             linear-gradient(160deg,#0a0e17,#0d1220);
-  box-shadow:0 24px 60px rgba(8,10,20,.28),inset 0 0 0 1px rgba(255,255,255,.06)}
-.ai-acceso-contenido{position:relative;z-index:1}
-.ai-orbe{display:block;width:46px;height:46px;margin:0 auto 16px;border-radius:50%;background:var(--brand-orb,var(--blue));
-  box-shadow:0 0 30px color-mix(in srgb,var(--blue) 65%,transparent),inset 0 -4px 8px rgba(0,0,0,.25),inset 0 3px 4px rgba(255,255,255,.35)}
-.ai-acceso h1{font-size:28px;font-weight:800;color:#fff}
-.ai-acceso-banda p{font-size:13.5px;color:#b9c0cf;margin-top:8px;line-height:1.5}
-.ai .ai-acceso-pide{font-size:13px;font-weight:650;color:var(--muted);margin:22px 0 4px}
+/* Marca del acceso, sobre el fondo oscuro de pantalla completa (ui/login.py). */
+.ai-acceso{max-width:520px;margin:9vh auto 0;text-align:center;color:#fff}
+.ai-orbe{display:block;width:54px;height:54px;margin:0 auto 18px;border-radius:50%;background:var(--brand-orb,var(--blue));
+  box-shadow:0 0 40px color-mix(in srgb,var(--blue) 70%,transparent),inset 0 -4px 8px rgba(0,0,0,.25),inset 0 3px 4px rgba(255,255,255,.35);
+  animation:ai-latido 3.2s ease-in-out infinite}
+@keyframes ai-latido{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+.ai-acceso h1{font-size:clamp(28px,3.4vw,38px);font-weight:800;color:#fff}
+.ai .ai-acceso p{font-size:14.5px;color:#b9c0cf;margin:10px 0 26px;line-height:1.55}

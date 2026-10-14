@@ -20,68 +20,85 @@ BYPASS_AUTH_TEMPORARY = True
 
 
 def render_login():
-    # Sin foto de fondo: la que había (una oficina con la marca de una
-    # empresa) ataba la app a una compañía. El fondo es el resplandor del
-    # tema sobre crema, y la cabecera animada (ui/web/acceso.*) pone la marca
-    # neutral de la app. Los campos siguen siendo de Streamlit: la
-    # contraseña va directo a Python, no pasa por JavaScript.
+    # Pantalla completa oscura con la red de datos animada (ui/web/acceso.*
+    # pone el canvas fijo detrás de la app) y el formulario en una tarjeta de
+    # vidrio encima. Antes la animación vivía en un recuadro suelto sobre
+    # fondo crema y se veía desordenado. Sin foto: la que había (una oficina
+    # con la marca de una empresa) ataba la app a una compañía. Los campos
+    # siguen siendo de Streamlit: la contraseña va directo a Python.
     style_block = """
         <style>
-        @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 
-        /* Resplandor del color de acento sobre fondo crema. */
-        [data-testid="stAppViewContainer"],[data-testid="stApp"],[data-testid="stMain"],html,body{
-          background-image:
-            radial-gradient(ellipse 900px 500px at 8% 6%, rgba(228,0,43,.20), transparent 60%),
-            radial-gradient(ellipse 900px 550px at 92% 96%, rgba(228,0,43,.16), transparent 60%),
-            radial-gradient(ellipse 700px 500px at 50% 100%, rgba(228,0,43,.10), transparent 65%),
-            linear-gradient(rgba(250,246,240,1),rgba(250,246,240,1));
-          background-size: auto, auto, auto, cover;
-          background-position: 8% 6%, 92% 96%, 50% 100%, center;
-          background-repeat: no-repeat, no-repeat, no-repeat, no-repeat;
-          background-attachment: fixed, fixed, fixed, fixed;
-          background-color: #faf6f0 !important;
+        [data-testid="stApp"]{
+          background:
+            radial-gradient(1100px 620px at 88% -8%, rgba(228,0,43,.30), transparent 60%),
+            radial-gradient(900px 640px at -6% 108%, rgba(15,168,160,.22), transparent 58%),
+            linear-gradient(160deg,#080b13 0%,#0c1120 55%,#080a12 100%) !important;
+          background-attachment: fixed !important;
         }
-        [data-testid="stHeader"]{background:transparent!important}
+        html,body{background:#080b13!important}
+        /* Transparentes y por encima del canvas del fondo. */
+        [data-testid="stAppViewContainer"]{position:relative;z-index:1;background:transparent!important}
+        [data-testid="stMain"],[data-testid="stHeader"]{background:transparent!important}
+        [data-testid="stHeader"] *{color:#cfd5e2!important}
 
-        .login-wrap{max-width:440px;margin:7vh auto 0;padding:0 16px;animation:fadeUp .45s ease both;text-align:center}
-        .login-wordmark{font-family:'Sora','Inter',sans-serif;font-weight:800;font-size:34px;color:#e4002b;
-          letter-spacing:-.03em;line-height:1;margin:0 0 18px;display:inline-block}
-        .login-hero{margin-bottom:26px}
-        .login-hero h1{font-size:20px;font-weight:800;font-family:'Sora','Inter',sans-serif;letter-spacing:-.02em;margin:0 0 6px;color:#1a1a1a}
-        .login-hero p{font-size:12.5px;color:#6b6b6b;margin:0}
+        .login-wrap{max-width:440px;margin:9vh auto 26px;padding:0 16px;animation:fadeUp .45s ease both;text-align:center}
+        .login-wordmark{font-family:'Sora','Inter',sans-serif;font-weight:800;font-size:34px;color:#fff;
+          letter-spacing:-.03em;line-height:1;margin:0 0 12px;display:inline-block}
+        .login-hero p{font-size:13.5px;color:#b9c0cf;margin:0}
 
-        .login-card{background:transparent;padding:0;text-align:left}
+        /* La tarjeta de vidrio con el formulario. */
+        .st-key-acceso_tarjeta{background:rgba(15,20,33,.72)!important;border:1px solid rgba(255,255,255,.10)!important;
+          border-radius:24px!important;padding:24px 26px 26px!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+          box-shadow:0 30px 70px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06)!important;animation:fadeUp .55s ease .15s both}
+        .st-key-acceso_tarjeta label p,.st-key-acceso_tarjeta label{color:#dfe4ee!important;font-weight:650!important;font-size:12.5px!important}
+        /* El tema pone etiquetas y notas sobre «píldoras» blancas: aquí, transparentes. */
+        .st-key-acceso_tarjeta [data-testid="stWidgetLabel"],.st-key-acceso_tarjeta [data-testid="stCaptionContainer"]{
+          background:transparent!important;border:none!important;box-shadow:none!important;padding-left:0!important}
+        .st-key-acceso_tarjeta [data-testid="stCaptionContainer"],.st-key-acceso_tarjeta [data-testid="stCaptionContainer"] p{color:#9aa3b5!important}
+        .st-key-acceso_tarjeta [data-testid="stTextInputRootElement"]{background:rgba(8,11,19,.75)!important;
+          border:1px solid rgba(255,255,255,.12)!important;border-radius:12px!important}
+        .st-key-acceso_tarjeta [data-testid="stTextInputRootElement"]:focus-within{border-color:#ff3b4e!important;
+          box-shadow:0 0 0 3px rgba(255,59,78,.18)!important}
+        .st-key-acceso_tarjeta [data-testid="stTextInputRootElement"] *{background-color:transparent!important;color:#cfd5e2!important}
+        /* «Press Enter to apply» de Streamlit: en inglés y encima de la contraseña. */
+        .st-key-acceso_tarjeta [data-testid="InputInstructions"]{display:none!important}
+        /* La rayita del tema bajo la pestaña activa (React Aria). */
+        .stTabs .react-aria-SelectionIndicator{display:none!important}
+        .st-key-acceso_tarjeta [data-testid="stAlert"]{background:rgba(255,255,255,.05)!important;border:1px solid rgba(255,255,255,.08)!important}
+        .st-key-acceso_tarjeta [data-testid="stAlert"] p{color:#cfd5e2!important}
 
-        /* Pestañas tipo píldora dividida: activa en rojo, inactiva en negro.
-           `[data-baseweb="tab-list"/"tab"/"tab-panel"]` ya no existen en el
-           DOM de Streamlit 1.50+ (confirmado con un navegador real) — estas
-           reglas nunca hacían match. Selectores reales: [role="tablist"],
+        /* Campos oscuros con borde de acento al escribir. */
+        .st-key-acceso_tarjeta [data-baseweb="input"],.st-key-acceso_tarjeta [data-baseweb="base-input"]{
+          background:rgba(8,11,19,.75)!important;border-color:rgba(255,255,255,.12)!important;border-radius:12px!important}
+        .st-key-acceso_tarjeta [data-baseweb="input"]:focus-within{border-color:#ff3b4e!important;box-shadow:0 0 0 3px rgba(255,59,78,.18)!important}
+        .st-key-acceso_tarjeta input{background:transparent!important;color:#fff!important;font-size:14px!important;
+          border:none!important;box-shadow:none!important;outline:none!important;
+          -webkit-text-fill-color:#fff!important;caret-color:#ff6b7d}
+        .st-key-acceso_tarjeta button[kind="minimal"],.st-key-acceso_tarjeta [data-baseweb="input"] button{background:transparent!important;color:#cfd5e2!important}
+
+        /* Pestañas tipo píldora: activa en el acento, inactiva translúcida.
+           Selectores reales de Streamlit 1.50+: [role="tablist"],
            [data-testid="stTab"], [role="tabpanel"]. */
-        .stTabs [role="tablist"]{background:#161616!important;border:none!important;border-radius:999px!important;
-          padding:5px!important;gap:0!important;box-shadow:0 10px 26px rgba(0,0,0,.14)!important}
-        .stTabs [data-testid="stTab"]{flex:1;justify-content:center;border-radius:999px!important;height:42px!important;
-          color:#e8e8e8!important;font-weight:700!important;background:transparent!important}
+        .stTabs [role="tablist"]{background:rgba(255,255,255,.06)!important;border:1px solid rgba(255,255,255,.08)!important;
+          border-radius:999px!important;padding:5px!important;gap:0!important}
+        .stTabs [data-testid="stTab"]{flex:1;justify-content:center;border-radius:999px!important;height:40px!important;
+          color:#cfd5e2!important;font-weight:700!important;background:transparent!important}
         .stTabs [data-testid="stTab"] p{color:inherit!important;font-weight:inherit!important}
         .stTabs [aria-selected="true"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;color:#fff!important;
-          box-shadow:0 4px 12px rgba(228,0,43,.35)!important}
-        .stTabs [role="tabpanel"]{padding-top:22px!important}
+          box-shadow:0 6px 16px rgba(228,0,43,.4)!important}
+        .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important}
+        .stTabs [role="tabpanel"]{padding-top:20px!important}
 
-        /* Campos redondeados, blancos, sobre el fondo crema. */
-        .login-card input{background:#ffffff!important;border:1px solid #e7e2da!important;border-radius:12px!important;
-          padding:12px 14px!important;font-size:14px!important;box-shadow:0 1px 2px rgba(20,20,20,.04)!important}
-        .login-card label p{color:#3a3a3a!important;font-weight:650!important;font-size:12.5px!important}
-
-        /* `.login-card` no envuelve de verdad a los widgets (un st.markdown
-           abre el div y Streamlit lo cierra solo), así que el botón «Entrar»
-           tomaba el texto oscuro del tema sobre el rojo: se fuerza blanco. */
-        [data-testid="stMain"] .stButton>button[kind="primary"],
-        [data-testid="stMain"] .stButton>button[kind="primary"] p{color:#fff!important;font-weight:750!important}
-        .login-card button[kind="primary"]{background:linear-gradient(180deg,#8c1420,#6e0f19)!important;
-          border:none!important;border-radius:12px!important;height:46px!important;font-weight:750!important;
-          font-size:14px!important;box-shadow:0 8px 18px rgba(110,15,25,.28)!important}
-        .login-card button[kind="secondary"]{background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;
-          border:none!important;color:#fff!important;border-radius:12px!important;height:46px!important;font-weight:750!important}
+        /* Botones: texto blanco siempre (el tema lo dejaba oscuro sobre rojo). */
+        .st-key-acceso_tarjeta .stButton>button{border:none!important;border-radius:12px!important;height:46px!important;
+          font-weight:750!important;font-size:14px!important;color:#fff!important;
+          background:linear-gradient(180deg,#ff3b4e,#e4002b)!important;box-shadow:0 10px 24px rgba(228,0,43,.35)!important;
+          transition:transform .15s ease,box-shadow .15s ease}
+        .st-key-acceso_tarjeta .stButton>button:hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(228,0,43,.45)!important}
+        .st-key-acceso_tarjeta .stButton>button p{color:#fff!important;font-weight:750!important}
+        .st-key-acceso_tarjeta .stButton>button:disabled{opacity:.45}
         </style>
         """
     st.markdown(style_block, unsafe_allow_html=True)
@@ -93,9 +110,8 @@ def render_login():
             unsafe_allow_html=True,
         )
 
-    _, mid, _ = st.columns([1, 2, 1])
-    with mid:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    _, mid, _ = st.columns([1, 1.25, 1])
+    with mid, st.container(key="acceso_tarjeta"):
         tab_login, tab_signup = st.tabs(["Iniciar sesión", "Crear cuenta"])
 
         with tab_login:
@@ -139,4 +155,3 @@ def render_login():
                         st.success(msg + " Ya puedes iniciar sesión en la otra pestaña.")
                     else:
                         st.error(msg)
-        st.markdown('</div>', unsafe_allow_html=True)
