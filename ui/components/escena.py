@@ -24,7 +24,7 @@ _WEB = Path(__file__).resolve().parent.parent / "web"
 _registradas: dict = {}
 # Pantallas que reutilizan los estilos de otra (el resumen usa las tarjetas
 # y el recuadro oscuro del parte del día).
-_CSS_EXTRA = {"resumen": ["parte"], "atacar": ["parte"], "cuadro": ["parte"], "canales": ["parte"], "proyeccion": ["parte"]}
+_CSS_EXTRA = {"resumen": ["parte"], "atacar": ["parte"], "cuadro": ["parte"], "canales": ["parte"], "proyeccion": ["parte"], "caso": ["parte"], "calidad": ["parte"], "anomalias": ["parte"], "finanzas": ["parte"], "duelo": ["parte"]}
 
 NO_DISPONIBLE = object()
 

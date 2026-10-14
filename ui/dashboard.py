@@ -152,7 +152,15 @@ def _drilldown_panel(df,schema,metric,dimension):
     share=float(row.iloc[0]["Participación"]) if not row.empty else 0
     a,b,c=st.columns(3)
     a.metric("Resultado",_fmt(value)); b.metric("Participación",f"{share:.1f}%"); c.metric("Posición",f"#{int(table.index[table[drill_dim].astype(str)==str(selected)][0])+1}" if not row.empty else "—")
-    st.dataframe(table.rename(columns={drill_dim:_label(schema,drill_dim)}),use_container_width=True,hide_index=True)
+    # Cifras en la forma corta del panel y participación con su %: antes salía
+    # «5348772962.0673» y «37.7» a secas.
+    vista = table.rename(columns={drill_dim: _label(schema, drill_dim)}).copy()
+    if "Valor" in vista.columns:
+        vista["Valor"] = vista["Valor"].map(lambda v: _fmt(v) if pd.notna(v) else "—")
+    config = ({"Participación": st.column_config.ProgressColumn("Participación", format="%.1f%%", min_value=0,
+                                                                max_value=max(1.0, float(vista["Participación"].max() or 0)))}
+              if "Participación" in vista.columns else {})
+    st.dataframe(vista, use_container_width=True, hide_index=True, column_config=config)
 
 
 def _chart_card(title, subtitle, fig, empty="No hay datos suficientes para este análisis.", insight=None, explain=None, key=None, detalle=None):
@@ -821,6 +829,9 @@ def _relationships_and_detail_section(df, schema, m, d):
     if d and m:
         table = df.groupby(d, dropna=False)[m].agg(["sum", "mean", "count"]).sort_values("sum", ascending=False).head(15).reset_index()
         table.columns = [_label(schema, d), "Total", "Promedio", "Registros"]
+        # Cifras cortas («1.6 mil M»), no «1613564697.544».
+        table["Total"] = table["Total"].map(_fmt)
+        table["Promedio"] = table["Promedio"].map(_fmt)
         st.markdown('<div class="section-intro compact"><div><span class="eyebrow">DETALLE</span><h2>Tabla para tomar decisiones</h2></div></div>', unsafe_allow_html=True)
         st.dataframe(table, use_container_width=True, hide_index=True)
 

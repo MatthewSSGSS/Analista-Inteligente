@@ -1071,9 +1071,22 @@ label,p,li,span,div{scrollbar-color:#c7cedb #eef1f6}
    dependía de que la tabla nativa de Streamlit trajera el suyo. Se fuerza
    opaco (--card-solid) para no depender de eso. */
 .stDataFrame,[data-testid="stDataFrame"]{background:var(--card-solid)!important;border:1px solid var(--line);border-radius:var(--radius-md);box-shadow:var(--shadow-sm);overflow:hidden}
-[data-testid="stMetric"]{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px;box-shadow:var(--shadow-sm)}
-[data-testid="stMetricLabel"]{color:var(--muted)!important;font-size:11px!important}
-[data-testid="stMetricValue"]{color:var(--text)!important;font-size:22px!important;font-variant-numeric:tabular-nums}
+/* st.metric con la misma cara que las tarjetas del panel (ui/web/parte.css
+   .pd-kpi): franja de acento arriba, cifra en la letra de títulos, el cambio
+   en una píldora y una leve elevación al pasar el cursor. Antes eran cajas
+   planas con texto suelto (Georreferenciación, Calidad, Canales clásico…). */
+[data-testid="stMetric"]{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  padding:16px 18px 14px;box-shadow:var(--shadow-md);animation:fadeUp .45s ease both;transition:transform .2s ease,box-shadow .2s ease}
+[data-testid="stMetric"]::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;
+  background:linear-gradient(90deg,var(--blue),color-mix(in srgb,var(--blue) 25%,transparent))}
+[data-testid="stMetric"]:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+[data-testid="stMetricLabel"],[data-testid="stMetricLabel"] p{color:var(--muted)!important;font-size:11.5px!important;font-weight:700!important;
+  letter-spacing:.02em}
+[data-testid="stMetricValue"]{color:var(--text)!important;font-family:var(--font-display)!important;font-size:26px!important;
+  font-weight:800!important;font-variant-numeric:tabular-nums;line-height:1.2!important}
+[data-testid="stMetricDelta"]{display:inline-flex!important;width:auto!important;padding:2px 9px!important;border-radius:999px;
+  font-size:12px!important;font-weight:700!important;background:var(--panel-2)}
+[data-testid="stMetricDelta"] svg{width:14px;height:14px}
 
 /* ===== Executive / alerts / why-changed / factors ===== */
 .executive-card{padding:clamp(19px,1.4vw,30px) clamp(21px,1.5vw,32px);border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:var(--shadow-md),var(--glow-ring);border-left:5px solid var(--blue);margin:4px 0 10px;animation:fadeUp .4s ease both}

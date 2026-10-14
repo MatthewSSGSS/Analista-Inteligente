@@ -197,7 +197,9 @@ def render_comparison(result, show_filter_panel: bool = True, key_prefix: str = 
             for dr in result["dimension_results"][:4]:
                 st.markdown(f"**{dr['dimension']}** · usando **{dr['metric']}**")
                 t=dr["table"].copy()
-                t["Cambio"] = t["cambio"].map(lambda x: f"{'+' if x>0 else ''}{x:,.2f}")
+                t["Cambio"] = t["cambio"].map(lambda x: f"{'+' if x>0 else ''}{_fmt(x)}")
+                t["anterior"] = t["anterior"].map(_fmt)
+                t["actual"] = t["actual"].map(_fmt)
                 t["Variación"] = t["cambio_pct"].map(_pct)
                 show=t.rename(columns={"categoria":"Categoría","anterior":"Periodo anterior","actual":"Periodo actual"})[["Categoría","Periodo anterior","Periodo actual","Cambio","Variación"]].head(10)
                 st.dataframe(show, use_container_width=True, hide_index=True)

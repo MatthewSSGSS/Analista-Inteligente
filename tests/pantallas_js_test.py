@@ -107,7 +107,8 @@ def test_todas_las_pantallas_existen():
                     and nodo.args and isinstance(nodo.args[0], ast.Constant)):
                 nombres.add(nodo.args[0].value)
     check("las vistas montan sus pantallas", {"portada", "modos", "acceso", "parte", "resumen", "atacar", "cuadro",
-                                              "canales", "proyeccion", "cabecera"} <= nombres)
+                                              "canales", "proyeccion", "cabecera", "caso", "calidad",
+                                              "anomalias", "finanzas", "duelo"} <= nombres)
     for n in sorted(nombres):
         js = web / f"{n}.js"
         check(f"{n}.js existe y exporta su función", js.exists() and "export default function" in js.read_text(encoding="utf-8"))
@@ -154,6 +155,31 @@ def test_datos_de_las_vistas():
     futuros = [x for x in py["puntos"] if x["futuro"]]
     check("Proyección: lo real y los 3 meses estimados con su rango",
           len(futuros) == 3 and all(x["lo"] <= x["v"] <= x["hi"] for x in futuros))
+
+    # Seguimiento de un caso: puesto sobre TODO el grupo, serie con el promedio del grupo.
+    from core.universal_analysis import semantic_map
+    from visualization.charts import metric_candidates
+    from ui.person_profile import _caso_que_pide_atencion, _datos_caso
+    filas_sur = df[df["Region"].astype(str).str.strip() == "Sur"]
+    caso = _datos_caso(df, schema, "Region", "Sur", filas_sur, "Ingresos", "región", "",
+                       metric_candidates(df, schema), semantic_map(schema))
+    check("Seguimiento: su puesto entre las 4 regiones", caso["puesto"]["total"] == 4 and 1 <= caso["puesto"]["posicion"] <= 4)
+    check("Seguimiento: serie mes a mes con el promedio del grupo", caso["serie"] and all(x["g"] is not None for x in caso["serie"]))
+    check("Seguimiento: sin HTML", "<" not in json.dumps(caso, ensure_ascii=False))
+    import pandas as pd
+    x = pd.DataFrame({"Fecha": pd.to_datetime(["2026-06-05", "2026-06-05", "2026-07-05"]), "Q": ["A", "B", "A"], "V": [10.0, 50.0, 4.0]})
+    nombre, _ = _caso_que_pide_atencion(x, {"dates": ["Fecha"]}, "Q", "V")
+    check("Seguimiento abre en quien cayó de verdad, no en quien no tiene el último mes", nombre == "A")
+
+    # Calidad, anomalías y finanzas.
+    from ui.anomalies import _datos_anomalias, _datos_finanzas
+    from ui.quality import _datos_calidad
+    ca = _datos_calidad(perfil)
+    check("Calidad: puntaje y columna por columna", 0 <= ca["puntaje"] <= 100 and ca["columnas"])
+    an = _datos_anomalias(db["anomalies"], schema, df)
+    check("Anomalías: cuenta las DETECTADAS, no los registros", an["total_n"] == len(db["anomalies"]) and an["registros"] == f"{len(df):,}")
+    fi = _datos_finanzas(db["statistics"], schema)
+    check("Finanzas: una tarjeta por métrica con su caja", fi["metricas"] and all(0 <= m["x"]["q1"] <= m["x"]["q3"] <= 100 for m in fi["metricas"]))
 
 
 def main():

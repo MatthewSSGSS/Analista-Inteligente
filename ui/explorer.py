@@ -100,11 +100,21 @@ def _formato_numero() -> str:
 
 
 def _tabla(df: pd.DataFrame, nombre: str, clave: str) -> None:
+    from core.diagnostics import _fmt
     config = {}
+    vista = df.copy()
     for c in df.columns:
         if pd.api.types.is_numeric_dtype(df[c]):
-            config[c] = st.column_config.NumberColumn(c, format="%.1f%%" if "%" in str(c) else _formato_numero())
-    st.dataframe(df, use_container_width=True, hide_index=True, column_config=config)
+            if "%" in str(c):
+                config[c] = st.column_config.NumberColumn(c, format="%.1f%%")
+            elif df[c].abs().max() >= 100_000:
+                # Cifras grandes en la forma corta del panel («1.6 mil M»): con
+                # todos los dígitos y decimales («1.613.564.697,544») no se leía
+                # ninguna. El CSV de abajo conserva los números completos.
+                vista[c] = df[c].map(lambda v: _fmt(v) if pd.notna(v) else "—")
+            else:
+                config[c] = st.column_config.NumberColumn(c, format=_formato_numero())
+    st.dataframe(vista, use_container_width=True, hide_index=True, column_config=config)
     st.download_button("⬇️ Descargar tabla (CSV)", df.to_csv(index=False).encode("utf-8-sig"),
                        file_name=f"{nombre}.csv", mime="text/csv", key=f"{clave}_csv")
 

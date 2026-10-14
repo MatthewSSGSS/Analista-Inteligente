@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from ui.components.escena import cabecera
+from ui.components.escena import NO_DISPONIBLE, cabecera, escena
 
 from core.numeric import numeric_series
 from core.cross_sheet import encontrar_hojas_relacionadas, datos_de_entidad, resumir_filas
@@ -243,8 +243,10 @@ def _caso_que_pide_atencion(data, schema, columna, metrica):
     if len(meses) < 2:
         return None, ""
     a, b = meses[-2], meses[-1]
-    tabla = x[x["f"].isin([a, b])].pivot_table(index="q", columns="f", values="v", aggfunc="sum").fillna(0)
-    if a not in tabla.columns or b not in tabla.columns:
+    # Solo quienes tienen datos en LOS DOS meses: no aparecer un mes no es
+    # «caer 100%» (con clientes de un solo registro, la sugerencia era ruido).
+    tabla = x[x["f"].isin([a, b])].pivot_table(index="q", columns="f", values="v", aggfunc="sum").dropna()
+    if a not in tabla.columns or b not in tabla.columns or tabla.empty:
         return None, ""
     delta = (tabla[b] - tabla[a]).sort_values()
     if delta.empty or delta.iloc[0] >= 0:
@@ -255,6 +257,184 @@ def _caso_que_pide_atencion(data, schema, columna, metrica):
     return nombre, (f"Abre en <b>{html.escape(nombre)}</b>: el que más cayó en "
                     f"{format_month_year(b.to_timestamp(), full=True).lower()}, {_fmt(delta.iloc[0])}{pct}. "
                     f"Puedes elegir cualquier otro en la lista.")
+
+
+def _mes_corto(periodo) -> str:
+    from visualization.charts import MESES_CORTOS
+    p = pd.Period(periodo, freq="M")
+    return f"{MESES_CORTOS[p.month - 1]} {p.year}"
+
+
+def _datos_caso(data, schema, person_col, selected, rows, primary, noun, por_que, metrics, sem) -> dict:
+    """Todo lo que dibuja «Seguimiento de un caso» en JavaScript (ui/web/caso.*),
+    en texto plano. Las referencias (promedio, puesto, participación) se
+    calculan sobre TODO el grupo visible, no sobre una selección."""
+    from core.seguimiento import observaciones
+    from core.diagnostics import _fmt  # el formato de Qué atacar y Canales (1 decimal), no el local de 2
+    clave = data[person_col].astype(str).str.strip()
+    otros = sorted(clave.replace("", pd.NA).dropna().unique())
+    n_grupo = len(otros)
+    sustantivo = "Persona" if noun == "persona" else str(noun).capitalize()
+    plural = "personas" if noun == "persona" else f"{noun}s"
+    los = "las" if noun == "persona" else "los"
+    additive = bool(primary) and sem.get(primary) in ADDITIVE
+    etiqueta_m = _label(schema, primary) if primary else ""
+    fechas = [d for d in schema.get("dates", []) if d in data.columns]
+
+    # Lo que lo describe: columnas con un solo valor para él (su región, su canal…).
+    etiquetas = []
+    for c in dimension_candidates(data, schema):
+        if c == person_col or c not in rows.columns:
+            continue
+        vals = rows[c].dropna().astype(str).str.strip().replace("", pd.NA).dropna()
+        if vals.empty:
+            continue
+        if vals.nunique() == 1:
+            # Sin repetir el nombre («Nombre: Carolina» de Carolina Cardona Molina).
+            if vals.iloc[0].lower() not in str(selected).lower():
+                etiquetas.append({"k": _label(schema, c), "v": vals.iloc[0]})
+        elif vals.nunique() <= 6:
+            top = vals.value_counts()
+            etiquetas.append({"k": _label(schema, c), "v": f"{top.index[0]} ({top.iloc[0] / len(vals) * 100:.0f}%)"})
+        if len(etiquetas) >= 4:
+            break
+
+    datos = {"nombre": str(selected), "sustantivo": sustantivo, "registros": f"{len(rows):,}",
+             "por_que": re.sub(r"<[^>]+>", "", por_que or ""), "etiquetas": etiquetas,
+             "grupo_lbl": f"promedio de {los} {n_grupo}", "estado": "Caso seleccionado", "tono": "neutral"}
+    kpis = []
+    cambio = None
+    if primary:
+        valores = numeric_series(data[primary])
+        por_entidad = (valores.groupby(clave).sum(min_count=1) if additive else valores.groupby(clave).mean()).dropna()
+        s = numeric_series(rows[primary]).dropna()
+        propio = float(s.sum()) if additive else (float(s.mean()) if len(s) else None)
+        promedio = float(por_entidad.mean()) if len(por_entidad) else None
+
+        # Mes a mes: él contra el promedio del grupo.
+        serie = []
+        if fechas:
+            periodos = pd.to_datetime(data[fechas[0]], errors="coerce").dt.to_period("M")
+            tabla = pd.DataFrame({"q": clave, "p": periodos, "v": valores}).dropna(subset=["p"])
+            mensual = (tabla.groupby(["p", "q"])["v"].sum(min_count=1) if additive
+                       else tabla.groupby(["p", "q"])["v"].mean()).dropna()
+            grupo = mensual.groupby(level=0).mean()
+            suyo = mensual.xs(str(selected).strip(), level=1) if str(selected).strip() in mensual.index.get_level_values(1) else pd.Series(dtype=float)
+            for p in sorted(suyo.index)[-12:]:
+                g = grupo.get(p)
+                serie.append({"m": _mes_corto(p), "v": float(suyo[p]), "t": _fmt(float(suyo[p])),
+                              "g": float(g) if g is not None and pd.notna(g) else None,
+                              "gt": _fmt(float(g)) if g is not None and pd.notna(g) else ""})
+            if len(suyo) >= 2:
+                a, b = suyo.sort_index().iloc[-2], suyo.sort_index().iloc[-1]
+                cambio = (b - a) / abs(a) * 100 if a else None
+                mejor_p, peor_p = suyo.idxmax(), suyo.idxmin()
+                kpis.append({"clave": "mejor", "etiqueta": "Su mejor mes", "valor": _fmt(float(suyo.max())),
+                             "detalle": _mes_corto(mejor_p), "tono": "positive"})
+                kpis.append({"clave": "peor", "etiqueta": "Su peor mes", "valor": _fmt(float(suyo.min())),
+                             "detalle": _mes_corto(peor_p), "tono": "negative"})
+        datos["serie"] = serie
+        ultimo = serie[-1]["m"] if serie else ""
+        datos["cifra"] = {"etiqueta": f"{etiqueta_m} · {'total' if additive else 'promedio'}", "valor": _fmt(propio),
+                          "detalle": (f"{cambio:+.1f}% en {ultimo}" if cambio is not None else None),
+                          "tono": "neutral" if cambio is None else ("positive" if cambio >= 0 else "negative")}
+        vs = (propio - promedio) / abs(promedio) * 100 if (propio is not None and promedio) else None
+        kpis.insert(0, {"clave": "total", "etiqueta": f"{etiqueta_m} {'total' if additive else 'promedio'}",
+                        "valor": _fmt(propio), "detalle": f"{len(rows):,} registros", "tono": "neutral"})
+        if vs is not None:
+            kpis.insert(1, {"clave": "vs", "etiqueta": f"Frente al promedio de {los} {n_grupo}", "valor": f"{vs:+.0f}%",
+                            "detalle": f"promedio: {_fmt(promedio)}", "tono": "positive" if vs >= 0 else "negative"})
+        if additive and por_entidad.sum():
+            peso = propio / por_entidad.sum() * 100
+            kpis.append({"clave": "peso", "etiqueta": "Participación en el total",
+                         "valor": f"{peso:.1f}%" if peso >= 0.1 or peso == 0 else "< 0.1%",
+                         "detalle": f"del total de {los} {n_grupo}", "tono": "neutral"})
+
+        # Su puesto entre todos, sobre el grupo completo.
+        if propio is not None and len(por_entidad) >= 2:
+            orden = por_entidad.sort_values(ascending=False)
+            posicion = int((orden > propio).sum()) + 1
+            lo, hi = float(orden.min()), float(orden.max())
+            ancho = (hi - lo) or 1
+            pos = lambda v: round((v - lo) / ancho * 100, 1)  # noqa: E731
+            arriba = posicion / len(orden) * 100
+            datos["puesto"] = {
+                "posicion": posicion, "total": len(orden), "nombre": str(selected), "x": pos(propio),
+                "medida": f"en {etiqueta_m}",
+                "prom_x": pos(promedio) if promedio is not None else None,
+                # Una muestra pareja de TODO el grupo (no los primeros 300: con
+                # 2.878 personas los puntos se amontonaban en un extremo).
+                "puntos": [pos(float(v)) for v in orden.values[::max(1, -(-len(orden) // 300))]],
+                "min_lbl": _fmt(lo), "max_lbl": _fmt(hi),
+                "percentil": f"Top {max(1, round(arriba))}%" if arriba <= 50 else f"Mitad baja",
+                "percentil_lbl": "del grupo" if arriba <= 50 else f"{len(orden) - posicion} {plural} debajo",
+                "texto": (f"Medido por {etiqueta_m} ({'total' if additive else 'promedio'}) entre {los} "
+                          f"{len(orden)} {plural} visibles. Cada punto es uno; el resaltado es {selected}."),
+            }
+        if cambio is not None:
+            datos["estado"], datos["tono"] = (("Va mejor", "positive") if cambio > 1 else
+                                              ("Requiere atención", "negative") if cambio < -1 else ("Estable", "neutral"))
+        elif vs is not None:
+            datos["estado"], datos["tono"] = ("Sobre el promedio", "positive") if vs >= 0 else ("Bajo el promedio", "negative")
+    else:
+        datos["cifra"] = {"etiqueta": "Registros", "valor": f"{len(rows):,}", "detalle": None, "tono": "neutral"}
+    kpis.append({"clave": "registros", "etiqueta": "Registros relacionados", "valor": f"{len(rows):,}",
+                 "detalle": f"de {len(data):,} visibles", "tono": "neutral"})
+    datos["kpis"] = kpis[:6]
+
+    try:
+        hallazgos = observaciones(data, schema, person_col, selected, primary)
+    except Exception:
+        hallazgos = []
+    datos["alertas"] = [{
+        "titulo": str(h.get("title", "")), "texto": str(h.get("finding", "")), "tipo": h.get("kind", "info"),
+        "accion": str(h.get("action") or ""),
+        "evidencia": [{"n": str(e.get("nombre", "")), "v": str(e.get("valor", "")), "d": str(e.get("detalle") or "")}
+                      for e in (h.get("evidence") or [])[:3] if isinstance(e, dict)],
+    } for h in hallazgos[:6]]
+
+    # Desglose por la dimensión que más dice (producto, categoría, canal…).
+    prioridades = {"product": 0, "category": 1, "channel": 2, "brand": 3, "segment": 4, "city": 5, "region": 6, "status": 7}
+    candidatas = []
+    for c, t in sem.items():
+        if c in rows.columns and c != person_col and t in prioridades:
+            n = rows[c].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+            if 1 < n <= 30:
+                candidatas.append((prioridades[t], c))
+    if candidatas and primary:
+        dim = sorted(candidatas)[0][1]
+        z = pd.DataFrame({"d": rows[dim].fillna("Sin dato").astype(str).str.strip().replace("", "Sin dato"),
+                          "v": numeric_series(rows[primary])}).dropna()
+        agg = (z.groupby("d")["v"].sum() if additive else z.groupby("d")["v"].mean()).sort_values(ascending=False).head(10)
+        if len(agg):
+            tope = float(agg.abs().max()) or 1
+            total = float(agg.sum()) if additive else None
+            datos["desglose"] = {
+                "dimension": _label(schema, dim),
+                "texto": f"{agg.index[0]} es lo que más pesa en su resultado: {_fmt(float(agg.iloc[0]))}.",
+                "filas": [{"n": str(k), "t": _fmt(float(v)), "ancho": round(abs(float(v)) / tope * 100, 1),
+                           "p": f"{float(v) / total * 100:.0f}%" if total else ""} for k, v in agg.items()],
+            }
+
+    ficha = []
+    for c in rows.columns:
+        if str(c).startswith("__") or str(c).startswith("_geo_") or c == person_col:
+            continue
+        s = rows[c]
+        if c in schema.get("dates", []):
+            dt = pd.to_datetime(s, errors="coerce").dropna()
+            valor = f"{dt.min():%d/%m/%Y} → {dt.max():%d/%m/%Y}" if len(dt) else "Sin fecha válida"
+        elif c in metrics:
+            ns = numeric_series(s).dropna()
+            valor = f"mín {_fmt(ns.min())} · prom {_fmt(ns.mean())} · máx {_fmt(ns.max())}" if len(ns) else "Sin valor numérico"
+        else:
+            vals = s.dropna().astype(str).str.strip().replace("", pd.NA).dropna().drop_duplicates().tolist()
+            valor = ", ".join(vals[:6]) if vals else "Sin dato"
+            if len(vals) > 6:
+                valor += f" · +{len(vals) - 6} más"
+        ficha.append({"campo": _label(schema, c), "valor": valor})
+    datos["ficha"] = ficha
+    return datos
 
 
 def render_person_profile(df, schema, dashboard=None):
@@ -313,8 +493,6 @@ def render_person_profile(df, schema, dashboard=None):
         names, key="profile_person_selector_inline", placeholder="Escribe para buscar…",
         index=names.index(sugerido) if sugerido in names else 0,
     )
-    if por_que and selected == sugerido:
-        st.markdown(f'<div class="chart-reading">🔎 {por_que}</div>', unsafe_allow_html=True)
     rows = data[data[person_col].astype(str).str.strip().eq(str(selected).strip())].copy()
     if rows.empty:
         return
@@ -330,6 +508,20 @@ def render_person_profile(df, schema, dashboard=None):
     if preferred:
         primary = preferred[0]
 
+    # La ficha completa en JavaScript (ui/web/caso.*); sin él, la versión clásica.
+    datos = _datos_caso(data, schema, person_col, selected, rows, primary, noun,
+                        por_que if selected == sugerido else "", metrics, sem)
+    if escena("caso", datos, clave="caso_js") is not NO_DISPONIBLE:
+        _render_otras_hojas(person_col, selected, noun)
+        with st.expander("Ver registros originales relacionados", expanded=False):
+            visible = [c for c in rows.columns if not str(c).startswith("__") and not str(c).startswith("_geo_")]
+            st.dataframe(rows[visible].head(500), use_container_width=True, hide_index=True)
+            if len(rows) > 500:
+                st.caption(f"Mostrando 500 de {len(rows):,} registros relacionados.")
+        return
+
+    if por_que and selected == sugerido:
+        st.markdown(f'<div class="chart-reading">🔎 {por_que}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="decision-strip positive"><b>{selected}</b> · {len(rows):,} registros relacionados encontrados. Todo el análisis de esta pestaña está restringido a este registro.</div>', unsafe_allow_html=True)
 
     # 0. La lectura antes que los números. El perfil mostraba gráficos y

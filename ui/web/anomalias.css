@@ -1,0 +1,34 @@
+/* Anomalías: encima de parte.css (y de las pistas de calidad.css, repetidas aquí). */
+.an-hero{position:relative;z-index:1;display:flex;gap:30px;align-items:center}
+.an-numero{flex:0 0 auto;text-align:center;padding:22px 28px;border-radius:22px;background:rgba(17,22,35,.7);border:1px solid rgba(255,255,255,.1)}
+.an-numero b{display:block;font-family:var(--font-display,"Sora",sans-serif);font-size:54px;font-weight:800;color:#ff7a88;line-height:1}
+.an-numero.cero b{color:#3ecf8e}
+.an-numero small{font-size:12px;color:#8f97aa}
+.ca-texto{flex:1;min-width:0}
+.ca-texto h1{font-size:clamp(20px,2.2vw,27px);font-weight:800;color:#fff;margin:12px 0 8px;line-height:1.25}
+.ca-texto>p{font-size:13.2px;line-height:1.55;color:#b9c0cf;max-width:760px}
+.ca-cols{border-radius:18px;padding:8px 18px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-sm)}
+.ca-pista{height:8px;border-radius:999px;background:var(--panel-2);overflow:hidden}
+.ca-pista i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--red) 50%,transparent),var(--red));
+  transition:width 1.1s cubic-bezier(.2,.8,.2,1) .2s}
+.an-cols.dibujar .ca-pista i{width:var(--ancho)}
+.an-col{display:grid;grid-template-columns:minmax(120px,200px) 1fr 50px 220px;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.an-col:last-child{border-bottom:0}
+.an-col>span{font-size:13.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.an-col b{font-size:14px;text-align:right;color:var(--text)}
+.an-col small{font-size:11.5px;color:var(--muted)}
+.an-casos{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.an-caso{padding:14px 16px;border-radius:16px;background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--red);box-shadow:var(--shadow-sm)}
+.an-caso-cab{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.an-tipo{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--red)}
+.an-caso-cab small{font-size:11.5px;color:var(--muted);font-weight:650}
+.an-valor{display:block;font-family:var(--font-display,"Sora",sans-serif);font-size:22px;font-weight:800;color:var(--text);margin:6px 0 2px}
+.an-caso p{font-size:12.5px;color:var(--muted);line-height:1.45;min-height:18px}
+.an-banda{position:relative;height:10px;border-radius:999px;background:var(--panel-2);margin-top:12px}
+.an-banda .normal{position:absolute;top:0;bottom:0;border-radius:999px;background:color-mix(in srgb,var(--green) 45%,transparent)}
+.an-banda em{position:absolute;top:50%;left:0;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--red);
+  border:2px solid var(--panel);box-shadow:0 0 0 3px color-mix(in srgb,var(--red) 30%,transparent);transition:left 1.2s cubic-bezier(.2,.8,.2,1) .3s}
+.an-casos:not(.dibujar) .an-banda em{left:50%!important}
+.an-banda-lbl{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:6px}
+.an-banda-lbl .arriba,.an-banda-lbl .abajo{color:var(--red);font-weight:700}
+@media (max-width:760px){.an-hero{flex-direction:column;align-items:flex-start}.an-col{grid-template-columns:1fr 60px 40px}.an-col small{display:none}}

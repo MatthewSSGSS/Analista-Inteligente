@@ -82,13 +82,15 @@ Inside `ui/`:
   Same for Qué atacar (`_datos_atacar`), Cómo va cada uno (`_datos_cuadro`), Canales (`_datos_canales`) and
   Proyección (`_datos_proyeccion`); every other view starts with `escena.cabecera(...)` (animated header, with
   the view's old header as `respaldo_html`). Screens that reuse parte.css are listed in `escena._CSS_EXTRA`.
+  Also Seguimiento (`_datos_caso`), Comparar personas (`_datos_duelo`), Calidad (`_datos_calidad`), Anomalías and
+  Finanzas (`ui/anomalies.py`). `render_anomalies` takes the DETECTED anomalies (`dashboard["anomalies"]`), not df.
 - `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
   Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a
   «➕ Más» menu, and **only the active view is executed** (unlike `st.tabs`, which ran every tab on every
   rerun). Consequence: Streamlit drops the state of widgets that weren't drawn, so anything that must survive
   switching views has to be mirrored outside the widget (see `ui/planes.py::_pasos_guardados`).
-- `ui/format.py` — the single `_fmt`/`_label`/`_compact_number` implementation; don't reintroduce
-  local copies in a view.
+- Number formatting: use `core/diagnostics._fmt` (short Spanish figures, «1.6 mil M») in new code; several
+  views still carry older local `_fmt` copies (there is no `ui/format.py`).
 - `ui/*.py` (the rest) — one file per screen/tab, combining `core/` + `visualization/` +
   `components/` + `layouts/`. `ui/dashboard.py` is the largest and most delicate (temporal chart
   comparison, executive panels, geo panel) and still mixes several concerns internally per

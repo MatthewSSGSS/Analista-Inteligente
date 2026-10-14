@@ -5,7 +5,6 @@ from ui.styles.theme import inject_theme
 from ui.layouts.hero import hero_app
 from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_RESUMEN, VISTA_SEGUIMIENTO, VISTA_ESTRUCTURA
 from ui.components.section import section_header
-from ui.components.escena import cabecera
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
 from core.version import etiqueta_version
@@ -32,7 +31,7 @@ from ui.explorer import render_explorer
 from ui.quality import render_quality
 from ui.georeferencing import render_georeferencing
 from core.geo_engine import supports_georeferencing
-from ui.anomalies import render_anomalies
+from ui.anomalies import render_anomalies, render_finanzas
 from ui.data_table import render_data_table
 from ui.exports import render_exports
 from ui.catalog import render_catalog
@@ -701,15 +700,11 @@ else:
         secundarias = soporte
     else:
         def _render_finanzas():
-            cabecera("Lectura financiera", "Estadísticas de las métricas detectadas automáticamente.", ceja="Finanzas",
-                     icono="💵", clave="cab_finanzas",
-                     respaldo_html=section_header("Lectura financiera", eyebrow="ANÁLISIS", compact=True))
-            st.dataframe(dashboard["statistics"],use_container_width=True,hide_index=True)
-            st.caption("Esta vista utiliza las métricas detectadas automáticamente; no presupone que el archivo sea de ventas.")
+            render_finanzas(dashboard.get("statistics"), schema)
 
         # Modo analista: además, las herramientas de análisis fino.
         principales = ([inicio] + estructura + [("🧾 Descripción", lambda: render_dashboard(df,dashboard)), atacar, cuadro,
                         ("🔬 Analítica", lambda: render_explorer(df,schema)), canales, proyeccion] + geo + seguimiento
                        + comparar_archivos + [asistente, exportar])
-        secundarias = [("🚨 Anomalías", lambda: render_anomalies(df, schema)), ("💵 Finanzas", _render_finanzas)] + soporte
+        secundarias = [("🚨 Anomalías", lambda: render_anomalies(dashboard.get("anomalies"), schema, datos=df)), ("💵 Finanzas", _render_finanzas)] + soporte
     barra_de_vistas(principales, secundarias)
