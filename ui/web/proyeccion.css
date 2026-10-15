@@ -7,7 +7,8 @@
 .py-grande b{display:block;font-family:var(--font-display,"Sora",sans-serif);font-size:clamp(30px,3vw,42px);font-weight:800;color:#fff;margin:4px 0 8px}
 
 .py-grafico{position:relative;margin-top:22px;padding:8px 4px 0}
-.py-grafico svg{display:block;width:100%;height:240px;overflow:visible;cursor:crosshair;clip-path:inset(-24px 100% -24px -24px)}
+.py-lienzo{position:relative;cursor:crosshair}
+.py-grafico svg{display:block;width:100%;overflow:visible;clip-path:inset(-24px 100% -24px -24px)}
 .py-grafico.dibujar svg{animation:pd-revela 2s cubic-bezier(.4,0,.2,1) .2s forwards}
 .py-real{fill:none;stroke:var(--acc-l);stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
 .py-futuro{fill:none;stroke:#b8a9ff;stroke-width:2.6;stroke-dasharray:7 6;stroke-linecap:round;vector-effect:non-scaling-stroke;
@@ -37,3 +38,50 @@
 
 @media (prefers-reduced-motion:reduce){.py-grafico svg{clip-path:none!important}}
 @media (max-width:760px){.py-hero-cab{flex-direction:column}.py-grande{text-align:left}}
+
+/* Guías y cifras escritas sobre el gráfico (sin pasar el cursor). */
+.py-guia{stroke:rgba(255,255,255,.08);stroke-width:1;vector-effect:non-scaling-stroke}
+.py-rotulos span{position:absolute;left:0;transform:translateY(-50%);font-size:10.5px;color:#7d8597;font-variant-numeric:tabular-nums}
+.py-cifras{position:absolute;inset:0;pointer-events:none}
+.py-cifra{position:absolute;transform:translate(-50%,calc(-100% - 9px));display:flex;flex-direction:column;align-items:center;
+  white-space:nowrap;line-height:1.15;opacity:0;transition:opacity .4s ease}
+.py-grafico.dibujar .py-cifra{opacity:1;transition-delay:1.6s}
+.py-cifra b{font-size:11.5px;font-weight:750;color:#e6e9f2;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.py-cifra small{font-size:9.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.py-cifra small.pos{color:#3ecf8e}
+.py-cifra small.neg{color:#ff7a88}
+.py-cifra.ult b{font-size:13px;color:#fff}
+.py-cifra.fut b{color:#cfc5ff;font-size:12.5px}
+.py-cifra.abajo{transform:translate(-50%,10px);flex-direction:column-reverse}
+.py-cifra em{font-style:normal;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:999px;margin-bottom:2px}
+.py-cifra.abajo em{margin:2px 0 0}
+.py-cifra em.max{background:rgba(62,207,142,.18);color:#3ecf8e}
+.py-cifra em.min{background:rgba(255,91,108,.18);color:#ff7a88}
+.py-hoy-lbl{top:6px!important}
+.py-ejes span.fut{color:#cfc5ff;font-weight:700}
+.py-ejes span{transform:translateX(-50%)!important}
+.py-leyenda-nota{margin-left:auto;font-style:italic}
+
+/* Mes a mes estimado. */
+.py-meses{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.py-mes{padding:16px 18px;border-radius:18px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-md);
+  border-top:3px solid var(--acc)}
+.py-mes>small{font-size:12px;font-weight:700;color:var(--muted);text-transform:capitalize}
+.py-mes>b{display:block;font-family:var(--font-display,"Sora",sans-serif);font-size:27px;font-weight:800;color:var(--text);margin:4px 0 8px}
+.py-mes-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.py-mes-chips span{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px}
+.py-mes-chips span.pos{background:var(--green-soft);color:var(--green-strong)}
+.py-mes-chips span.neg{background:var(--red-soft);color:var(--red)}
+.py-mes-fila{display:flex;justify-content:space-between;gap:10px;font-size:12.3px;padding:6px 0;border-top:1px dashed var(--line)}
+.py-mes-fila span{color:var(--muted)}
+.py-mes-fila b{color:var(--text);font-variant-numeric:tabular-nums;text-align:right}
+
+/* Contexto del histórico. */
+.py-contexto{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.py-ctx{padding:12px 14px;border-radius:14px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow-sm)}
+.py-ctx small{display:block;font-size:11px;font-weight:700;color:var(--muted)}
+.py-ctx b{display:block;font-family:var(--font-display,"Sora",sans-serif);font-size:19px;color:var(--text);margin-top:3px}
+.py-ctx b b.pos{color:var(--green-strong)}
+.py-ctx b b.neg{color:var(--red)}
+.py-ctx em{display:block;font-style:normal;font-size:11px;color:var(--muted);margin-top:2px}
+@media (max-width:760px){.py-cifra:not(.fut):not(.ult) small{display:none}}

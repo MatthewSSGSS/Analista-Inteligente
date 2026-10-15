@@ -225,17 +225,60 @@ def _datos_proyeccion(resultado: dict, etiqueta: str, tarjetas: list, frase: str
                       probable, error) -> dict:
     """Lo que dibuja «Proyección» en JavaScript (ui/web/proyeccion.*), en texto plano."""
     pred = resultado["prediccion"]
-    historico = resultado["historico"].tail(18)
-    puntos = [{"m": _mes(p), "v": float(v), "t": cifra_eje(float(v)), "futuro": False}
-              for p, v in historico.items()]
+    completo = resultado["historico"]
+    # 12 meses reales: con más, los estimados quedaban apretados al final y sus cifras se montaban.
+    historico = completo.tail(12)
+
+    def _var(nuevo, viejo):
+        return (nuevo - viejo) / abs(viejo) * 100 if viejo else None
+
+    def _pct(v):
+        return "" if v is None else f"{v:+.1f}%"
+
+    puntos, anterior = [], None
+    for p, v in historico.items():
+        v = float(v)
+        puntos.append({"m": _mes(p), "v": v, "t": cifra_eje(v), "futuro": False,
+                       "vs": _pct(_var(v, anterior)) if anterior is not None else ""})
+        anterior = v
+    ultimo_real = anterior
+    # El mismo mes del año pasado, para cada mes estimado (si el histórico lo trae).
+    por_mes = {pd.Period(k, freq="M"): float(v) for k, v in completo.items()}
+    meses = []
     for _, fila in pred.iterrows():
         est = float(fila["estimado"])
-        punto = {"m": _mes(fila["periodo"]), "v": est, "t": f"≈ {cifra_eje(est)}", "futuro": True,
-                 "lo": float(fila["minimo"]), "hi": float(fila["maximo"])}
+        lo, hi = float(fila["minimo"]), float(fila["maximo"])
+        punto = {"m": _mes(fila["periodo"]), "v": est, "t": f"≈ {cifra_eje(est)}", "futuro": True, "lo": lo, "hi": hi,
+                 "vs": _pct(_var(est, anterior))}
         if error is not None:
             punto["plo"], punto["phi"] = max(est * (1 - error), 0), est * (1 + error)
             punto["rango"] = f"lo más probable: {cifra_eje(punto['plo'])} – {cifra_eje(punto['phi'])}"
         puntos.append(punto)
+        hace_un_anio = por_mes.get(pd.Period(fila["periodo"], freq="M") - 12)
+        meses.append({
+            "mes": _mes(fila["periodo"], True), "estimado": cifra_eje(est),
+            "probable": (f"{cifra_eje(punto['plo'])} – {cifra_eje(punto['phi'])}" if error is not None else ""),
+            "extremos": f"{cifra_eje(lo)} – {cifra_eje(hi)}",
+            "vs_hoy": _pct(_var(est, ultimo_real)),
+            "vs_anio": _pct(_var(est, hace_un_anio)) if hace_un_anio else "",
+            "anio_t": cifra_eje(hace_un_anio) if hace_un_anio else "",
+        })
+        anterior = est
+    # Lo que dice el histórico, para leer la proyección con contexto.
+    reales = [float(v) for v in completo.values]
+    contexto = []
+    if len(reales) >= 3:
+        ultimos = reales[-6:]
+        contexto.append({"n": f"Promedio últimos {len(ultimos)} meses", "v": cifra_eje(sum(ultimos) / len(ultimos))})
+        imax = max(range(len(reales)), key=lambda i: reales[i])
+        imin = min(range(len(reales)), key=lambda i: reales[i])
+        contexto.append({"n": "Mejor mes", "v": cifra_eje(reales[imax]), "d": _mes(completo.index[imax])})
+        contexto.append({"n": "Peor mes", "v": cifra_eje(reales[imin]), "d": _mes(completo.index[imin])})
+        if len(reales) >= 13:
+            contexto.append({"n": "Frente a hace un año", "v": _pct(_var(reales[-1], reales[-13])),
+                             "d": f"{_mes(completo.index[-1])} vs {_mes(completo.index[-13])}"})
+        contexto.append({"n": "Meses de historia", "v": f"{len(reales)}",
+                         "d": f"{_mes(completo.index[0])} – {_mes(completo.index[-1])}"})
     claves = ("real", "estimado", "probable", "confianza")
     tonos = {"estimado": tono, "confianza": {"alta": "positive", "media": "neutral", "baja": "negative"}
              .get(resultado["confianza"], "neutral")}
@@ -245,7 +288,7 @@ def _datos_proyeccion(resultado: dict, etiqueta: str, tarjetas: list, frase: str
         "kpis": [{"clave": c, "etiqueta": t["label"], "valor": t["value"], "detalle": t["delta"],
                   "tono": tonos.get(c, "neutral"), "chico": c in ("probable", "confianza")}
                  for c, t in zip(claves, tarjetas)],
-        "puntos": puntos,
+        "puntos": puntos, "meses": meses, "contexto": contexto,
     }
 
 

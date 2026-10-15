@@ -155,6 +155,14 @@ def test_datos_de_las_vistas():
     futuros = [x for x in py["puntos"] if x["futuro"]]
     check("Proyección: lo real y los 3 meses estimados con su rango",
           len(futuros) == 3 and all(x["lo"] <= x["v"] <= x["hi"] for x in futuros))
+    check("Proyección: cada punto trae su cambio frente al mes anterior (para escribirlo en el gráfico)",
+          all(x["vs"] for x in py["puntos"][1:]))
+    check("Proyección: una ficha por mes estimado, con lo más probable, extremos y vs hoy",
+          len(py["meses"]) == 3 and all(m["extremos"] and m["vs_hoy"] for m in py["meses"]))
+    check("Proyección: con 19 meses, cada estimado se compara con el mismo mes del año pasado",
+          all(m["vs_anio"] and m["anio_t"] for m in py["meses"]))
+    check("Proyección: contexto del histórico (promedio, mejor, peor, frente a hace un año)",
+          {"Mejor mes", "Peor mes", "Frente a hace un año"} <= {c["n"] for c in py["contexto"]})
 
     # Seguimiento de un caso: puesto sobre TODO el grupo, serie con el promedio del grupo.
     from core.universal_analysis import semantic_map
