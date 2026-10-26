@@ -2,6 +2,7 @@ import re
 import pandas as pd
 from .dates import detect_date, is_month_name_series, month_year_series, extract_year_hint
 from .semantic_engine import interpret_dataframe
+from .abreviaturas import nombre_para_buscar
 
 ID_RE = re.compile(r"(^id$|(^|[_\s-])id([_\s-]|$)|codigo|código|sku|invoice|factura|documento|numero|número)", re.I)
 # NIT, cédula, NUIP, RUT/RUC: siempre identificadores, se repitan o no. ID_RE
@@ -11,7 +12,7 @@ ID_RE = re.compile(r"(^id$|(^|[_\s-])id([_\s-]|$)|codigo|código|sku|invoice|fac
 DOC_ID_RE = re.compile(r"(\bnit\b|c[eé]dula|\bnuip\b|\bdni\b|\brut\b|\bruc\b)", re.I)
 MONEY_RE = re.compile(r"(money|currency|moneda|monto|importe|precio|price|cost|costo|ingreso|revenue|salary|salario|valor|total|amount|profit|utilidad)", re.I)
 PCT_RE = re.compile(r"(%|porcentaje|percent|ratio|margen)", re.I)
-GEO_RE = re.compile(r"(pais|país|country|ciudad|city|estado|state|region|región|zona|address|direccion|dirección|lat|lon|longitude|latitude)", re.I)
+GEO_RE = re.compile(r"(pais|país|country|ciudad|city|estado|state|region|región|zona|municipio|address|direccion|dirección|lat|lon|longitude|latitude)", re.I)
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -84,6 +85,9 @@ def detect_schema(df, context=None):
                 schema["categorical"].append(c)
                 schema["types"][c] = "Mes"
             continue
+        # Con abreviaturas traducidas («Mpio» → municipio, «Doc» → documento):
+        # ver core/abreviaturas.py.
+        nombre = nombre_para_buscar(c)
         dt, rate, method = detect_date(s, c)
         if dt is not None and rate >= .90:
             df[c] = dt
@@ -99,13 +103,13 @@ def detect_schema(df, context=None):
             # so cédulas, seriales, teléfonos, códigos, etc. stay out of
             # sums/averages even when Excel stores them as numbers.
             if (c in semantic.get("ids", []) or sem_type in {"id", "phone", "postal_code"}
-                    or (ID_RE.search(str(c)) and ratio > .5) or DOC_ID_RE.search(str(c))):
+                    or (ID_RE.search(nombre) and ratio > .5) or DOC_ID_RE.search(nombre)):
                 if c not in schema["ids"]:
                     schema["ids"].append(c)
                 schema["types"][c] = "Identificador"
-            elif PCT_RE.search(str(c)) or sem_type == "percentage":
+            elif PCT_RE.search(nombre) or sem_type == "percentage":
                 schema["metrics"].append(c); schema["types"][c] = "Porcentaje"
-            elif MONEY_RE.search(str(c)) or sem_type in {"revenue", "profit", "cost", "price", "discount", "tax"}:
+            elif MONEY_RE.search(nombre) or sem_type in {"revenue", "profit", "cost", "price", "discount", "tax"}:
                 schema["metrics"].append(c); schema["types"][c] = "Moneda"
             elif sem_type in {"quantity", "rating", "age"} or sem_type in {"unknown", None}:
                 schema["metrics"].append(c); schema["types"][c] = {"quantity": "Cantidad", "rating": "Puntuación", "age": "Edad"}.get(sem_type, "Número")
@@ -120,9 +124,9 @@ def detect_schema(df, context=None):
         if len(x) and x.map(lambda v: bool(EMAIL_RE.match(v))).mean() > .95:
             schema["emails"].append(c); schema["types"][c] = "Correo"; continue
         ratio = x.nunique() / max(len(x), 1)
-        if (ID_RE.search(str(c)) and ratio > .5) or DOC_ID_RE.search(str(c)):
+        if (ID_RE.search(nombre) and ratio > .5) or DOC_ID_RE.search(nombre):
             schema["ids"].append(c); schema["types"][c] = "Identificador"
-        elif GEO_RE.search(str(c)):
+        elif GEO_RE.search(nombre):
             schema["geography"].append(c); schema["categorical"].append(c); schema["types"][c] = "Geografía"
         elif x.nunique() <= min(100, max(10, int(len(x) * .05))):
             schema["categorical"].append(c); schema["types"][c] = "Categoría"

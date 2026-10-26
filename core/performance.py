@@ -22,6 +22,7 @@ import pandas as pd
 import numpy as np
 from .numeric import numeric_series
 from .diagnostics import PEOR_SI_SUBE, ESTADOS_MALOS, _sin_tildes
+from .abreviaturas import nombre_legible, nombre_para_buscar
 
 ADDITIVE = {"revenue", "profit", "cost", "quantity", "discount", "tax"}
 
@@ -138,18 +139,20 @@ def columna_meta(df, schema, metric=None):
     escala cuadre; quien compara exige además que haya meta en 2+ grupos.
     """
     fechas, ids = set(schema.get("dates", [])), set(schema.get("ids", []))
-    palabras_metrica = _palabras(metric) if metric is not None else set()
+    palabras_metrica = (_palabras(metric) | _palabras(nombre_legible(metric))) if metric is not None else set()
     real = float(numeric_series(df[metric]).sum()) if metric is not None and metric in df.columns else None
     candidatas = []
     for c in df.columns:
         if c == metric or c in fechas or c in ids or str(c).startswith("_"):
             continue
-        if not META_RE.search(str(c)):
+        if not META_RE.search(nombre_para_buscar(c)):
             continue
         valores = pd.to_numeric(df[c], errors="coerce")
         if not (valores.notna().sum() >= max(3, len(df) * 0.02) and float(valores.sum()) > 0):
             continue
-        resto = {p for p in _palabras(c) if not META_RE.search(p)} - _CONECTORES_META
+        # Sobre el nombre traducido: «Obj» es «objetivo» (meta sin apellido),
+        # no una meta «de obj».
+        resto = {p for p in _palabras(nombre_legible(c)) if not META_RE.search(p)} - _CONECTORES_META
         if metric is not None:
             if resto and not resto <= palabras_metrica:
                 continue  # es la meta de otra métrica
@@ -184,7 +187,7 @@ def medida_de_cumplimiento(df, schema):
         return None
     muestra = df[columnas].head(_MAX_FILAS_CUMPLIMIENTO).apply(pd.to_numeric, errors="coerce")
     porcentajes = [c for c in columnas if _PORCENTAJE_NOMBRE_RE.search(str(c))]
-    metas = [c for c in columnas if META_RE.search(str(c)) and c not in porcentajes
+    metas = [c for c in columnas if META_RE.search(nombre_para_buscar(c)) and c not in porcentajes
              and muestra[c].notna().sum() >= 3 and float(muestra[c].sum()) > 0]
     medidas = [c for c in columnas if c not in porcentajes and c not in metas]
     if not (porcentajes and metas and medidas):

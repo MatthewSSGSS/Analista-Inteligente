@@ -6,6 +6,7 @@ layer using column names, dtypes, value patterns, cardinality and ranges.
 from __future__ import annotations
 from .numeric import numeric_series
 from .dates import TZ_SUFFIX_RE, a_datetime
+from .abreviaturas import nombre_legible
 
 import re
 import unicodedata
@@ -17,7 +18,8 @@ import pandas as pd
 
 
 CONCEPTS = {
-    "date": ["fecha", "date", "dia", "día", "day", "periodo", "período", "mes", "month", "año", "year", "created", "created_at", "timestamp"],
+    "date": ["fecha", "date", "dia", "día", "day", "periodo", "período", "mes", "month", "año", "year", "created", "created_at", "timestamp",
+             "corte", "emision", "vencimiento", "nacimiento", "creacion", "apertura"],
     "datetime": ["datetime", "timestamp", "fecha hora", "fecha_hora", "date time", "created_at", "updated_at"],
     "id": ["id", "codigo", "código", "code", "sku", "uuid", "folio", "invoice", "factura", "documento", "numero", "número", "no.", "nro", "cedula", "cédula", "identificacion", "identificación", "serial", "numero de serie", "número de serie", "no de serie", "no. de serie", "serie", "codigo interno", "código interno"],
     "name": ["nombre", "name", "nombres", "full name", "fullname"],
@@ -35,7 +37,8 @@ CONCEPTS = {
     "brand": ["marca", "brand", "fabricante", "manufacturer"],
     "supplier": ["proveedor", "supplier", "vendor"],
     "customer": ["cliente", "customer", "comprador", "buyer", "usuario", "user", "cuenta", "account"],
-    "employee": ["empleado", "employee", "colaborador", "staff", "trabajador", "worker", "asesor", "vendedor", "salesperson"],
+    "employee": ["empleado", "employee", "colaborador", "staff", "trabajador", "worker", "asesor", "vendedor", "salesperson",
+                 "responsable", "ejecutivo", "gestor", "promotor", "agente"],
     "gender": ["genero", "género", "gender", "sexo", "sex"],
     "age": ["edad", "age", "years old", "años"],
     "status": ["estado", "status", "situacion", "situación", "state", "condition", "activo", "active"],
@@ -80,7 +83,7 @@ def _tokenize(text: str) -> set[str]:
 
 
 def _name_score(column: str, concept: str) -> float:
-    name = normalize_text(column)
+    name = normalize_text(nombre_legible(column))
     if not name:
         return 0.0
     if name in ALIASES and ALIASES[name] == concept:
@@ -279,7 +282,7 @@ def _concept_prior_from_values(s: pd.Series, concept: str, cache: dict | None = 
 
 def classify_column(s: pd.Series, column: str) -> dict:
     scores: dict[str, float] = {}
-    name = normalize_text(column)
+    name = normalize_text(nombre_legible(column))
     dtype = str(s.dtype)
     non_null = s.dropna()
     unique = int(non_null.nunique()) if len(non_null) else 0

@@ -4,9 +4,11 @@ from datetime import timedelta, timezone
 
 import pandas as pd
 
+from .abreviaturas import nombre_para_buscar
+
 DATE_NAME = re.compile(
     r"(fecha|date|datetime|timestamp|created|updated|modified|period|periodo|"
-    r"dia|día|mes|month|year|año)", re.IGNORECASE
+    r"dia|día|mes|month|year|año|corte|emisi[oó]n|vencimiento|nacimiento|creaci[oó]n|apertura)", re.IGNORECASE
 )
 # Fechas en formato ISO (YYYY-MM-DD, con u sin hora) NO son ambiguas: el año
 # siempre va primero. pandas normalmente respeta esto, pero con
@@ -471,7 +473,7 @@ def detect_date(s, name):
         if len(valid):
             years = valid.dt.year
             if years.between(1990, 2100).mean() > 0.95 and (
-                DATE_NAME.search(str(name)) or numeric.median() >= 1_000_000_000
+                DATE_NAME.search(nombre_para_buscar(name)) or numeric.median() >= 1_000_000_000
             ):
                 result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
                 result.loc[x.index] = unix
@@ -481,7 +483,7 @@ def detect_date(s, name):
         valid = excel.dropna()
         if len(valid):
             years = valid.dt.year
-            if years.between(1990, 2100).mean() > 0.95 and DATE_NAME.search(str(name)):
+            if years.between(1990, 2100).mean() > 0.95 and DATE_NAME.search(nombre_para_buscar(name)):
                 result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
                 result.loc[x.index] = excel
                 return date_only(result), excel.notna().mean(), "excel_serial"
@@ -497,7 +499,7 @@ def detect_date(s, name):
         valid = yyyymm.dropna()
         if len(valid):
             years = valid.dt.year
-            if years.between(1990, 2100).mean() > 0.95 and DATE_NAME.search(str(name)):
+            if years.between(1990, 2100).mean() > 0.95 and DATE_NAME.search(nombre_para_buscar(name)):
                 result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
                 result.loc[x.index] = yyyymm
                 return date_only(result), yyyymm.notna().mean(), "yyyymm_period"
