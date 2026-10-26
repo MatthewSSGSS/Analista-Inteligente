@@ -3,6 +3,7 @@ import pandas as pd
 from .dates import detect_date, is_month_name_series, month_year_series, extract_year_hint
 from .semantic_engine import interpret_dataframe
 from .abreviaturas import nombre_para_buscar
+from .por_valores import completar_por_valores
 
 ID_RE = re.compile(r"(^id$|(^|[_\s-])id([_\s-]|$)|codigo|código|sku|invoice|factura|documento|numero|número)", re.I)
 # NIT, cédula, NUIP, RUT/RUC: siempre identificadores, se repitan o no. ID_RE
@@ -165,6 +166,10 @@ def detect_schema(df, context=None):
     for c in semantic["geography"]:
         if c in df.columns and c not in schema["geography"]:
             schema["geography"].append(c)
+
+    # Lo que el nombre dejó sin papel claro se reconoce por sus valores:
+    # lugares, personas, códigos y fechas en número (ver core/por_valores.py).
+    completar_por_valores(df, schema, hay_periodo=bool(month_source_col))
 
     # Periodos escritos como "Enero", "Febrero" o como Mes + Año son fechas
     # válidas para el análisis. Creamos una fecha interna universal y retiramos

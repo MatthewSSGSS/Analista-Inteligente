@@ -106,7 +106,7 @@ def opciones_de_comparacion(df: pd.DataFrame, schema: dict) -> list[str]:
         if distintos == len(valores) and distintos > 60:
             continue  # un valor distinto por fila, y muchos: es un código o una descripción
         tipo = tipos.get(c, "")
-        es_persona = c == nombre_completo or tipo == "employee" or bool(PERSONA_RE.search(str(c)))
+        es_persona = c == nombre_completo or tipo in {"employee", "name"} or bool(PERSONA_RE.search(str(c)))
         # El estado describe una situación, no a alguien: "Vencido contra
         # Cerrado" no es un cuadro comparativo.
         prioridad = 40 if tipo == "status" else PRIORIDAD_DIMENSION.get(tipo, 30)

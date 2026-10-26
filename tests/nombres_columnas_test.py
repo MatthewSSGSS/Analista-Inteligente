@@ -116,8 +116,63 @@ def la_fecha_en_numero_de_serie_se_reconoce_con_otros_nombres():
     check("«Activaciones» en rango de serie sigue siendo cantidad", "Activaciones" not in detect_schema(df)["dates"])
 
 
+def sin_nombre_se_reconoce_por_los_valores():
+    """Col1…Col8: el nombre no dice nada y los valores sí (core/por_valores.py)."""
+    d = _datos()
+    personas = ["Ana Gómez", "Luis Díaz", "Juan Pérez", "Marta Ruiz", "Carlos Rojas"]
+    cedulas = dict(zip(personas, [52111222, 79000111, 1020304050, 43555666, 80123456]))
+    d["cedula"] = pd.Series(d["persona"]).map(cedulas).to_numpy()   # cada cédula, siempre la misma persona
+    d["fecha"] = (d["fecha"] - pd.Timestamp("1899-12-30")).days.astype(int)  # serie de Excel
+    df = pd.DataFrame({f"Col{i}": v for i, v in enumerate(d.values(), 1)})
+    schema = detect_schema(df)
+    sem = {x["column"]: x.get("semantic_type") for x in schema["semantic"]["columns"]}
+    check("Col1 (número de serie) es fecha: no cae en «Vista principal»", schema["dates"] == ["Col1"])
+    check("Col2 son personas", sem["Col2"] == "name")
+    check("Col3 (cédulas 1 a 1 con la persona) es identificador", "Col3" in schema["ids"])
+    check("Col3 no se suma", "Col3" not in schema["metrics"] and "Col3" not in schema["semantic"]["metrics"])
+    check("Col4 (municipios) es geografía", "Col4" in schema["geography"])
+    check("y queda explicado por qué", set(schema.get("por_valores", {})) == {"Col1", "Col2", "Col3", "Col4"})
+    check("Col5…Col8 siguen siendo métricas (meta/porcentaje se confirman a mano)",
+          {"Col5", "Col6", "Col7", "Col8"} <= set(schema["metrics"]))
+
+
+def los_valores_no_inventan_papeles():
+    n = 60
+    # Productos y zonas: dos palabras con mayúscula, pero sin nombres de pila.
+    df = pd.DataFrame({"Campo": ["Plan Oro", "Zona Norte", "Tarjeta Clásica", "Plan Plata"] * 15,
+                       "Valor": range(n)})
+    sem = {x["column"]: x.get("semantic_type") for x in detect_schema(df)["semantic"]["columns"]}
+    check("«Plan Oro», «Zona Norte» no son personas", sem["Campo"] != "name")
+    # Apellidos que son lugares: es una persona, nunca un lugar.
+    df = pd.DataFrame({"Campo": ["Juan Córdoba Gómez", "María Pereira López", "Ana Santander Ruiz",
+                                 "Luis Bolívar Díaz"] * 15, "Valor": range(n)})
+    schema = detect_schema(df)
+    check("«Juan Córdoba Gómez» no es un lugar", "Campo" not in schema["geography"])
+    # Tabla resumen, una fila por persona: la venta va 1 a 1 con el nombre,
+    # pero no se repite, así que sigue siendo una métrica.
+    df = pd.DataFrame({"Campo": ["Ana Gómez", "Luis Díaz", "Juan Pérez", "Marta Ruiz"],
+                       "Total": [1200, 3400, 560, 7800]})
+    schema = detect_schema(df)
+    check("una venta por persona en un resumen sigue siendo métrica", "Total" in schema["metrics"])
+    # La meta fija de cada región, mes a mes, va 1 a 1 con la región igual que
+    # una cédula con su persona; es redonda y no es un documento.
+    df = pd.DataFrame({"Region": ["R1", "R2", "R3", "R4"] * 6, "Ventas": range(24),
+                       "Campo": [4_000_000, 2_500_000, 3_200_000, 1_800_000] * 6})
+    check("una meta fija por región no se toma por código", "Campo" not in detect_schema(df)["ids"])
+    # Precios redondos dentro del rango de las fechas de Excel: no son fechas.
+    df = pd.DataFrame({"Item": list("ABCDEFGHIJ") * 4,
+                       "Campo": [35000, 42000, 39900, 45500, 50000, 38000, 41000, 47000, 36500, 44000] * 4})
+    check("precios redondos en rango de serie no son fecha", detect_schema(df)["dates"] == [])
+    # Con una fecha de verdad en la hoja, otro entero en rango no se toca.
+    dias = pd.date_range("2025-01-05", periods=40, freq="7D")
+    df = pd.DataFrame({"Fecha": dias, "Campo": (dias - pd.Timestamp("1899-12-30")).days + 3})
+    check("si ya hay fecha, no se busca otra en los números", detect_schema(df)["dates"] == ["Fecha"])
+
+
 if __name__ == "__main__":
     el_traductor_escribe_completo_lo_abreviado()
     abreviado_se_lee_igual_que_claro()
     la_fecha_en_numero_de_serie_se_reconoce_con_otros_nombres()
+    sin_nombre_se_reconoce_por_los_valores()
+    los_valores_no_inventan_papeles()
     print("\nNombres de columnas test completado sin errores.")
