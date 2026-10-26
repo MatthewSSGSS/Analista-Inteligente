@@ -287,6 +287,21 @@ def cualquier_forma_de_escribir_la_zona_abre_el_archivo():
                   str(item["processed"]["Fecha"].dtype) == "datetime64[ns]")
 
 
+def los_meses_en_espanol_se_entienden():
+    """"5 ene 2025" o "3 de abril de 2025" quedaban como texto: pandas solo
+    entiende los meses en inglés, y el archivo sin fecha caía en «Vista
+    principal». Ver core/dates.meses_al_ingles."""
+    valores = ["5 ene 2025", "3 de abril de 2025", "10-ago-25", "lunes, 3 de marzo de 2025",
+               "15 dic. 2024", "ene-2025", "1 Septiembre 2025", "20/MAY/2025"]
+    fechas, tasa, _ = D.detect_date(pd.Series(valores), "Corte")
+    check("todas las formas en español se leen", tasa == 1.0)
+    check("y dan la fecha correcta", fechas.dt.strftime("%Y-%m-%d").tolist() ==
+          ["2025-01-05", "2025-04-03", "2025-08-10", "2025-03-03", "2024-12-15", "2025-01-01",
+           "2025-09-01", "2025-05-20"])
+    texto = pd.Series(["Plan Mayo", "Tarifa Enero", "Plan Marzo"])
+    check("un nombre con un mes pero sin número no se toca", D.meses_al_ingles(texto).tolist() == texto.tolist())
+
+
 def columnas_ya_fechadas_y_casos_raros():
     with _pandas_estricto():
         check("una columna ya con zona única sale sin zona",
@@ -330,4 +345,5 @@ if __name__ == "__main__":
     cualquier_forma_de_escribir_la_zona_abre_el_archivo()
     columnas_ya_fechadas_y_casos_raros()
     el_archivo_completo_carga_y_se_puede_filtrar()
+    los_meses_en_espanol_se_entienden()
     print("\nFechas test completado sin errores.")

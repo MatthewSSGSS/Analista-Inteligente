@@ -253,6 +253,45 @@ def _parse_seguro(texto, **kwargs):
     return fechas.dt.tz_localize(None) if tz is not None else fechas
 
 
+# Meses y días en español escritos dentro de una fecha: "5 ene 2025",
+# "3 de abril de 2025", "10-ago-25", "lunes, 3 de marzo de 2025". pandas solo
+# entiende los nombres en inglés, así que la columna entera quedaba como texto
+# (y el archivo, sin fecha, caía en «📚 Vista principal»). Ver `meses_al_ingles`.
+_MES_ES = {"enero": "jan", "ene": "jan", "febrero": "feb", "marzo": "mar", "abril": "apr", "abr": "apr",
+           "mayo": "may", "junio": "jun", "julio": "jul", "agosto": "aug", "ago": "aug",
+           "septiembre": "sep", "setiembre": "sep", "sept": "sep", "set": "sep", "octubre": "oct",
+           "noviembre": "nov", "diciembre": "dec", "dic": "dec"}
+_LETRA = "a-zA-ZáéíóúÁÉÍÓÚñÑ"
+_MESES_ES = "|".join(sorted(_MES_ES, key=len, reverse=True))
+_MES_ES_RE = re.compile(rf"(?<![{_LETRA}])({_MESES_ES})\.?(?![{_LETRA}])", re.I)
+_HAY_MES_ES_RE = re.compile(rf"(?<![{_LETRA}])(?:{_MESES_ES})(?![{_LETRA}])", re.I)  # sin grupo: para buscar
+_DIA_SEMANA_RE = re.compile(rf"(?<![{_LETRA}])(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)"
+                            rf"(?![{_LETRA}])[,\s]*", re.I)
+_DE_RE = re.compile(r"\s+del?\s+", re.I)
+
+
+def meses_al_ingles(texto):
+    """Traduce el mes en español al inglés (y quita "de" y el día de la
+    semana) en los valores que además tienen un número; el resto queda igual.
+    Un valor que es solo un mes ("Enero") no se toca: eso lo resuelve la
+    detección de columnas de mes."""
+    if texto is None:
+        return texto
+    try:
+        con_mes = texto.str.contains(_HAY_MES_ES_RE, na=False) & texto.str.contains(r"\d", na=False)
+    except (AttributeError, TypeError):
+        return texto
+    if not con_mes.any():
+        return texto
+    traducido = (texto[con_mes].str.replace(_DIA_SEMANA_RE, "", regex=True)
+                 .str.replace(_DE_RE, " ", regex=True)
+                 .str.replace(_MES_ES_RE, lambda m: _MES_ES[m.group(1).lower()], regex=True)
+                 .str.strip())
+    salida = texto.copy()
+    salida[con_mes] = traducido
+    return salida
+
+
 def solo_fecha(texto):
     """Se queda con la FECHA de cada valor y descarta todo lo que venga
     detrás: hora, zona horaria, lo que sea.
@@ -529,7 +568,7 @@ def detect_date(s, name):
     # columna de nombres (220 distintos en 70.000 filas) pasaba por dos
     # expresiones regulares 70.000 veces para terminar descartada.
     codigos, unicos = pd.factorize(text)
-    limpios = solo_fecha(sin_hora(pd.Series(unicos, dtype=object)))
+    limpios = meses_al_ingles(solo_fecha(sin_hora(pd.Series(unicos, dtype=object))))
     text = pd.Series(limpios.to_numpy(dtype=object)[codigos], index=text.index)
     iso_ratio = text.str.match(ISO_DATE_RE).mean() if len(text) else 0
     # Si la mayoría de los valores ya vienen en formato ISO (típico tras
