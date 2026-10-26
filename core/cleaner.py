@@ -236,11 +236,62 @@ def _normalize_key(value) -> str:
     return s
 
 
+# Palabras que van en minúscula dentro de un nombre bien escrito ("Valle del Cauca").
+_CONECTORES_NOMBRE = {"de", "del", "la", "las", "los", "y", "e", "el", "da", "do"}
+
+
+def _bien_escrito(valor: str) -> bool:
+    """¿Mayúsculas razonables? "Juan Pérez" y "CAV" sí; "juan PEREZ" y "medellín" no."""
+    letras = [ch for ch in valor if ch.isalpha()]
+    if not letras:
+        return True
+    if valor.isupper():
+        return True  # siglas, o un archivo escrito todo en mayúsculas
+    palabras = [p for p in re.split(r"[\s\-/]+", valor) if any(ch.isalpha() for ch in p)]
+    for i, p in enumerate(palabras):
+        if i and p.lower() in _CONECTORES_NOMBRE and p.islower():
+            continue
+        primera = next(ch for ch in p if ch.isalpha())
+        resto = p[p.index(primera) + 1:]
+        if not primera.isupper() or (resto != resto.lower() and not p.isupper()):
+            return False
+    return True
+
+
+def _tildes(valor: str) -> int:
+    return sum(1 for ch in unicodedata.normalize("NFKD", valor) if unicodedata.combining(ch))
+
+
+def _con_tildes_de(base: str, con_tildes: str) -> str:
+    """`base` con las tildes de `con_tildes` (mismo texto salvo tildes y
+    mayúsculas): "Medellin" + "medellín" → "Medellín"."""
+    sin = [unicodedata.normalize("NFKD", ch)[0] for ch in con_tildes]
+    if len(con_tildes) != len(base) or any(s.lower() != b.lower() for s, b in zip(sin, base)):
+        return base
+    return "".join(t.upper() if b.isupper() else t.lower() for t, b in zip(con_tildes, base))
+
+
+def _la_mejor_escrita(values: list, counts: pd.Series):
+    """Cuál de las variantes se conserva: la bien escrita en mayúsculas y, entre
+    esas, la más frecuente; con las tildes de la que las tenga. Antes ganaba
+    solo la más frecuente, y quedaban «juan PEREZ» o «Medellin» en los
+    filtros, gráficos e informes."""
+    # A igual frecuencia, "Bogotá" antes que "BOGOTÁ": las mayúsculas sostenidas
+    # solo ganan cuando son la forma habitual del archivo (siglas como CAV).
+    base = max(values, key=lambda v: (_bien_escrito(str(v)), int(counts[v]), not str(v).isupper()))
+    if not isinstance(base, str):
+        return base
+    mas_tildes = max(values, key=lambda v: (_tildes(str(v)), int(counts[v])))
+    if isinstance(mas_tildes, str) and _tildes(mas_tildes) > _tildes(base):
+        return _con_tildes_de(base, mas_tildes)
+    return base
+
+
 def _consolidate_spelling_variants(series: pd.Series):
     """Une valores que son el mismo dato escrito distinto -p. ej. "CAV",
     "Cav" y "cav " en una columna de puestos- para que no se cuenten ni se
-    grafiquen como categorías separadas. La variante más frecuente es la que
-    se conserva. Solo toca columnas donde de verdad existe esa duplicación;
+    grafiquen como categorías separadas. Se conserva la mejor escrita (ver
+    `_la_mejor_escrita`). Solo toca columnas donde de verdad existe esa duplicación;
     si todo ya está escrito de forma consistente, no cambia nada.
 
     Se trabaja sobre los valores DISTINTOS, no sobre las filas: normalizar
@@ -265,7 +316,7 @@ def _consolidate_spelling_variants(series: pd.Series):
     # Solo hay variante cuando una misma clave normalizada llega escrita de
     # más de una forma (con una sola forma no hay nada que unificar).
     canonical = {
-        key: counts[values].idxmax()
+        key: _la_mejor_escrita(values, counts)
         for key, values in by_key.items()
         if len(values) > 1
     }
