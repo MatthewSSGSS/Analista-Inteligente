@@ -26,7 +26,7 @@ if getattr(_sys, "_analista_commit", None) != _disco:
 from datetime import datetime
 from ui.styles.theme import inject_theme
 from ui.layouts.hero import hero_app
-from ui.layouts.tabs import barra_de_vistas, VISTA_ATACAR, VISTA_RESUMEN, VISTA_SEGUIMIENTO, VISTA_ESTRUCTURA
+from ui.layouts.tabs import barra_de_vistas, ir_a, VISTA_ATACAR, VISTA_RESUMEN, VISTA_SEGUIMIENTO, VISTA_ESTRUCTURA
 from ui.components.section import section_header
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
@@ -78,6 +78,7 @@ from ui.logistica import render_logistica_page
 from ui.tracking import render_tracking
 from ui.estructura import render_cargador_estructura, render_estructura
 from ui.multi_sheet import render_multi_sheet
+from ui.columnas import render_columnas
 from core.tracking_engine import ingest_file, sources_to_long, merge_long, read_consolidated
 import core.db_engine as db_engine
 
@@ -690,6 +691,7 @@ comparar_archivos = ([("⚖️ Comparar archivos", lambda: render_comparison(st.
 soporte = [
     ("🧮 Datos", lambda: render_data_table(df)),
     ("✅ Calidad del dato", lambda: render_quality(item["profile"])),
+    ("🔎 Columnas", lambda: render_columnas(item, sheet)),
 ]
 if multi_sheet_enabled:
     soporte.append(("🗂️ Varias hojas", lambda: render_multi_sheet(wb)))
@@ -706,6 +708,13 @@ seguimiento = ([(VISTA_SEGUIMIENTO, lambda: render_person_profile(df, schema, da
 
 if mode_info["mode"] in {"catalog", "reference"}:
     st.markdown(f'<div class="mode-banner"><b>{mode_info["label"]}</b> · {mode_info["reason"]}</div>', unsafe_allow_html=True)
+    # Casi siempre se llega aquí porque no se encontró una fecha: si el archivo
+    # sí la trae (con un nombre que no lo dice), se corrige en «🔎 Columnas».
+    if not schema.get("dates"):
+        _aviso, _boton = st.columns([4, 1])
+        _aviso.caption("No encontré una columna de fecha, así que muestro el contenido para consultarlo. "
+                       "Si el archivo sí trae fechas o cifras que no reconocí, indícalo en «🔎 Columnas».")
+        _boton.button("🔎 Revisar columnas", key="ir_a_columnas", on_click=ir_a, args=("🔎 Columnas",))
     # Un catálogo o lista de referencia no tiene desempeño que atacar ni
     # personas que comparar: su vista principal es explorar el contenido.
     principales = ([inicio] + estructura + [("📚 Vista principal", lambda: render_catalog(df, schema, mode_info))] + geo

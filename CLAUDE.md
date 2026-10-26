@@ -111,7 +111,12 @@ on extension) and calls `core/profile.profile_sheet` per sheet, which cleans the
 metrics, categorical, text, geography, ids — including semantic typing
 (`core/semantic_engine.interpret_dataframe`, e.g. `revenue` vs `quantity` vs `percentage`) and
 identifier detection (`ID_RE`/`DOC_ID_RE` in `core/schema.py`, which keeps cédulas/NIT/SKU out of
-numeric aggregation even when they repeat). `core/gerencia.analisis_gerencial` adds the sales-manager reading on top of the diagnostics: root cause of the
+numeric aggregation even when they repeat). Column names are read through `core/abreviaturas.nombre_legible`
+(VLR_NETO → valor, Mpio → municipio, Obj → objetivo) and, when the name says nothing (Col1…), `core/por_valores`
+recognizes dates in serial/AAAAMM, persons, cédulas and places by their values (`schema["por_valores"]` keeps why);
+meta/percentage are never guessed by value. The user can correct any column's role in «🔎 Columnas»
+(`core/columnas.aplicar_papeles` → `ui/columnas.py`, stored on the loaded sheet; `schema["meta_declarada"]` wins in
+`columna_meta`). `tests/nombres_columnas_test.py`, `tests/columnas_test.py`. `core/gerencia.analisis_gerencial` adds the sales-manager reading on top of the diagnostics: root cause of the
 change across every groupable column (two levels, e.g. region → channel), volume-vs-ticket lever, and
 opportunities valued in money. It is computed once inside `build_dashboard` (`dashboard["gerencia"]`) and
 reused by the plans, alerts, Resumen, «🎯 Qué atacar» and the HTML reports; `tests/gerencia_test.py`.

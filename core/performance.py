@@ -137,7 +137,12 @@ def columna_meta(df, schema, metric=None):
     las filas (en el archivo real, el 14,7 %) aunque esté completa para cada
     grupo que se compara. Se pide presencia real —no una celda suelta— y que la
     escala cuadre; quien compara exige además que haya meta en 2+ grupos.
+
+    Si la persona marcó la meta en «🔎 Columnas» (core/columnas.py), esa manda.
     """
+    declarada = schema.get("meta_declarada")
+    if declarada in df.columns and declarada != metric:
+        return declarada
     fechas, ids = set(schema.get("dates", [])), set(schema.get("ids", []))
     palabras_metrica = (_palabras(metric) | _palabras(nombre_legible(metric))) if metric is not None else set()
     real = float(numeric_series(df[metric]).sum()) if metric is not None and metric in df.columns else None
