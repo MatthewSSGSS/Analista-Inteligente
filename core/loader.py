@@ -5,6 +5,7 @@ import pandas as pd
 from .profile import profile_sheet
 from .relationships import detect_relationships
 from .pivot_flatten import merged_ranges_by_sheet, fill_merged_cells, flatten_pivot_grid
+from .filas_basura import quitar_filas_basura
 from .informe import leer_informe, graficos_e_imagenes, titulo_principal, titulos as titulos_de
 from .informe_bloques import leer_bloques
 from .hojas_ocultas import hojas_ocultas
@@ -171,8 +172,10 @@ def _read_csv(data, filename=""):
     # tabla dinámica sí hereda su forma (encabezado de varias filas, etiquetas
     # de fila que solo aparecen una vez, filas de subtotal/total general) —
     # mismo aplanador que usan los Excel, sin el paso de celdas combinadas.
-    return flatten_pivot_grid(raw, _header_score, _norm_header, _make_unique_columns,
-                              year_hint=extract_year_hint(filename))
+    tabla, log = flatten_pivot_grid(raw, _header_score, _norm_header, _make_unique_columns,
+                                    year_hint=extract_year_hint(filename))
+    tabla, log_basura = quitar_filas_basura(tabla)  # ver core/filas_basura.py
+    return tabla, list(log) + log_basura
 
 
 REVISA_EL_FORMATO = (
@@ -318,7 +321,10 @@ def load_workbook(uploaded):
                                                     year_hint=extract_year_hint(sheet, filename))
             if n_merged:
                 pivot_log.insert(0, f"{n_merged} celda(s) combinada(s) del Excel rellenadas con su valor real.")
-            raw[sheet] = (data_df, pivot_log)
+            # Encabezados repetidos a mitad de la tabla y notas al pie (ver
+            # core/filas_basura.py). Solo en hojas planas: un informe no pasa por aquí.
+            data_df, log_basura = quitar_filas_basura(data_df)
+            raw[sheet] = (data_df, list(pivot_log) + log_basura)
             titulos[sheet] = titulo_principal(grid)
         if name.endswith((".xlsx", ".xlsm")):
             try:
