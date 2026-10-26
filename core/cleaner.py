@@ -1,7 +1,7 @@
 import re
 import unicodedata
 import pandas as pd
-from .numeric import normalize_missing_series
+from .numeric import normalize_missing_series, numeros_con_formato
 
 # Zona horaria única de todo el análisis. Colombia no usa horario de verano,
 # así que es siempre UTC-5: no hay saltos ni ambigüedades a lo largo del año.
@@ -306,16 +306,28 @@ def clean(df, faltantes_son_cero=True):
     missing_replaced = 0
     variants_merged_total = 0
     variant_columns = []
+    con_formato_cols, formatos = [], {}
     for c in out.select_dtypes(include=["object","string"]).columns:
         before = out[c].isna().sum()
+        original = out[c]
         out[c]=out[c].astype("string").str.replace(r"[\r\n\t]"," ",regex=True).str.strip()
         out[c] = normalize_missing_series(out[c])
+        # Números escritos con formato ("$ 1.234.567", "(500.000)", "45%"):
+        # se leen sobre la columna ORIGINAL, no la ya pasada a texto, para que
+        # una celda que en Excel sí era número no se confunda con el formato
+        # de las demás. Ver core/numeric.numeros_con_formato.
+        leidos = numeros_con_formato(original.where(out[c].notna()))
         # Excel often stores numeric columns as text when the sheet contains a
         # title/header row. Recover numeric columns when most non-empty values
         # are numeric, without touching true categorical columns such as Mes.
         probe = pd.to_numeric(out[c], errors="coerce")
         nonempty = out[c].notna().sum()
-        if nonempty and probe.notna().sum() / nonempty >= 0.85:
+        if leidos is not None:
+            out[c], formato = leidos
+            con_formato_cols.append(str(c))
+            if formato:
+                formatos[c] = formato
+        elif nonempty and probe.notna().sum() / nonempty >= 0.85:
             out[c] = probe
         else:
             out[c], merged = _consolidate_spelling_variants(out[c])
@@ -323,6 +335,13 @@ def clean(df, faltantes_son_cero=True):
                 variants_merged_total += merged
                 variant_columns.append(str(c))
         missing_replaced += int(out[c].isna().sum() - before)
+    if con_formato_cols:
+        cols_txt = ", ".join(con_formato_cols[:5]) + ("…" if len(con_formato_cols) > 5 else "")
+        log.append(f"{len(con_formato_cols)} columna(s) con números escritos como texto ($, puntos de miles, "
+                   f"decimales con coma, %, negativos entre paréntesis) leídas como número: {cols_txt}.")
+    # Cómo venían escritos (con % o con $) lo usa core/por_valores cuando el
+    # nombre de la columna no dice si es un porcentaje o dinero.
+    out.attrs["formato_numeros"] = formatos
     if variants_merged_total:
         cols_txt = ", ".join(variant_columns[:5]) + ("…" if len(variant_columns) > 5 else "")
         log.append(f"{variants_merged_total:,} valores unificados por escribirse distinto (mayúsculas/espacios/tildes) siendo el mismo dato, en: {cols_txt}.")

@@ -25,9 +25,12 @@ una prueba en los valores que una columna de otro tipo no puede dar:
   o un AAAAMM, solo si la hoja no tiene ya otra fecha. Los precios caen en el
   mismo rango pero son casi siempre redondos (múltiplos de 100): se descartan.
 
-Quedan fuera a propósito la meta y el porcentaje: «Col5» y «Col6» pueden ser
-venta y meta, o venta y costo, y los valores no permiten saber cuál es cuál.
-Eso lo confirma la persona que conoce el archivo.
+- Porcentaje o dinero: solo si los valores venían escritos con «%» o con signo
+  de moneda (core/cleaner lo anota en `df.attrs["formato_numeros"]`).
+
+Queda fuera a propósito la meta: «Col5» y «Col6» pueden ser venta y meta, o
+venta y costo, y los valores no permiten saber cuál es cuál. Eso lo confirma
+la persona que conoce el archivo.
 
 Lo que se reconoce queda anotado en `schema["por_valores"]` ({columna: motivo})
 para poder explicarlo en pantalla.
@@ -194,6 +197,15 @@ def completar_por_valores(df: pd.DataFrame, schema: dict, hay_periodo: bool = Fa
         if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c]):
             numeros = pd.to_numeric(muestra[c], errors="coerce").dropna()
             if numeros.empty:
+                continue
+            # Venían escritos con % o con $ (core/cleaner lo anota al leerlos):
+            # eso dice qué son aunque la columna se llame «Col8».
+            formato = (df.attrs.get("formato_numeros") or {}).get(c)
+            if formato in {"porcentaje", "moneda"}:
+                tipos[c] = "Porcentaje" if formato == "porcentaje" else "Moneda"
+                marcar_semantica(c, "percentage" if formato == "porcentaje" else "revenue")
+                motivos[c] = ("Porcentaje: los valores venían escritos con «%»." if formato == "porcentaje"
+                              else "Dinero: los valores venían escritos con signo de moneda.")
                 continue
             # Fecha: solo si la hoja todavía no tiene ninguna.
             if not schema["dates"] and not hay_periodo:
