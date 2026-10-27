@@ -334,6 +334,49 @@ def _consolidate_spelling_variants(series: pd.Series):
     return series.replace(replacements), changed
 
 
+_MESES_NOMBRE = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+                 "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def meses_sin_reportar(df: pd.DataFrame, schema: dict) -> list[str]:
+    """Deja vacío (no en cero) el último mes de una métrica que no lo trae.
+
+    Un archivo que se llena mes a mes tiene el mes en curso a medio cargar:
+    septiembre con terminales pero sin TOTAL_INGRESOS. La limpieza vuelve cero
+    cada celda vacía, y el panel decía «TOTAL_INGRESOS bajó 100 % en
+    septiembre». Es el mismo error que core/informe.py evita en los informes;
+    aquí se aplica solo cuando es inequívoco: TODAS las filas del último mes
+    venían vacías en esa métrica y los meses anteriores sí tienen dato. Un
+    mes en blanco en medio de la serie, o unas celdas sueltas, siguen en cero.
+
+    Usa lo que `clean` anotó en `df.attrs["faltantes_numericos"]` y lo borra.
+    Modifica `df`; devuelve el registro para la pestaña de calidad.
+    """
+    faltantes = df.attrs.pop("faltantes_numericos", None) or {}
+    fechas = [c for c in schema.get("dates", []) if c in df.columns]
+    if not faltantes or not fechas:
+        return []
+    mes = pd.to_datetime(df[fechas[0]], errors="coerce").dt.to_period("M")
+    if mes.nunique() < 3:
+        return []
+    ultimo = mes.max()
+    en_ultimo = (mes == ultimo).to_numpy()
+    antes = (mes < ultimo).to_numpy()
+    quedaron = []
+    for c, vacias in faltantes.items():
+        if c not in df.columns or c not in schema.get("metrics", []) or len(vacias) != len(df):
+            continue
+        if vacias[en_ultimo].all() and (~vacias[antes]).mean() >= 0.5:
+            df[c] = df[c].astype("float64").where(~en_ultimo)
+            quedaron.append(str(c))
+    if not quedaron:
+        return []
+    nombre_mes = f"{_MESES_NOMBRE[ultimo.month - 1]} de {ultimo.year}"
+    cuales = ", ".join(f"«{c}»" for c in quedaron[:4]) + (f" y {len(quedaron) - 4} más" if len(quedaron) > 4 else "")
+    return [f"{cuales} no {'trae' if len(quedaron) == 1 else 'traen'} dato en {nombre_mes}: se "
+            "deja sin reportar (no en cero), así que el panel compara contra el último mes que sí lo tiene."]
+
+
 def clean(df, faltantes_son_cero=True):
     out=df.copy(deep=True); log=[]
     # PRIMER paso, antes que cualquier otra cosa: unificar zonas horarias.
@@ -409,6 +452,11 @@ def clean(df, faltantes_son_cero=True):
     if len(numeric_cols):
         out[numeric_cols] = out[numeric_cols].replace([float("inf"), float("-inf")], pd.NA)
         if faltantes_son_cero:
+            # Qué celdas venían vacías, antes de volverlas cero: si resulta que
+            # es el último mes entero de una métrica, es «aún sin reportar» y
+            # no un cero (ver `meses_sin_reportar`, que se aplica ya con la fecha).
+            out.attrs["faltantes_numericos"] = {
+                c: out[c].isna().to_numpy() for c in numeric_cols if out[c].isna().any()}
             out[numeric_cols] = out[numeric_cols].fillna(0)
     if numeric_missing and faltantes_son_cero:
         log.append(f"{numeric_missing:,} valores numéricos faltantes convertidos a 0 para los cálculos.")

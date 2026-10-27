@@ -1,6 +1,6 @@
 import pandas as pd
 
-from .cleaner import clean
+from .cleaner import clean, meses_sin_reportar
 from .schema import detect_schema
 from .quality import assess
 from .performance import columna_meta, medida_de_cumplimiento
@@ -46,6 +46,13 @@ def profile_sheet(raw, context=None, structural_log=None):
     # Un informe convertido marca que sus celdas vacías no son cero (ver clean).
     processed, log = clean(raw, faltantes_son_cero=(context or {}).get("faltantes_son_cero", True))
     schema = detect_schema(processed, context=context or {})
+    # El último mes a medio cargar no es un cero (ver core/cleaner.meses_sin_reportar).
+    log = list(log) + meses_sin_reportar(processed, schema)
+    for fuente in (schema.get("period_sources") or {}).values():
+        if fuente.get("anio_supuesto"):
+            log.append(f"El archivo no dice de qué año son los meses: se tomó {fuente['anio_supuesto']}, el más "
+                       "reciente en que ya pasaron todos. Si es otro, agrega una columna «Año» o ponlo en el "
+                       "nombre del archivo o de la hoja.")
     # Meta y resultado en FILAS (una columna «Registro» con Presupuesto /
     # Ejecución) se giran a columnas para que la meta quede donde el resto del
     # panel la busca. Necesita el esquema —para no sumar una fecha como si

@@ -129,6 +129,20 @@ def extract_year_hint(*texts):
     return None
 
 
+def anio_probable(months, hoy=None) -> int:
+    """El año de una columna de meses que no dice de cuál es.
+
+    Antes se usaba 2000, y el panel decía «septiembre de 2000». Se toma el año
+    más reciente en que todos esos meses ya empezaron: con ENERO…SEPTIEMBRE en
+    octubre de 2026, es 2026; si el archivo llega a DICIEMBRE, es 2025.
+    """
+    hoy = pd.Timestamp(hoy) if hoy is not None else pd.Timestamp.now()
+    ultimo = month_number_series(months).max()
+    if pd.isna(ultimo):
+        return hoy.year
+    return hoy.year if int(ultimo) <= hoy.month else hoy.year - 1
+
+
 def month_year_series(months, years=None, year_hint=None):
     m = month_number_series(months)
     if years is not None:

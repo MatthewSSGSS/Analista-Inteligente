@@ -1,6 +1,6 @@
 import re
 import pandas as pd
-from .dates import detect_date, is_month_name_series, month_year_series, extract_year_hint
+from .dates import detect_date, is_month_name_series, month_year_series, extract_year_hint, anio_probable
 from .semantic_engine import interpret_dataframe
 from .abreviaturas import nombre_para_buscar
 from .por_valores import completar_por_valores
@@ -177,6 +177,11 @@ def detect_schema(df, context=None):
     # "2000-01-01" en la interfaz.
     if month_source_col:
         year_hint = extract_year_hint(context.get("sheet_name"), context.get("workbook_name"))
+        # Sin año en ninguna parte: el más reciente que cuadra con los meses,
+        # no 2000 (ver dates.anio_probable). Se anota para avisarlo.
+        anio_supuesto = None
+        if not year_hint and year_source_col is None:
+            year_hint = anio_supuesto = anio_probable(month_source)
         period = month_year_series(month_source, year_source, year_hint=year_hint)
         internal = "__periodo_analisis__"
         suffix = 2
@@ -192,7 +197,8 @@ def detect_schema(df, context=None):
         schema["dates"].append(internal)
         schema["types"][internal] = "Fecha de periodo"
         schema["date_metadata"][internal] = "mes_nombre" if year_source_col is None else "mes_año"
-        schema.setdefault("period_sources", {})[internal] = {"month": month_source_col, "year": year_source_col, "year_hint": year_hint}
+        schema.setdefault("period_sources", {})[internal] = {"month": month_source_col, "year": year_source_col,
+                                                             "year_hint": year_hint, "anio_supuesto": anio_supuesto}
 
     # ===== Una columna NUNCA puede ser fecha y métrica al mismo tiempo =====
     # `schema["semantic"]["metrics"]` es la salida cruda del motor semántico,
