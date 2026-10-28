@@ -130,11 +130,68 @@ def test_calamine_lee_lo_mismo():
     check("el lector elegido para .xlsx es calamine", loader._excel_engine("x.xlsx") == "calamine")
 
 
+def _base_grande(n=100_000):
+    rng = np.random.default_rng(3)
+    return pd.DataFrame({
+        "Asesor": rng.choice([f"Asesor {i}" for i in range(80)], n),
+        "Ciudad": rng.choice(["Bogotá", " Cali ", "Medellín\n", "N/A"], n),
+        "Ventas": rng.integers(1, 10**6, n).astype(object),
+        "Cédula": rng.integers(10**7, 10**9, n).astype(object),
+    })
+
+
+def test_filas_basura_no_va_fila_por_fila():
+    """core/filas_basura iba fila por fila: más de 4 minutos en una base de
+    120.000 registros. Ahora es por columnas y debe seguir encontrando el
+    encabezado repetido."""
+    import time
+    from core.filas_basura import quitar_filas_basura
+    df = _base_grande()
+    df.iloc[50_000] = ["Asesor", "Ciudad", "Ventas", "Cédula"]
+    t = time.time()
+    limpio, log = quitar_filas_basura(df)
+    check("filas basura en 100.000 filas tarda menos de 3 s", time.time() - t < 3)
+    check("y sigue quitando el encabezado repetido", len(limpio) == len(df) - 1 and log)
+
+
+def test_base_plana_no_pasa_por_el_lector_de_informes():
+    """Una base grande y llena no es un informe: recorrerla celda por celda
+    buscando títulos y meses costaba ~12 s. Un informe con meses en columnas,
+    o una hoja chica, sí pasan por core/informe."""
+    from core.loader import _es_base_plana
+    base = _base_grande(5000)
+    grid = pd.concat([pd.DataFrame([list(base.columns)], columns=base.columns), base], ignore_index=True)
+    grid.columns = range(grid.shape[1])
+    check("una base de 5.000 filas llena se reconoce", _es_base_plana(grid))
+    con_meses = grid.copy(); con_meses.iloc[0, 2] = "Enero"
+    check("con meses en el encabezado, no (puede ser un informe)", not _es_base_plana(con_meses))
+    check("una hoja chica siempre pasa por el lector de informes", not _es_base_plana(grid.head(500)))
+
+
+def test_limpieza_por_valores_distintos_da_lo_mismo():
+    """core/cleaner limpia las columnas de solo texto sobre sus valores
+    distintos y convierte directo las de solo números: debe dar lo mismo que
+    hacerlo celda por celda."""
+    from core.cleaner import clean
+    from core.numeric import normalize_missing_series
+    df = _base_grande(3000)
+    limpio, _ = clean(df)
+    esperado = normalize_missing_series(df["Ciudad"].astype("string").str.replace(r"[\r\n\t]", " ", regex=True).str.strip())
+    check("el texto queda igual que celda por celda",
+          limpio["Ciudad"].fillna("<vacío>").tolist() == esperado.fillna("<vacío>").tolist())
+    check("«N/A» sigue siendo vacío", limpio["Ciudad"].isna().sum() == (df["Ciudad"] == "N/A").sum())
+    check("las cifras se convierten igual",
+          limpio["Ventas"].tolist() == pd.to_numeric(df["Ventas"].astype("string")).tolist())
+
+
 def main():
     test_xml_sin_celdas()
     test_informe_memorizado()
     test_valores_distintos()
     test_calamine_lee_lo_mismo()
+    test_filas_basura_no_va_fila_por_fila()
+    test_base_plana_no_pasa_por_el_lector_de_informes()
+    test_limpieza_por_valores_distintos_da_lo_mismo()
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ It never mutates the user's original values. It builds an internal semantic
 layer using column names, dtypes, value patterns, cardinality and ranges.
 """
 from __future__ import annotations
-from .numeric import numeric_series
+from .numeric import a_numero, numeric_series
 from .dates import TZ_SUFFIX_RE, a_datetime
 from .abreviaturas import nombre_legible
 
@@ -198,7 +198,7 @@ def _geo_rate(s: pd.Series, concept: str) -> float:
 
 def _numeric_signal(s: pd.Series, concept: str) -> float:
     if not pd.api.types.is_numeric_dtype(s):
-        x = pd.to_numeric(s, errors="coerce")
+        x = a_numero(s)  # sobre los valores distintos si es texto
     else:
         x = s
     x = x.dropna()

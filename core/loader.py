@@ -1,6 +1,7 @@
 import io
 from datetime import datetime
 import re
+import numpy as np
 import pandas as pd
 from .profile import profile_sheet
 from .relationships import detect_relationships
@@ -96,6 +97,40 @@ def _grid(data, sheet_name, merge_ranges=None, engine=None, book=None):
     # comentario largo en pivot_flatten.merged_ranges_by_sheet).
     n_merged = fill_merged_cells(raw, merge_ranges) if merge_ranges and not raw.empty else 0
     return raw, n_merged
+
+
+_FILAS_BASE_PLANA = 2000
+
+
+def _es_base_plana(grid: pd.DataFrame) -> bool:
+    """¿Es inequívocamente una base de datos plana (y no un informe)?
+
+    core/informe y core/informe_bloques recorren la hoja celda por celda
+    buscando títulos, ejes de meses y bloques. En un informe (cientos de
+    filas) eso es instantáneo; en una base de 120.000 filas eran ~12 s para
+    concluir que no había ningún informe. Una base se reconoce barato: muchas
+    filas, UNA fila de encabezado con nombres distintos y sin meses (un
+    informe con los meses en columnas sí debe pasar por core/informe), y casi
+    todas las filas llenas. Ante la duda, devuelve False y todo sigue igual.
+    """
+    if len(grid) <= _FILAS_BASE_PLANA:
+        return False
+    llenas = grid.notna().to_numpy()
+    columnas = llenas.any(axis=0)
+    if columnas.sum() < 2:
+        return False
+    llenas = llenas[:, columnas]
+    primera = int(np.argmax(llenas.any(axis=1)))
+    encabezado = grid.iloc[primera, np.flatnonzero(columnas)]
+    valores = [v for v in encabezado.tolist() if v is not None and not (isinstance(v, float) and np.isnan(v))]
+    if (len(valores) < 0.8 * columnas.sum() or not all(isinstance(v, str) and v.strip() for v in valores)
+            or len({v.strip().lower() for v in valores}) != len(valores)):
+        return False
+    from .dates import month_number_series
+    if month_number_series(pd.Series(valores, dtype=object)).notna().any():
+        return False
+    cuerpo = llenas[primera + 1:]
+    return bool((cuerpo.mean(axis=1) >= 0.5).mean() >= 0.95)
 
 
 def _misma_tabla(a, b) -> bool:
@@ -276,7 +311,7 @@ def load_workbook(uploaded):
                 # y otros donde lo escondido sí era parte de la tabla.
                 tablas = []
                 for cuadricula in ([visible, grid] if visible is not grid else [grid]):
-                    if cuadricula.empty:
+                    if cuadricula.empty or _es_base_plana(cuadricula):
                         continue
                     tablas = leer_informe(cuadricula, sheet, extract_year_hint(sheet, filename))
                     # Sin meses pero con bloques apilados de cabecera doble

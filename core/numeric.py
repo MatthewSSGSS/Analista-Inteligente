@@ -143,6 +143,18 @@ def numeros_con_formato(s: pd.Series):
     return s.map(_celda).astype("float64"), formato
 
 
+def a_numero(s: pd.Series) -> pd.Series:
+    """`pd.to_numeric(s, errors="coerce")`, calculado sobre los valores
+    distintos cuando la columna es de texto: convertir 120.000 nombres para
+    concluir que no son números costaba ~0,1 s por columna, varias veces por
+    hoja. Mismo resultado fila por fila."""
+    if pd.api.types.is_numeric_dtype(s) or pd.api.types.infer_dtype(s, skipna=True) != "string":
+        return pd.to_numeric(s, errors="coerce")
+    codigos, unicos = pd.factorize(s)
+    convertidos = pd.to_numeric(pd.Series(unicos, dtype=s.dtype), errors="coerce")
+    return pd.Series(pd.api.extensions.take(convertidos.array, codigos, allow_fill=True), index=s.index)
+
+
 def numeric_series(s):
     """Convierte una columna métrica a número y deja faltantes/no válidos en 0."""
     x = normalize_missing_series(s)

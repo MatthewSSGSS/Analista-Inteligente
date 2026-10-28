@@ -5,6 +5,7 @@ from datetime import timedelta, timezone
 import pandas as pd
 
 from .abreviaturas import nombre_para_buscar
+from .numeric import a_numero
 
 DATE_NAME = re.compile(
     r"(fecha|date|datetime|timestamp|created|updated|modified|period|periodo|"
@@ -83,6 +84,12 @@ def month_number_series(s):
     # valores distintos: aplicada a las 70.000 filas de una base costaba más
     # que todo lo demás. `factorize` agrupa valores iguales en C; el
     # resultado por fila es el mismo.
+    # Una columna de números nunca es un nombre de mes: sin esto se pasaban a
+    # texto 120.000 cifras distintas por columna (se pregunta a cada columna
+    # si es «Mes», en core/schema.detect_schema).
+    if pd.api.types.is_numeric_dtype(s) or pd.api.types.infer_dtype(s, skipna=True) in {
+            "integer", "floating", "mixed-integer-float", "decimal"}:
+        return pd.Series(pd.NA, index=s.index, dtype="Int64")
     codigos, unicos = pd.factorize(s, use_na_sentinel=True)
     if not len(unicos):
         return pd.Series(pd.NA, index=s.index, dtype="Int64")
@@ -504,6 +511,16 @@ def date_only(series):
     return out.dt.normalize()
 
 
+def _texto_de_fecha(valores: pd.Series) -> pd.Series:
+    """El texto de cada valor tal como lo interpreta `detect_date`: sin
+    espacios, sin la hora y con el mes en inglés. Se calcula sobre los
+    valores distintos y se reparte a cada fila."""
+    texto = valores.astype(str).str.strip()
+    codigos, unicos = pd.factorize(texto)
+    limpios = meses_al_ingles(solo_fecha(sin_hora(pd.Series(unicos, dtype=object))))
+    return pd.Series(limpios.to_numpy(dtype=object)[codigos], index=texto.index)
+
+
 def detect_date(s, name):
     if pd.api.types.is_datetime64_any_dtype(s):
         converted = date_only(s)
@@ -519,7 +536,7 @@ def detect_date(s, name):
         result = date_only(month_year_series(x, year_hint=2000))
         return result.reindex(s.index), result.notna().mean(), "month_name"
 
-    numeric = pd.to_numeric(x, errors="coerce")
+    numeric = a_numero(x)  # sobre los valores distintos si es texto
     if numeric.notna().mean() > 0.95:
         unix = unix_timestamp(x)
         valid = unix.dropna()
@@ -557,7 +574,19 @@ def detect_date(s, name):
                 result.loc[x.index] = yyyymm
                 return date_only(result), yyyymm.notna().mean(), "yyyymm_period"
 
-    text = x.astype(str).str.strip()
+    # Sondeo ANTES de limpiar la columna entera (ver más abajo por qué hay
+    # sondeo). Antes se limpiaban primero las 120.000 filas —pasarlas a texto,
+    # recortar, quitar la hora— y recién después una muestra de 1.000 decía
+    # que no era fecha: en una base grande, segundos por columna de cifras o
+    # de nombres para nada. La muestra es la misma de siempre (repartida a lo
+    # largo de la columna) y se limpia igual que la columna.
+    if len(x) > 2000:
+        muestra = _texto_de_fecha(x.iloc[:: max(1, len(x) // 1000)])
+        dayfirst_muestra = muestra.str.match(ISO_DATE_RE).mean() < 0.5
+        tasa_muestra = float(_parse_seguro(muestra, dayfirst=dayfirst_muestra).notna().mean())
+        if tasa_muestra < 0.5:
+            return None, tasa_muestra, None
+
     # Se borra la HORA COMPLETA del texto antes de convertir, no solo el
     # sufijo de zona.
     #
@@ -581,9 +610,7 @@ def detect_date(s, name):
     # hacen sobre los valores distintos y se reparten a cada fila. Una
     # columna de nombres (220 distintos en 70.000 filas) pasaba por dos
     # expresiones regulares 70.000 veces para terminar descartada.
-    codigos, unicos = pd.factorize(text)
-    limpios = meses_al_ingles(solo_fecha(sin_hora(pd.Series(unicos, dtype=object))))
-    text = pd.Series(limpios.to_numpy(dtype=object)[codigos], index=text.index)
+    text = _texto_de_fecha(x)
     iso_ratio = text.str.match(ISO_DATE_RE).mean() if len(text) else 0
     # Si la mayoría de los valores ya vienen en formato ISO (típico tras
     # convertir una columna datetime a texto en el pipeline de limpieza),

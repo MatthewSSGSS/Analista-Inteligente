@@ -121,15 +121,22 @@ def detect_schema(df, context=None):
                 # a measure, do not invent a KPI from it.
                 schema["categorical"].append(c); schema["types"][c] = "Dato numérico no medible"
             continue
-        x = s.dropna().astype(str).str.strip()
-        if len(x) and x.map(lambda v: bool(EMAIL_RE.match(v))).mean() > .95:
+        # Sobre los valores distintos y repartido por fila: ¿es correo? y
+        # ¿cuántos distintos hay? dependen solo del valor. Fila por fila eran
+        # ~800.000 llamadas en una base de 120.000 registros.
+        codigos, unicos = pd.factorize(s.dropna().astype(str))
+        limpios = pd.Series(unicos, dtype=object).str.strip()
+        n_filas = len(codigos)
+        es_correo = limpios.map(lambda v: bool(EMAIL_RE.match(v))).to_numpy(dtype=bool)
+        if n_filas and es_correo[codigos].mean() > .95:
             schema["emails"].append(c); schema["types"][c] = "Correo"; continue
-        ratio = x.nunique() / max(len(x), 1)
+        distintos = limpios.nunique()
+        ratio = distintos / max(n_filas, 1)
         if (ID_RE.search(nombre) and ratio > .5) or DOC_ID_RE.search(nombre):
             schema["ids"].append(c); schema["types"][c] = "Identificador"
         elif GEO_RE.search(nombre):
             schema["geography"].append(c); schema["categorical"].append(c); schema["types"][c] = "Geografía"
-        elif x.nunique() <= min(100, max(10, int(len(x) * .05))):
+        elif distintos <= min(100, max(10, int(n_filas * .05))):
             schema["categorical"].append(c); schema["types"][c] = "Categoría"
         else:
             schema["text"].append(c); schema["types"][c] = "Texto"

@@ -27,6 +27,10 @@ _CANDIDATO_ZONA_RE = re.compile(r"\d.*(?::\d\d|Z\s*$|UTC|GMT|[+-]\d{2}:?\d{2}\s*
 # aportar nada.
 MAX_VALORES_ZONA = 20000
 
+# Lo que `pd.api.types.infer_dtype` dice de una columna de tipo genérico que
+# trae solo números (o nada): se resuelve en C, sin mirar valor por valor.
+_SOLO_NUMEROS = {"integer", "floating", "mixed-integer-float", "decimal", "empty"}
+
 
 def _valor_tiene_zona(valor) -> bool:
     """¿Este valor concreto lleva zona horaria? Lo decide pandas, no un
@@ -113,6 +117,12 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
 
             if not (serie.dtype == object or pd.api.types.is_string_dtype(serie)):
                 continue
+            # Una columna de tipo genérico que solo trae números (así llegan
+            # las cifras de la cuadrícula, antes de convertirlas) no puede
+            # llevar una zona horaria escrita. Mirarla costaba segundos por
+            # columna en una base de 120.000 filas.
+            if pd.api.types.infer_dtype(serie, skipna=True) in _SOLO_NUMEROS:
+                continue
 
             # Caso 2: el desfase viene pegado al valor — que es como Excel lo
             # guarda, porque su formato NO admite zona horaria en una celda
@@ -130,6 +140,15 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
             # Se evalúa sobre los valores DISTINTOS (una columna de 200.000
             # filas suele tener unas pocas decenas), así que revisar la
             # columna completa sale barato.
+            # Atajo para columnas de solo texto: se mira primero sobre los
+            # valores DISTINTOS. Si ninguno trae zona —lo normal: nombres,
+            # ciudades, códigos—, la columna se salta sin recorrer sus 120.000
+            # filas. Si alguno la trae, sigue el camino completo de abajo.
+            if pd.api.types.infer_dtype(serie, skipna=True) == "string":
+                unicos = pd.Series(pd.unique(serie.dropna().to_numpy(dtype=object)), dtype=object)
+                if not (unicos.str.contains(_TZ_VALUE_RE, na=False).any()
+                        or any(_valor_tiene_zona(v) for v in _candidatos_con_zona(unicos))):
+                    continue
             texto = serie.astype(str)
 
             # Detección en dos niveles, por rendimiento y por cobertura:
@@ -195,6 +214,12 @@ def normalize_timezones(df: pd.DataFrame) -> list[str]:
         try:
             serie = df.iloc[:, pos]
             if not (serie.dtype == object or pd.api.types.is_string_dtype(serie)):
+                continue
+            # Una columna de tipo genérico que solo trae números (así llegan
+            # las cifras de la cuadrícula, antes de convertirlas) no puede
+            # llevar una zona horaria escrita. Mirarla costaba segundos por
+            # columna en una base de 120.000 filas.
+            if pd.api.types.infer_dtype(serie, skipna=True) in _SOLO_NUMEROS:
                 continue
             distintos = _candidatos_con_zona(serie)
             if not len(distintos):
@@ -404,17 +429,46 @@ def clean(df, faltantes_son_cero=True):
     for c in out.select_dtypes(include=["object","string"]).columns:
         before = out[c].isna().sum()
         original = out[c]
-        out[c]=out[c].astype("string").str.replace(r"[\r\n\t]"," ",regex=True).str.strip()
-        out[c] = normalize_missing_series(out[c])
+        # Atajo: una columna que solo trae números (las cifras llegan así de la
+        # cuadrícula) se convierte directo. El camino de abajo la pasaba entera
+        # a texto, la recortaba, buscaba vacíos y formatos y la volvía a
+        # convertir: segundos por columna en una base grande, para el mismo
+        # resultado.
+        if pd.api.types.infer_dtype(original, skipna=True) in _SOLO_NUMEROS and original.notna().any():
+            out[c] = pd.to_numeric(original.astype("string"), errors="coerce")
+            missing_replaced += int(out[c].isna().sum() - before)
+            continue
+        # Una columna de SOLO texto (lo confirma infer_dtype, en C) se limpia
+        # sobre sus valores distintos y se reparte a cada fila: «Ciudad» trae
+        # 10 valores en 120.000 filas. Todo lo de abajo depende solo del valor
+        # de cada celda, así que el resultado es el mismo. Con números
+        # mezclados no se hace: 1 y 1.0 son el mismo valor para factorize y
+        # distinto texto.
+        if pd.api.types.infer_dtype(original, skipna=True) == "string":
+            codigos, unicos = pd.factorize(original)
+            originales = pd.Series(unicos, dtype=object)
+        else:
+            codigos, originales = None, original
+
+        def _a_filas(serie):
+            if codigos is None:
+                return serie
+            return pd.Series(pd.api.extensions.take(serie.array, codigos, allow_fill=True), index=out.index)
+
+        limpios = normalize_missing_series(
+            originales.astype("string").str.replace(r"[\r\n\t]"," ",regex=True).str.strip())
+        out[c] = _a_filas(limpios)
         # Números escritos con formato ("$ 1.234.567", "(500.000)", "45%"):
         # se leen sobre la columna ORIGINAL, no la ya pasada a texto, para que
         # una celda que en Excel sí era número no se confunda con el formato
         # de las demás. Ver core/numeric.numeros_con_formato.
-        leidos = numeros_con_formato(original.where(out[c].notna()))
+        leidos = numeros_con_formato(originales.where(limpios.notna()))
+        if leidos is not None:
+            leidos = (_a_filas(leidos[0]), leidos[1])
         # Excel often stores numeric columns as text when the sheet contains a
         # title/header row. Recover numeric columns when most non-empty values
         # are numeric, without touching true categorical columns such as Mes.
-        probe = pd.to_numeric(out[c], errors="coerce")
+        probe = _a_filas(pd.to_numeric(limpios, errors="coerce"))
         nonempty = out[c].notna().sum()
         if leidos is not None:
             out[c], formato = leidos
