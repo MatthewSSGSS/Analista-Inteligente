@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from ui.components.escena import cabecera
+from ui.components.escena import NO_DISPONIBLE, botones_ocultos, cabecera, disponible, escena
 
 import core.explorador as ex
 from core.diagnostics import _fmt
@@ -136,9 +136,43 @@ def _tono(valor, referencia, arriba_es_bueno=True):
     return VERDE if (d > 0) == arriba_es_bueno else ROJO
 
 
+# ── Lo que dibuja cada lente en JavaScript (ui/web/analitica.*) ─────────────
+# Python calcula y da el texto ya formateado; el JS solo dibuja. Si la escena
+# no está disponible, cada lente dibuja su versión clásica en Plotly.
+
+_TONO = {VERDE: "pos", ROJO: "neg", AMBAR: "ambar", GRIS: "gris"}
+
+
+def _en_js(lectura: dict, base: list[str], k: str) -> bool:
+    """Monta la lectura de la lente (base, cifras, gráfico, qué dice). False:
+    hay que dibujar la versión clásica (y su franja de base, si no salió ya)."""
+    if not disponible():
+        return False  # la base clásica ya se dibujó arriba
+    if escena("analitica", {"modo": "lectura", "base": base, **lectura}, clave=f"{k}_js") is NO_DISPONIBLE:
+        _base_texto([_markdown_a_html(p) for p in base])
+        return False
+    return True
+
+
+def _g_barras(nombres, valores, textos, tonos, ref=None, ref_txt="", divergente=False, tope=None) -> dict:
+    """Barras horizontales: `a` es el largo (0-100, o -100..100 si divergen)."""
+    vals = [float(v) if pd.notna(v) else 0.0 for v in valores]
+    divergente = divergente or (bool(vals) and min(vals) < 0)
+    lim = tope or (max((abs(v) for v in vals), default=0) if divergente else max(max(vals, default=0), 0)) or 1.0
+    filas = [{"n": str(n), "t": str(t), "a": round((v if divergente else max(v, 0)) / lim * 100, 1), "tono": tono}
+             for n, v, t, tono in zip(nombres, vals, textos, tonos)]
+    return {"tipo": "barras", "divergente": divergente, "filas": filas,
+            "ref": ({"pos": round(float(ref) / lim * 100, 1), "t": ref_txt}
+                    if ref is not None and not divergente and np.isfinite(ref) else None)}
+
+
+def _kpi(clave, etiqueta, valor, detalle=None, tono="neutral") -> dict:
+    return {"clave": clave, "etiqueta": str(etiqueta), "valor": str(valor), "detalle": detalle, "tono": tono}
+
+
 # ── Lentes ─────────────────────────────────────────────────────────────────
 
-def _lente_ranking(df, schema, dim, metrica, calculo, k):
+def _lente_ranking(df, schema, dim, metrica, calculo, k, base):
     a, b = st.columns([3, 2])
     with a:
         top = st.slider("Cuántos mostrar en el gráfico", 5, 50, 15, key=f"{k}_top")
@@ -151,6 +185,17 @@ def _lente_ranking(df, schema, dim, metrica, calculo, k):
     t = r["tabla"].head(top).iloc[::-1]
     texto = [_fmt(v) + (f" · {p:.0f}%" if "Participación %" in t else "")
              for v, p in zip(t["Valor"], t.get("Participación %", t["Valor"]))]
+    extra = f" · se muestran {len(t)} de {r['n']}" if r["n"] > len(t) else ""
+    titulo = f"{metrica or 'Registros'} por {dim}"
+    subtitulo = f"{r['calculo']} por grupo · verde: 10% o más sobre el promedio · rojo: 10% o más por debajo{extra}"
+    leer = t.iloc[::-1]  # en pantalla, de arriba hacia abajo como se lee
+    lectura = {"titulo": titulo, "subtitulo": subtitulo, "badge": f"{r['n']} grupos", "hallazgos": list(r["hallazgos"]),
+               "grafico": _g_barras(leer[dim].astype(str), leer["Valor"], texto[::-1],
+                                    [_TONO[_tono(v, r["promedio"])] for v in leer["Valor"]], ref=r["promedio"],
+                                    ref_txt=f"promedio de los {r['n']}: {_fmt(r['promedio'])}")}
+    if _en_js(lectura, base, k):
+        _tabla(r["tabla"], f"ranking_{dim}", k)
+        return
     fig = go.Figure(go.Bar(
         x=t["Valor"], y=t[dim].astype(str), orientation="h", text=texto, textposition="outside", cliponaxis=False,
         marker=dict(color=[_tono(v, r["promedio"]) for v in t["Valor"]]),
@@ -162,10 +207,7 @@ def _lente_ranking(df, schema, dim, metrica, calculo, k):
         fig.update_xaxes(range=[0, float(t["Valor"].max()) * 1.25], tickformat="~s")
     fig = realzar_barras(fig, referencia=r["promedio"])
     _anotar_referencia(fig, r["promedio"], f"promedio de los {r['n']}: {_fmt(r['promedio'])}")
-    extra = f" · se muestran {len(t)} de {r['n']}" if r["n"] > len(t) else ""
-    chart_card(f"{metrica or 'Registros'} por {dim}",
-               f"{r['calculo']} por grupo · verde: 10% o más sobre el promedio · rojo: 10% o más por debajo{extra}",
-               fig, key=f"{k}_fig", visual_type="RANKING", badge_text=f"{r['n']} grupos")
+    chart_card(titulo, subtitulo, fig, key=f"{k}_fig", visual_type="RANKING", badge_text=f"{r['n']} grupos")
     _hallazgos(r["hallazgos"])
     _tabla(r["tabla"], f"ranking_{dim}", k)
 
@@ -175,7 +217,13 @@ def _selector_grano(etiqueta, grano_def, k):
     return st.selectbox(etiqueta, ex.GRANOS, index=ex.GRANOS.index(grano_def or "Mes"), key=f"{k}_grano_{grano_def}")
 
 
-def _lente_evolucion(df, schema, dim, metrica, calculo, grano_def, k):
+def _serie_js(valores) -> tuple[list, list]:
+    """(valores, textos) de una serie para el gráfico de líneas del JS."""
+    v = [None if pd.isna(x) else float(x) for x in valores]
+    return v, ["—" if x is None else _fmt(x) for x in v]
+
+
+def _lente_evolucion(df, schema, dim, metrica, calculo, grano_def, k, base):
     a, b, c = st.columns([1, 2, 3])
     with a:
         grano = _selector_grano("Agrupar fechas por", grano_def, k)
@@ -197,6 +245,27 @@ def _lente_evolucion(df, schema, dim, metrica, calculo, grano_def, k):
         empty_state("Hacen falta al menos dos periodos con datos para ver una evolución.")
         return
     m = r["matriz"]
+    con_promedio = (modo == "Valor" and r.get("promedio_grupo") is not None and r["total_grupo"] > len(m.columns))
+    titulo = f"{metrica or 'Registros'} por {grano.lower()}" + (f" · {dim}" if dim else "")
+    subtitulo = (f"{r['calculo']} de cada {grano.lower()} · {modo}"
+                 + (f" · discontinua = promedio de los {r['total_grupo']}" if con_promedio else ""))
+    series = []
+    for i, g in enumerate(m.columns):
+        v, t = _serie_js(m[g])
+        series.append({"n": str(g), "color": CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)], "v": v, "t": t})
+    promedio = None
+    if con_promedio:
+        v, t = _serie_js(r["promedio_grupo"].reindex(m.index))
+        promedio = {"n": f"Promedio de los {r['total_grupo']}", "v": v, "t": t}
+    lectura = {"titulo": titulo, "subtitulo": subtitulo, "badge": f"{len(m.index)} periodos",
+               "hallazgos": list(r["hallazgos"]),
+               "grafico": {"tipo": "lineas", "x": [ex.etiqueta_periodo(p, grano) for p in m.index], "series": series,
+                           "prom": promedio, "parcial": bool(r["parcial"]), "base100": modo.startswith("Índice")}}
+    tabla = m.copy()
+    tabla.index = [ex.etiqueta_periodo(p, grano) for p in tabla.index]
+    if _en_js(lectura, base, k):
+        _tabla(tabla.reset_index().rename(columns={"index": "Periodo"}), f"evolucion_{dim or 'total'}", k)
+        return
     fig = go.Figure()
     for i, g in enumerate(m.columns):
         color = CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)]
@@ -220,18 +289,12 @@ def _lente_evolucion(df, schema, dim, metrica, calculo, grano_def, k):
     fig.update_yaxes(tickformat="~s", title=None)
     fig = _base(fig, 400)
     fig.update_layout(margin=dict(b=_MARGEN_EJE))
-    chart_card(f"{metrica or 'Registros'} por {grano.lower()}" + (f" · {dim}" if dim else ""),
-               f"{r['calculo']} de cada {grano.lower()} · {modo}"
-               + (f" · discontinua = promedio de los {r['total_grupo']}" if modo == "Valor" and r.get("promedio_grupo") is not None
-                  and r["total_grupo"] > len(m.columns) else ""), fig, key=f"{k}_fig",
-               visual_type="TENDENCIA", badge_text=f"{len(m.index)} periodos")
+    chart_card(titulo, subtitulo, fig, key=f"{k}_fig", visual_type="TENDENCIA", badge_text=f"{len(m.index)} periodos")
     _hallazgos(r["hallazgos"])
-    tabla = m.copy()
-    tabla.index = [ex.etiqueta_periodo(p, grano) for p in tabla.index]
     _tabla(tabla.reset_index().rename(columns={"index": "Periodo"}), f"evolucion_{dim or 'total'}", k)
 
 
-def _lente_periodos(df, schema, dim, metrica, calculo, grano_def, k):
+def _lente_periodos(df, schema, dim, metrica, calculo, grano_def, k, base):
     grano = _selector_grano("Agrupar fechas por", grano_def, k)
     periodos = ex.periodos_disponibles(df, schema, grano)
     if len(periodos) < 2:
@@ -262,10 +325,29 @@ def _lente_periodos(df, schema, dim, metrica, calculo, grano_def, k):
     if r is None:
         empty_state("No hay datos en esos periodos.")
         return
-    c1, c2, c3 = st.columns(3)
     cambio = r["total_b"] - r["total_a"]
     pct = cambio / abs(r["total_a"]) * 100 if r["total_a"] else None
     que = "Total" if r["sumable"] else "Promedio"
+    titulo = f"Quién sumó y quién restó · {r['etiqueta_a']} → {r['etiqueta_b']}"
+    subtitulo = (f"Diferencia de {metrica if metrica != CONTEO else 'registros'} ({r['calculo'].lower()}) por {dim} · "
+                 "los 20 con más movimiento")
+    tono = "neutral" if not cambio else ("positive" if cambio > 0 else "negative")
+    leer = r["tabla"].head(20)
+    lectura = {
+        "titulo": titulo, "subtitulo": subtitulo, "badge": f"{len(r['tabla'])} grupos", "hallazgos": list(r["hallazgos"]),
+        "kpis": [_kpi("antes", f"{que} {r['etiqueta_a']}", _fmt(r["total_a"])),
+                 _kpi("despues", f"{que} {r['etiqueta_b']}", _fmt(r["total_b"]),
+                      f"{pct:+.1f}% vs {r['etiqueta_a']}" if pct is not None else None, tono),
+                 _kpi("diferencia", "Diferencia", ("+" if cambio >= 0 else "") + _fmt(cambio), None, tono)],
+        "grafico": _g_barras(leer[dim].astype(str), leer["Diferencia"],
+                             [("+" if v >= 0 else "") + _fmt(v) + (f" ({p:+.0f}%)" if pd.notna(p) else " (nuevo)")
+                              for v, p in zip(leer["Diferencia"], leer["Variación %"])],
+                             ["pos" if v >= 0 else "neg" for v in leer["Diferencia"]], divergente=True),
+    }
+    if _en_js(lectura, base, k):
+        _tabla(r["tabla"], f"periodos_{dim}", k)
+        return
+    c1, c2, c3 = st.columns(3)
     c1.metric(f"{que} {r['etiqueta_a']}", _fmt(r["total_a"]))
     c2.metric(f"{que} {r['etiqueta_b']}", _fmt(r["total_b"]), delta=(f"{pct:+.1f}%" if pct is not None else None))
     c3.metric("Diferencia", ("+" if cambio >= 0 else "") + _fmt(cambio))
@@ -283,15 +365,12 @@ def _lente_periodos(df, schema, dim, metrica, calculo, grano_def, k):
     fig.update_xaxes(range=[-lim, lim], tickformat="~s", zeroline=True, zerolinecolor="#94A3B8")
     fig.update_layout(hovermode="closest", showlegend=False, bargap=.28, margin=dict(b=_MARGEN_EJE))
     fig = realzar_barras(fig)
-    chart_card(f"Quién sumó y quién restó · {r['etiqueta_a']} → {r['etiqueta_b']}",
-               f"Diferencia de {metrica if metrica != CONTEO else 'registros'} ({r['calculo'].lower()}) por {dim} · "
-               "los 20 con más movimiento", fig, key=f"{k}_fig", visual_type="CAMBIO",
-               badge_text=f"{len(r['tabla'])} grupos")
+    chart_card(titulo, subtitulo, fig, key=f"{k}_fig", visual_type="CAMBIO", badge_text=f"{len(r['tabla'])} grupos")
     _hallazgos(r["hallazgos"])
     _tabla(r["tabla"], f"periodos_{dim}", k)
 
 
-def _lente_cruzada(df, schema, dim, metrica, calculo, dims, grano_def, k):
+def _lente_cruzada(df, schema, dim, metrica, calculo, dims, grano_def, k, base):
     # "Periodo" solo se ofrece si hay al menos dos periodos: con uno, la matriz
     # tendría una sola columna y no cruza nada.
     opciones = (["Periodo (fechas)"] if grano_def else []) + [d for d in dims if d != dim]
@@ -316,6 +395,27 @@ def _lente_cruzada(df, schema, dim, metrica, calculo, dims, grano_def, k):
     v = r["valores"]
     es_pct = r["normalizar"] != "Valores"
     texto = v.map(lambda x: "" if pd.isna(x) else (f"{x:.0f}%" if es_pct else _fmt(x)))
+    if r["normalizar"] != norm:
+        st.caption(f"Los porcentajes solo tienen sentido sobre sumas o conteos; con {r['calculo'].lower()} se muestran valores.")
+    titulo = f"{dim} × {columnas}"
+    subtitulo = (f"{metrica if metrica != CONTEO else 'Registros'} · {r['calculo'].lower()} · "
+                 f"{r['normalizar']} · más oscuro = más alto")
+    tabla = v.round(2).reset_index().rename(columns={"_grupo": dim})
+    tabla.columns = [str(c) + (" %" if es_pct and i else "") for i, c in enumerate(tabla.columns)]
+    numeros = v.to_numpy(dtype=float)
+    vmin, vmax = (float(np.nanmin(numeros)), float(np.nanmax(numeros))) if np.isfinite(numeros).any() else (0.0, 1.0)
+    rango = (vmax - vmin) or 1.0
+    lectura = {"titulo": titulo, "subtitulo": subtitulo, "badge": f"{v.shape[0]}×{v.shape[1]}",
+               "hallazgos": list(r["hallazgos"]),
+               "grafico": {"tipo": "calor", "cols": [str(c) for c in v.columns],
+                           "filas": [{"n": str(fila), "c": [{"t": texto.iat[i, j],
+                                                             "i": None if pd.isna(numeros[i, j])
+                                                             else round((numeros[i, j] - vmin) / rango, 3)}
+                                                            for j in range(v.shape[1])]}
+                                     for i, fila in enumerate(v.index)]}}
+    if _en_js(lectura, base, k):
+        _tabla(tabla, f"cruzada_{dim}", k)
+        return
     fig = go.Figure(go.Heatmap(
         z=v.values, x=[str(x) for x in v.columns], y=[str(x) for x in v.index], text=texto.values,
         texttemplate="%{text}", textfont=dict(size=10), colorscale=[[0, "#F1F5F9"], [0.5, "#5EC4B6"], [1, "#0F766E"]],
@@ -325,14 +425,8 @@ def _lente_cruzada(df, schema, dim, metrica, calculo, dims, grano_def, k):
     fig.update_yaxes(autorange="reversed", showgrid=False)
     fig.update_xaxes(side="top", showgrid=False)
     fig.update_layout(hovermode="closest", margin=dict(t=50, b=20))
-    if r["normalizar"] != norm:
-        st.caption(f"Los porcentajes solo tienen sentido sobre sumas o conteos; con {r['calculo'].lower()} se muestran valores.")
-    chart_card(f"{dim} × {columnas}", f"{metrica if metrica != CONTEO else 'Registros'} · {r['calculo'].lower()} · "
-               f"{r['normalizar']} · más oscuro = más alto", fig, key=f"{k}_fig", visual_type="MATRIZ",
-               badge_text=f"{v.shape[0]}×{v.shape[1]}")
+    chart_card(titulo, subtitulo, fig, key=f"{k}_fig", visual_type="MATRIZ", badge_text=f"{v.shape[0]}×{v.shape[1]}")
     _hallazgos(r["hallazgos"])
-    tabla = v.round(2).reset_index().rename(columns={"_grupo": dim})
-    tabla.columns = [str(c) + (" %" if es_pct and i else "") for i, c in enumerate(tabla.columns)]
     _tabla(tabla, f"cruzada_{dim}", k)
 
 
@@ -345,7 +439,7 @@ def _pares(df, schema, metrica):
     return pares
 
 
-def _lente_cumplimiento(df, schema, dim, metrica, k):
+def _lente_cumplimiento(df, schema, dim, metrica, k, base):
     pares = _pares(df, schema, metrica)
     par = st.selectbox("Qué comparar", [p["etiqueta"] for p in pares], key=f"{k}_par",
                        help="Parejas detectadas por nombre: PPTO/Meta/Presupuesto contra EJEC/Real/Resultado de lo mismo.")
@@ -354,12 +448,36 @@ def _lente_cumplimiento(df, schema, dim, metrica, k):
     if r is None:
         empty_state("La meta no tiene valores positivos con los filtros actuales.")
         return
+    nombre = dim or "Grupo"
+    titulo = f"Cumplimiento por {nombre}"
+    subtitulo = f"{p['real']} ÷ {p['meta']} · verde ≥100% · ámbar 90–99% · rojo menos de 90%"
+    leer = r["tabla"].head(40)
+    total = r["total"]
+    diferencia = r["total_real"] - r["total_meta"]
+    tono = "neutral" if total is None else ("positive" if total >= 100 else "negative")
+    lectura = {
+        "titulo": titulo, "subtitulo": subtitulo, "badge": f"{len(r['tabla'])} grupos", "hallazgos": list(r["hallazgos"]),
+        "kpis": [{**_kpi("meta", "Cumplimiento total", f"{total:.1f}%" if total is not None else "—", None, tono),
+                  "pct": float(total) if total is not None else None},
+                 _kpi("ejecutado", f"Ejecutado ({p['real']})", _fmt(r["total_real"])),
+                 _kpi("objetivo", f"Meta ({p['meta']})", _fmt(r["total_meta"]),
+                      ("+" if diferencia >= 0 else "") + _fmt(diferencia) + " frente a la meta",
+                      "positive" if diferencia >= 0 else "negative")],
+        "grafico": _g_barras(leer[nombre].astype(str), leer["Cumplimiento %"],
+                             [f"{c:.0f}% · {_fmt(rv)} de {_fmt(mv)}"
+                              for c, rv, mv in zip(leer["Cumplimiento %"], leer[p["real"]], leer[p["meta"]])],
+                             ["pos" if c >= 100 else "ambar" if c >= 90 else "neg" for c in leer["Cumplimiento %"]],
+                             ref=100, ref_txt="meta 100%",
+                             tope=max(110.0, float(leer["Cumplimiento %"].max()))),
+    }
+    if _en_js(lectura, base, k):
+        _tabla(r["tabla"], f"cumplimiento_{nombre}", k)
+        return
     c1, c2, c3 = st.columns(3)
     c1.metric("Cumplimiento total", f"{r['total']:.1f}%" if r["total"] is not None else "—")
     c2.metric(f"Ejecutado ({p['real']})", _fmt(r["total_real"]))
     c3.metric(f"Meta ({p['meta']})", _fmt(r["total_meta"]),
               delta=("+" if r["total_real"] >= r["total_meta"] else "") + _fmt(r["total_real"] - r["total_meta"]))
-    nombre = dim or "Grupo"
     t = r["tabla"].head(40).iloc[::-1]
     colores = [VERDE if c >= 100 else AMBAR if c >= 90 else ROJO for c in t["Cumplimiento %"]]
     fig = go.Figure(go.Bar(
@@ -372,13 +490,15 @@ def _lente_cumplimiento(df, schema, dim, metrica, k):
     fig.update_layout(hovermode="closest", showlegend=False, bargap=.28, margin=dict(t=40, b=_MARGEN_EJE))
     fig = realzar_barras(fig, referencia=100)
     _anotar_referencia(fig, 100, "meta 100%")
-    chart_card(f"Cumplimiento por {nombre}", f"{p['real']} ÷ {p['meta']} · verde ≥100% · ámbar 90–99% · rojo <90%",
-               fig, key=f"{k}_fig", visual_type="META", badge_text=f"{len(r['tabla'])} grupos")
+    chart_card(titulo, subtitulo, fig, key=f"{k}_fig", visual_type="META", badge_text=f"{len(r['tabla'])} grupos")
     _hallazgos(r["hallazgos"])
     _tabla(r["tabla"], f"cumplimiento_{nombre}", k)
 
 
-def _lente_relacion(df, schema, dim, metrica, calculo, metricas, k):
+_MAX_PUNTOS_JS = 2000
+
+
+def _lente_relacion(df, schema, dim, metrica, calculo, metricas, k, base):
     opciones_y = [m for m in metricas if m != metrica]
     my = st.selectbox(f"Comparar «{metrica}» contra", opciones_y, key=f"{k}_y")
     r = ex.relacion(df, schema, dim, metrica, my, calculo)
@@ -386,8 +506,38 @@ def _lente_relacion(df, schema, dim, metrica, calculo, metricas, k):
         empty_state("Hacen falta al menos 3 puntos con variación en las dos métricas.")
         return
     pts = r["puntos"]
-    escala = float(pts["residuo"].std()) or 1.0
+    # Cuánto hay que apartarse de lo esperado para «rendir más» o «menos»: una
+    # desviación de los residuos, pero nunca menos del 2% del valor típico.
+    # Con una relación perfecta (r = 1) los residuos son ruido de redondeo
+    # (−0,0000001) y, sin ese piso, todos los puntos salían en rojo.
+    escala = max(float(pts["residuo"].std() or 0), abs(float(pts["y"].mean())) * 0.02) or 1.0
     colores = [VERDE if v > escala else ROJO if v < -escala else "#64748B" for v in pts["residuo"]]
+    titulo = f"{metrica} contra {my}" + (f" · por {dim}" if dim else " · por registro")
+    subtitulo = (f"r = {r['r']:.2f} · línea discontinua = lo esperado · verde rinde más de lo esperado, rojo menos · "
+                 "punteadas = medianas")
+    # Sin agrupar hay un punto por registro: se dibuja una muestra fija (la
+    # recta y la r se calcularon con todos).
+    dibujo = pts if len(pts) <= _MAX_PUNTOS_JS else pts.sample(_MAX_PUNTOS_JS, random_state=0)
+    muestra = f" · se dibujan {len(dibujo):,} de {len(pts):,} puntos" if len(dibujo) < len(pts) else ""
+    x0, x1 = float(pts["x"].min()), float(pts["x"].max())
+    lectura = {
+        "titulo": titulo, "subtitulo": subtitulo + muestra, "badge": f"{len(pts)} puntos",
+        "hallazgos": list(r["hallazgos"]),
+        "grafico": {"tipo": "puntos", "ex": str(metrica), "ey": str(my), "rotular": bool(dim) and len(pts) <= 25,
+                    "p": [{"n": str(i) if dim else "", "x": float(f["x"]), "y": float(f["y"]),
+                           "tx": _fmt(f["x"]), "ty": _fmt(f["y"]),
+                           "tono": "pos" if f["residuo"] > escala else "neg" if f["residuo"] < -escala else "gris"}
+                          for i, f in dibujo.iterrows()],
+                    "recta": [[x0, r["pendiente"] * x0 + r["intercepto"]], [x1, r["pendiente"] * x1 + r["intercepto"]]],
+                    "mx": float(r["mediana_x"]), "my": float(r["mediana_y"])},
+    }
+    pts_tabla = pts.assign(esperado=pts["esperado"].round(0), residuo=pts["residuo"].round(0))
+    tabla = pts_tabla.rename(columns={"x": metrica, "y": my, "esperado": f"{my} esperado", "residuo": "Diferencia vs. esperado"})
+    tabla = tabla.reset_index().rename(columns={"_grupo": dim or "Registro", "index": dim or "Registro"})
+    tabla = tabla.sort_values("Diferencia vs. esperado", ascending=False)
+    if _en_js(lectura, base, k):
+        _tabla(tabla, f"relacion_{dim or 'registros'}", k)
+        return
     nombres = [str(i) for i in pts.index] if dim else [""] * len(pts)
     fig = go.Figure(go.Scatter(
         x=pts["x"], y=pts["y"], mode="markers+text" if dim and len(pts) <= 25 else "markers",
@@ -405,21 +555,54 @@ def _lente_relacion(df, schema, dim, metrica, calculo, metricas, k):
     fig.update_xaxes(title=metrica, tickformat="~s")
     fig.update_yaxes(title=my, tickformat="~s")
     fig.update_layout(hovermode="closest", margin=dict(b=_MARGEN_EJE + 30))
-    chart_card(f"{metrica} contra {my}" + (f" · por {dim}" if dim else " · por registro"),
-               f"r = {r['r']:.2f} · línea discontinua = lo esperado · verde rinde más de lo esperado, rojo menos · "
-               "punteadas = medianas", fig, key=f"{k}_fig", visual_type="RELACIÓN", badge_text=f"{len(pts)} puntos")
+    chart_card(titulo, subtitulo, fig, key=f"{k}_fig", visual_type="RELACIÓN", badge_text=f"{len(pts)} puntos")
     _hallazgos(r["hallazgos"])
-    # Lo esperado sale de una recta: sus decimales no son un dato, son ruido.
-    pts = pts.assign(esperado=pts["esperado"].round(0), residuo=pts["residuo"].round(0))
-    tabla = pts.rename(columns={"x": metrica, "y": my, "esperado": f"{my} esperado", "residuo": "Diferencia vs. esperado"})
-    tabla = tabla.reset_index().rename(columns={"_grupo": dim or "Registro", "index": dim or "Registro"})
-    _tabla(tabla.sort_values("Diferencia vs. esperado", ascending=False), f"relacion_{dim or 'registros'}", k)
+    # Lo esperado sale de una recta: sus decimales no son un dato, son ruido
+    # (por eso la tabla lleva «esperado» y «residuo» redondeados).
+    _tabla(tabla, f"relacion_{dim or 'registros'}", k)
 
 
-def _lente_distribucion(df, schema, dim, metrica, k):
+def _cajas_js(datos: pd.DataFrame, grupos: list) -> dict:
+    """Una caja por grupo en una escala común 0-100: cuartiles, bigotes a 1,5
+    veces la caja (como Plotly) y hasta 40 puntos fuera de lo habitual."""
+    cajas = []
+    for g in grupos:
+        v = datos.loc[datos["_grupo"] == g, "_valor"].dropna().astype(float)
+        if v.empty:
+            continue
+        q1, med, q3 = (float(x) for x in v.quantile([.25, .5, .75]))
+        rango = q3 - q1
+        dentro = v[(v >= q1 - 1.5 * rango) & (v <= q3 + 1.5 * rango)]
+        lo, hi = float(dentro.min()), float(dentro.max())
+        fuera = v[(v < lo) | (v > hi)]
+        if len(fuera) > 40:
+            fuera = fuera.sample(40, random_state=0)
+        cajas.append({"n": str(g), "q1": q1, "med": med, "q3": q3, "lo": lo, "hi": hi,
+                      "fuera": [float(x) for x in fuera], "cuenta": f"{len(v):,}",
+                      "t": f"mediana {_fmt(med)} · la mitad central entre {_fmt(q1)} y {_fmt(q3)}"})
+    if not cajas:
+        return {"tipo": "cajas", "g": []}
+    minimo = min([c["lo"] for c in cajas] + [x for c in cajas for x in c["fuera"]])
+    maximo = max([c["hi"] for c in cajas] + [x for c in cajas for x in c["fuera"]])
+    ancho = (maximo - minimo) or 1.0
+    a_pct = lambda x: round((x - minimo) / ancho * 100, 2)  # noqa: E731
+    for c in cajas:
+        c.update(q1=a_pct(c["q1"]), med=a_pct(c["med"]), q3=a_pct(c["q3"]), lo=a_pct(c["lo"]), hi=a_pct(c["hi"]),
+                 fuera=[a_pct(x) for x in c["fuera"]])
+    return {"tipo": "cajas", "g": cajas, "min": _fmt(minimo), "max": _fmt(maximo)}
+
+
+def _lente_distribucion(df, schema, dim, metrica, k, base):
     r = ex.distribucion(df, schema, dim, metrica)
     if r is None:
         empty_state("No hay valores para ver la distribución.")
+        return
+    titulo = f"Cómo se reparten los registros de {metrica}" + (f" · por {dim}" if dim else "")
+    subtitulo = "Caja = mitad central de los registros · línea = mediana · puntos sueltos = fuera de lo habitual"
+    lectura = {"titulo": titulo, "subtitulo": subtitulo, "badge": f"{len(r['datos']):,} registros",
+               "hallazgos": list(r["hallazgos"]), "grafico": _cajas_js(r["datos"], list(r["grupos"]))}
+    if _en_js(lectura, base, k):
+        _tabla(r["tabla"], f"distribucion_{dim or 'todos'}", k)
         return
     fig = go.Figure()
     for i, g in enumerate(reversed(r["grupos"])):
@@ -430,14 +613,40 @@ def _lente_distribucion(df, schema, dim, metrica, k):
     fig = _base(fig, max(320, 42 * len(r["grupos"]) + 110), show_xgrid=True)
     fig.update_xaxes(tickformat="~s")
     fig.update_layout(showlegend=False, hovermode="closest", margin=dict(b=_MARGEN_EJE))
-    chart_card(f"Cómo se reparten los registros de {metrica}" + (f" · por {dim}" if dim else ""),
-               "Caja = mitad central de los registros · línea = mediana · puntos sueltos = fuera de lo habitual",
-               fig, key=f"{k}_fig", visual_type="DISTRIBUCIÓN", badge_text=f"{len(r['datos']):,} registros")
+    chart_card(titulo, subtitulo, fig, key=f"{k}_fig", visual_type="DISTRIBUCIÓN", badge_text=f"{len(r['datos']):,} registros")
     _hallazgos(r["hallazgos"])
     _tabla(r["tabla"], f"distribucion_{dim or 'todos'}", k)
 
 
 # ── Pantalla ───────────────────────────────────────────────────────────────
+
+def _poner_lente(clave: str, lente: str) -> None:
+    st.session_state[clave] = lente
+
+
+def _elegir_lente(disponibles: list[str], k: str) -> str:
+    """Las lentes como tarjetas en JavaScript (ícono, nombre y la pregunta que
+    responde); el clic pulsa un botón oculto que guarda la elegida. Sin
+    JavaScript, la fila de opciones de siempre."""
+    clave = f"{k}_lente"
+    actual = st.session_state.get(clave)
+    if actual not in disponibles:
+        actual = disponibles[0]
+    if disponible():
+        botones = {l: f"{k}_ir_{l}" for l in disponibles}
+        lentes = [{"clave": l, "icono": LENTES[l][0].split(" ", 1)[0], "nombre": LENTES[l][0].split(" ", 1)[1],
+                   "pregunta": LENTES[l][1], "activa": l == actual} for l in disponibles]
+        if escena("analitica", {"modo": "lentes", "lentes": lentes, "botones": botones},
+                  clave=f"{k}_lentes_js") is not NO_DISPONIBLE:
+            botones_ocultos(botones, {l: (_poner_lente, (clave, l)) for l in disponibles})
+            return actual
+    if st.session_state.get(clave) not in disponibles:
+        st.session_state.pop(clave, None)  # una lente que esta hoja no tiene
+    lente = st.radio("Qué quieres analizar", disponibles, horizontal=True, key=clave,
+                     format_func=lambda x: LENTES[x][0], label_visibility="collapsed")
+    st.markdown(f'<div class="analitica-pregunta">{LENTES[lente][1]}</div>', unsafe_allow_html=True)
+    return lente
+
 
 def render_explorer(df, schema):
     cabecera("Explorador analítico",
@@ -475,9 +684,7 @@ def render_explorer(df, schema):
         empty_state("Este archivo no tiene columnas para agrupar ni métricas numéricas que explorar.")
         return
 
-    lente = st.radio("Qué quieres analizar", disponibles, horizontal=True, key=f"{k}_lente",
-                     format_func=lambda x: LENTES[x][0], label_visibility="collapsed")
-    st.markdown(f'<div class="analitica-pregunta">{LENTES[lente][1]}</div>', unsafe_allow_html=True)
+    lente = _elegir_lente(disponibles, k)
 
     # ── Controles comunes ─────────────────────────────────────────────────
     usa_metrica = lente != "cumplimiento"
@@ -511,37 +718,40 @@ def render_explorer(df, schema):
                                    help="Automático suma conteos y montos, y promedia tasas, precios y ARPU.")
 
     # ── Base del análisis ─────────────────────────────────────────────────
+    # En texto plano con **negritas**: la pantalla en JavaScript la dibuja
+    # junto al gráfico; la versión clásica la convierte a HTML aquí mismo.
     m_real = None if metrica in (None, CONTEO) else metrica
     real = ex.resolver_calculo(df, schema, m_real, "Conteo" if metrica == CONTEO else calculo)
     partes = []
     if lente != "cumplimiento":
-        que = "registros contados" if metrica == CONTEO else f"<b>{html.escape(str(metrica))}</b>"
+        que = "registros contados" if metrica == CONTEO else f"**{metrica}**"
         if usa_calculo and metrica != CONTEO:
             que += f" ({real.lower()}{', elegido automáticamente' if calculo == 'Automático' else ''})"
         partes.append(que)
-    partes.append(f"por <b>{html.escape(dim)}</b>" if dim else "sin agrupar")
+    partes.append(f"por **{dim}**" if dim else "sin agrupar")
     partes.append(f"{len(df):,} registros visibles")
     if fecha:
         f = pd.to_datetime(df[fecha], errors="coerce").dropna()
         if len(f):
-            partes.append(f"{ex.etiqueta_periodo(f.min())} a {ex.etiqueta_periodo(f.max())} (columna «{html.escape(str(fecha))}»)")
+            partes.append(f"{ex.etiqueta_periodo(f.min())} a {ex.etiqueta_periodo(f.max())} (columna «{fecha}»)")
     partes.append("con los filtros del menú lateral")
-    _base_texto(partes)
+    if not disponible():
+        _base_texto([_markdown_a_html(p) for p in partes])
 
     k2 = f"{k}_{lente}"
     if lente == "ranking":
         _lente_ranking(df, schema, dim, None if metrica == CONTEO else metrica,
-                       "Conteo" if metrica == CONTEO else calculo, k2)
+                       "Conteo" if metrica == CONTEO else calculo, k2, partes)
     elif lente == "evolucion":
         _lente_evolucion(df, schema, dim, None if metrica == CONTEO else metrica,
-                         "Conteo" if metrica == CONTEO else calculo, grano_def, k2)
+                         "Conteo" if metrica == CONTEO else calculo, grano_def, k2, partes)
     elif lente == "periodos":
-        _lente_periodos(df, schema, dim, metrica, "Conteo" if metrica == CONTEO else calculo, grano_def, k2)
+        _lente_periodos(df, schema, dim, metrica, "Conteo" if metrica == CONTEO else calculo, grano_def, k2, partes)
     elif lente == "cruzada":
-        _lente_cruzada(df, schema, dim, metrica, "Conteo" if metrica == CONTEO else calculo, dims, grano_def, k2)
+        _lente_cruzada(df, schema, dim, metrica, "Conteo" if metrica == CONTEO else calculo, dims, grano_def, k2, partes)
     elif lente == "cumplimiento":
-        _lente_cumplimiento(df, schema, dim, metricas[0] if metricas else None, k2)
+        _lente_cumplimiento(df, schema, dim, metricas[0] if metricas else None, k2, partes)
     elif lente == "relacion":
-        _lente_relacion(df, schema, dim, metrica, calculo, metricas, k2)
+        _lente_relacion(df, schema, dim, metrica, calculo, metricas, k2, partes)
     elif lente == "distribucion":
-        _lente_distribucion(df, schema, dim, metrica, k2)
+        _lente_distribucion(df, schema, dim, metrica, k2, partes)

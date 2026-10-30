@@ -108,7 +108,7 @@ def test_todas_las_pantallas_existen():
                 nombres.add(nodo.args[0].value)
     check("las vistas montan sus pantallas", {"portada", "modos", "acceso", "parte", "resumen", "atacar", "cuadro",
                                               "canales", "proyeccion", "cabecera", "caso", "calidad",
-                                              "anomalias", "finanzas", "duelo"} <= nombres)
+                                              "anomalias", "finanzas", "duelo", "analitica"} <= nombres)
     for n in sorted(nombres):
         js = web / f"{n}.js"
         check(f"{n}.js existe y exporta su función", js.exists() and "export default function" in js.read_text(encoding="utf-8"))
@@ -225,6 +225,63 @@ def test_regiones_naturales():
     check("una columna con solo una región entre muchas no se toma por regiones", T.regiones_naturales(otra, {}) is None)
 
 
+_APP_ANALITICA = '''
+import json, sys
+sys.path.insert(0, {tests!r})
+import streamlit as st
+import ui.explorer as X
+from presentacion_test import _ventas
+if st.session_state.get("_modo", "js") == "js":
+    X.disponible = lambda: True
+    def _captura(nombre, datos, clave):
+        st.session_state.setdefault("_capturas", []).append((nombre, json.loads(json.dumps(datos, default=str))))
+        return None
+    X.escena = _captura
+else:
+    X.disponible = lambda: False
+df, perfil = _ventas()
+X.render_explorer(df, perfil["schema"])
+'''
+
+
+def test_analitica():
+    """«🔬 Analítica» en JavaScript: el selector de lentes y la lectura de cada
+    una (base, cifras, gráfico, qué dice) son datos en texto plano; el clic en
+    una tarjeta pulsa su botón oculto y cambia de lente; sin JavaScript, cada
+    lente dibuja su versión clásica en Plotly."""
+    import json
+    from streamlit.testing.v1 import AppTest
+    codigo = _APP_ANALITICA.format(tests=str(RAIZ / "tests"))
+    graficos = {"ranking": "barras", "evolucion": "lineas", "periodos": "barras", "cruzada": "calor",
+                "cumplimiento": "barras", "relacion": "puntos", "distribucion": "cajas"}
+    for lente, tipo in graficos.items():
+        at = AppTest.from_string(codigo, default_timeout=120)
+        at.session_state["an__lente"] = lente
+        at.run()
+        capturas = at.session_state["_capturas"]
+        lectura = next(d for n, d in capturas if d.get("modo") == "lectura")
+        selector = next(d for n, d in capturas if d.get("modo") == "lentes")
+        check(f"Analítica · {lente}: dibuja «{tipo}» con su qué dice y sin errores",
+              not at.exception and lectura["grafico"]["tipo"] == tipo and lectura["hallazgos"] and lectura["base"])
+        check(f"Analítica · {lente}: sin HTML", "<" not in json.dumps(lectura, ensure_ascii=False))
+        check(f"Analítica · {lente}: el selector marca la lente abierta",
+              [l["clave"] for l in selector["lentes"] if l["activa"]] == [lente])
+    at = AppTest.from_string(codigo, default_timeout=120)
+    at.session_state["an__lente"] = "periodos"
+    at.run()
+    lectura = next(d for n, d in at.session_state["_capturas"] if d.get("modo") == "lectura")
+    check("Periodo vs. periodo: tres cifras y barras que divergen desde el centro",
+          len(lectura["kpis"]) == 3 and lectura["grafico"]["divergente"])
+    at.button(key="an__ir_evolucion").click().run()
+    check("el clic en una tarjeta (su botón oculto) abre esa lente", at.session_state["an__lente"] == "evolucion")
+    for lente in graficos:
+        at = AppTest.from_string(codigo, default_timeout=120)
+        at.session_state["_modo"] = "clasico"
+        at.session_state["an__lente"] = lente
+        at.run()
+        check(f"Analítica clásica · {lente}: su gráfico de siempre", not at.exception and len(at.get("plotly_chart")) == 1)
+
+
 def main():
     test_sin_marcas()
     test_acciones_del_javascript()
@@ -232,6 +289,7 @@ def main():
     test_colores_de_seccion()
     test_regiones_naturales()
     test_datos_de_las_vistas()
+    test_analitica()
     test_con_v2_monta_la_escena()
     test_version_clasica_sin_v2()
     print("\nPantallas JS test completado sin errores.")

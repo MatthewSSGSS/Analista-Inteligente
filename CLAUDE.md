@@ -84,6 +84,9 @@ Inside `ui/`:
   the view's old header as `respaldo_html`). Screens that reuse parte.css are listed in `escena._CSS_EXTRA`.
   Also Seguimiento (`_datos_caso`), Comparar personas (`_datos_duelo`), Calidad (`_datos_calidad`), Anomalías and
   Finanzas (`ui/anomalies.py`). `render_anomalies` takes the DETECTED anomalies (`dashboard["anomalies"]`), not df.
+  «🔬 Analítica» (`ui/explorer.py` → `ui/web/analitica.*`): the lens picker (`_elegir_lente`, cards + hidden buttons)
+  and each lens's reading (`_en_js`: base, KPIs, chart — barras/lineas/calor/puntos/cajas — and «Qué dice»);
+  controls and the downloadable table stay Streamlit widgets, and without v2 each lens draws its Plotly version.
 - Section colors: `ui/components/colores.py` maps each view to a color; `barra_de_vistas` sets `--vista` on the page
   (used by theme.py's `pulido_css` and section/chart accents) and `escena()` passes it to screens as `acento`.
   Green/red are never section colors (they mean good/bad). Nav keys are `nav_btn_<slug>`, not positional.
