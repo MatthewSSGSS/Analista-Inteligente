@@ -10,6 +10,7 @@ from __future__ import annotations
 import streamlit as st
 from core.marca import NOMBRE_APP
 from ui.assets import image_data_uri
+from ui.styles.theme import fondo_vivo
 from ui.components.escena import NO_DISPONIBLE, botones_ocultos, escena
 
 _MODOS = ("completo", "territorial", "logistica")
@@ -18,6 +19,7 @@ _MODOS = ("completo", "territorial", "logistica")
 def render_mode_choice() -> str | None:
     """Muestra las 3 tarjetas. Devuelve 'completo', 'territorial' o
     'logistica' si el usuario eligió una, o None si sigue sin elegir."""
+    fondo_vivo()
     imagenes = {"completo": image_data_uri("mapa.jpg"), "territorial": image_data_uri("ciudad_red.jpg"),
                 "logistica": image_data_uri("datos1.jpg")}
     botones = {modo: f"choose_{modo}" for modo in _MODOS}

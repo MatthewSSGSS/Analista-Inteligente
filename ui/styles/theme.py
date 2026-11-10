@@ -1339,6 +1339,31 @@ def components_css() -> str:
     return css
 
 
+def _red_svg() -> str:
+    """Constelación de puntos unidos (mosaico de 600×600) para el fondo vivo,
+    como `url("data:image/svg+xml,…")`. Gris neutro, legible en claro y en
+    oscuro, con unos pocos nodos de color como los de la portada."""
+    from urllib.parse import quote
+    nodos = [(60, 80), (190, 40), (310, 120), (450, 60), (540, 170), (120, 220), (260, 260), (400, 250),
+             (520, 330), (80, 380), (210, 430), (350, 400), (470, 480), (140, 540), (300, 550), (560, 540)]
+    uniones = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (2, 6), (6, 7), (7, 4), (7, 8), (5, 9), (9, 10),
+               (6, 10), (10, 11), (7, 11), (11, 12), (8, 12), (9, 13), (13, 14), (10, 14), (14, 12), (12, 15)]
+    color = {2: "#e4002b", 7: "#e4002b", 12: "#e4002b", 5: "#14b8a6", 10: "#14b8a6", 3: "#7c3aed"}
+    lineas = "".join(f"<path d='M{nodos[a][0]} {nodos[a][1]}L{nodos[b][0]} {nodos[b][1]}'/>" for a, b in uniones)
+    puntos = "".join(
+        f"<circle cx='{x}' cy='{y}' r='{3.2 if i in color else 2.2}' fill='{color.get(i, '#7b8496')}' "
+        f"fill-opacity='{.75 if i in color else .5}'/>" for i, (x, y) in enumerate(nodos))
+    svg = (f"<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'>"
+           f"<g stroke='#7b8496' stroke-opacity='.26' stroke-width='1' fill='none'>{lineas}</g>{puntos}</svg>")
+    return f'url("data:image/svg+xml,{quote(svg, safe=chr(39) + " =/:")}")'
+
+
+def fondo_vivo() -> None:
+    """Enciende el fondo animado en una pantalla sin barra de vistas (portada,
+    elección de modo). En el panel lo enciende `barra_de_vistas`."""
+    st.markdown('<style>[data-testid="stAppViewContainer"]{--fondo-vivo:block}</style>', unsafe_allow_html=True)
+
+
 def pulido_css() -> str:
     """Capa final de presentación: menú lateral, pestañas internas, controles
     y el chat del asistente, con el color de la sección abierta (--vista, lo
@@ -1471,9 +1496,8 @@ div[data-testid="stDateInputField"] *{color:inherit!important}
    Detrás de TODAS las vistas del panel (solo donde hay barra de vistas:
    ui/layouts/tabs.py pone --fondo-vivo:block; la portada, el acceso y la
    consola Territorial tienen su propio fondo y no lo reciben).
-   - ::before: manchas de luz del color de la sección + anillos finos, que
-     derivan y giran muy despacio.
-   - ::after: una malla de puntos que se desliza en diagonal.
+   - ::before: manchas de luz de colores que derivan y giran muy despacio.
+   - ::after: una red de puntos unidos + malla fina, que se desliza.
    Rendimiento: las dos capas son fijas y solo animan `transform` (lo mueve
    la tarjeta gráfica, sin repintar la página); nada de filter:blur. Las
    tarjetas son opacas, así que el texto nunca queda sobre el movimiento.
@@ -1485,29 +1509,35 @@ div[data-testid="stDateInputField"] *{color:inherit!important}
 [data-testid="stAppViewContainer"]:has(.app-hero){--fondo-vivo:block}
 [data-testid="stAppViewContainer"]::before,[data-testid="stAppViewContainer"]::after{content:"";display:var(--fondo-vivo,none);
   position:fixed;z-index:-1;pointer-events:none;will-change:transform}
+/* Luces: cuatro manchas grandes (color de la sección, violeta, cian, ámbar). */
 [data-testid="stAppViewContainer"]::before{inset:-25vmax;
-  --aro:color-mix(in srgb,var(--vista,#e4002b) 20%,transparent);
   background:
-    radial-gradient(circle at 80% 24%,transparent calc(13vmax - 1px),var(--aro) 13vmax,transparent calc(13vmax + 1px)),
-    radial-gradient(circle at 80% 24%,transparent calc(21vmax - 1px),var(--aro) 21vmax,transparent calc(21vmax + 1px)),
-    radial-gradient(circle at 80% 24%,transparent calc(30vmax - 1px),var(--aro) 30vmax,transparent calc(30vmax + 1px)),
-    radial-gradient(circle at 24% 76%,transparent calc(16vmax - 1px),var(--aro) 16vmax,transparent calc(16vmax + 1px)),
-    radial-gradient(circle at 24% 76%,transparent calc(25vmax - 1px),var(--aro) 25vmax,transparent calc(25vmax + 1px)),
-    radial-gradient(38vmax 30vmax at 30% 30%,color-mix(in srgb,var(--vista,#e4002b) 15%,transparent),transparent 70%),
-    radial-gradient(34vmax 28vmax at 76% 28%,color-mix(in srgb,#7c3aed 11%,transparent),transparent 70%),
-    radial-gradient(40vmax 30vmax at 66% 74%,color-mix(in srgb,#06b6d4 10%,transparent),transparent 70%),
-    radial-gradient(30vmax 26vmax at 26% 72%,color-mix(in srgb,var(--vista,#e4002b) 10%,transparent),transparent 70%);
-  animation:fondo-deriva 44s ease-in-out infinite alternate}
+    radial-gradient(40vmax 32vmax at 28% 30%,color-mix(in srgb,var(--vista,#e4002b) 22%,transparent),transparent 70%),
+    radial-gradient(36vmax 30vmax at 76% 26%,color-mix(in srgb,#7c3aed 17%,transparent),transparent 70%),
+    radial-gradient(42vmax 32vmax at 68% 74%,color-mix(in srgb,#06b6d4 16%,transparent),transparent 70%),
+    radial-gradient(32vmax 28vmax at 24% 74%,color-mix(in srgb,#f59e0b 10%,transparent),transparent 70%);
+  animation:fondo-deriva 40s ease-in-out infinite alternate}
 @keyframes fondo-deriva{
-  0%{transform:translate3d(-3%,-2%,0) rotate(0deg) scale(1)}
-  50%{transform:translate3d(3%,3%,0) rotate(7deg) scale(1.07)}
-  100%{transform:translate3d(4%,-2%,0) rotate(-6deg) scale(1.02)}}
-[data-testid="stAppViewContainer"]::after{inset:-30px;
-  background-image:radial-gradient(circle,color-mix(in srgb,var(--text) 15%,transparent) 1px,transparent 1.7px);
-  background-size:30px 30px;animation:fondo-malla 16s linear infinite;
-  -webkit-mask-image:radial-gradient(ellipse 80% 75% at 50% 40%,#000 25%,transparent 90%);
-  mask-image:radial-gradient(ellipse 80% 75% at 50% 40%,#000 25%,transparent 90%)}
-@keyframes fondo-malla{to{transform:translate3d(30px,30px,0)}}
+  0%{transform:translate3d(-4%,-3%,0) rotate(0deg) scale(1)}
+  50%{transform:translate3d(4%,3%,0) rotate(9deg) scale(1.08)}
+  100%{transform:translate3d(5%,-3%,0) rotate(-7deg) scale(1.02)}}
+/* Red de datos: la misma constelación de puntos unidos de la portada, en dos
+   tamaños superpuestos (para que no se note el mosaico) sobre una malla fina
+   de puntos; todo se desliza despacio de ida y vuelta. */
+[data-testid="stAppViewContainer"]::after{inset:-90px;
+  background-image:__RED__,__RED__,radial-gradient(circle,color-mix(in srgb,var(--text) 13%,transparent) 1px,transparent 1.7px);
+  background-size:620px 620px,410px 410px,26px 26px;background-position:0 0,170px 230px,0 0;
+  animation:fondo-red 36s ease-in-out infinite alternate}
+@keyframes fondo-red{from{transform:translate3d(-70px,-40px,0)}to{transform:translate3d(70px,50px,0)}}
+/* Menú lateral: deja ver ese mismo fondo a través suyo (no cuesta nada: no
+   hay una segunda animación). Solo en pantallas anchas; en el teléfono el
+   menú se abre ENCIMA del contenido y tiene que seguir opaco. */
+@media (min-width:900px){
+  section[data-testid="stSidebar"]{background:
+    linear-gradient(180deg,color-mix(in srgb,var(--vista,#e4002b) 10%,transparent),transparent 34%,color-mix(in srgb,#7c3aed 8%,transparent)),
+    color-mix(in srgb,var(--sidebar-bg) 62%,transparent)!important}
+  section[data-testid="stSidebar"] [data-testid="stSidebarContent"],section[data-testid="stSidebar"] [data-testid="stSidebarHeader"]{background:transparent!important}
+}
 
 /* ── Bordes en movimiento ─────────────────────────────────────────────────
    Barra de vistas: una luz del color de la sección recorre el borde (el
@@ -1540,7 +1570,7 @@ section[data-testid="stSidebar"]::after{content:"";position:absolute;top:0;right
   [data-testid="stAppViewContainer"]::before,[data-testid="stAppViewContainer"]::after,.st-key-nav_barra::before,.st-key-nav_barra::after,
   .st-key-nav_barra .stButton button[kind="primary"]::after,section[data-testid="stSidebar"]::after{animation:none!important}
 }
-</style>"""
+</style>""".replace("__RED__", _red_svg())
 
 
 def inject_theme(dark: bool) -> None:

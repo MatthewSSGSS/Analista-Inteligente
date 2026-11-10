@@ -91,8 +91,10 @@ Inside `ui/`:
   (used by theme.py's `pulido_css` and section/chart accents) and `escena()` passes it to screens as `acento`.
   Green/red are never section colors (they mean good/bad). Nav keys are `nav_btn_<slug>`, not positional.
 - Animated panel background («fondo vivo», end of `pulido_css`): two fixed pseudo-elements on `stAppViewContainer`
-  (light blobs + rings, drifting dot grid) that only animate `transform`, switched on by `--fondo-vivo:block`
-  (set by `barra_de_vistas`, or `:has(.app-hero)` before a file is loaded) — landing/login/Territorial don't get it.
+  (light blobs; a node network from `_red_svg()` + dot grid) that only animate `transform`, switched on by
+  `--fondo-vivo:block` (set by `barra_de_vistas`, `:has(.app-hero)` before a file is loaded, and `theme.fondo_vivo()`
+  on the landing and mode choice) — login/Territorial/Logística don't get it. On wide screens the sidebar is
+  translucent so the same background shows through (no second animation); it stays opaque on phones.
   The nav bar's travelling border light uses `@property --giro`. Keep it transform-only (no `filter:blur`).
 - `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
   Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a

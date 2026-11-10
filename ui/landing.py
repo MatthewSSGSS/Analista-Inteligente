@@ -14,6 +14,7 @@ from __future__ import annotations
 import streamlit as st
 from core.marca import NOMBRE_APP
 from ui.assets import image_data_uri
+from ui.styles.theme import fondo_vivo
 from ui.components.escena import NO_DISPONIBLE, botones_ocultos, escena
 
 # Foto de portada de cada tarjeta (assets/images/*.jpg, provistas por el
@@ -66,6 +67,7 @@ def _how_step(number: str, title: str, text: str, image: str) -> str:
 
 def render_landing() -> bool:
     """Dibuja la bienvenida. Devuelve True si el usuario ya le dio a "Comenzar"."""
+    fondo_vivo()
     imagenes = {foto: image_data_uri(f"{foto}.jpg") for foto in ("circuito", "datos1", "barras", "mapa")}
     botones = {"comenzar": "landing_start_btn"}
     accion = escena("portada", {"nombre": NOMBRE_APP, "imagenes": imagenes, "botones": botones}, clave="portada_js")
