@@ -88,7 +88,10 @@ def barra_de_vistas(principales: list[Vista], secundarias: list[Vista] | None = 
     # Cada vista con su color (ui/components/colores.py): la pestaña activa
     # se pinta con él, y la página entera toma ese acento (--vista), que usan
     # la franja de «Analizando», las cejas de sección y los gráficos.
-    reglas = [f"[data-testid=stMain],section[data-testid=stSidebar]{{--vista:{color_de(activa)}}}"]
+    # --fondo-vivo enciende el fondo animado del panel (ui/styles/theme.py,
+    # pulido_css): solo existe donde hay barra de vistas.
+    reglas = [f"[data-testid=stMain],section[data-testid=stSidebar]{{--vista:{color_de(activa)}}}",
+              f"[data-testid=stAppViewContainer]{{--vista:{color_de(activa)};--fondo-vivo:block}}"]
     for etiqueta in etiquetas_p + [e for e, _ in secundarias]:
         c = color_de(etiqueta)
         for prefijo in ("nav_btn_", "nav_mas_"):

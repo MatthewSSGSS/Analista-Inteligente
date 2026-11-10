@@ -90,6 +90,10 @@ Inside `ui/`:
 - Section colors: `ui/components/colores.py` maps each view to a color; `barra_de_vistas` sets `--vista` on the page
   (used by theme.py's `pulido_css` and section/chart accents) and `escena()` passes it to screens as `acento`.
   Green/red are never section colors (they mean good/bad). Nav keys are `nav_btn_<slug>`, not positional.
+- Animated panel background («fondo vivo», end of `pulido_css`): two fixed pseudo-elements on `stAppViewContainer`
+  (light blobs + rings, drifting dot grid) that only animate `transform`, switched on by `--fondo-vivo:block`
+  (set by `barra_de_vistas`, or `:has(.app-hero)` before a file is loaded) — landing/login/Territorial don't get it.
+  The nav bar's travelling border light uses `@property --giro`. Keep it transform-only (no `filter:blur`).
 - `ui/layouts/` — reusable page structures (`hero.py`, `tabs.py` → `barra_de_vistas`/`ir_a`, `columns.py`).
   Top-level navigation is `barra_de_vistas(principales, secundarias)`: a sticky bar with the daily views plus a
   «➕ Más» menu, and **only the active view is executed** (unlike `st.tabs`, which ran every tab on every

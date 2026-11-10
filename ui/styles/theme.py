@@ -1466,6 +1466,80 @@ div[data-testid="stDateInputField"] *{color:inherit!important}
 .as-intro b{display:block;font-size:15px;color:var(--text)!important}
 .as-intro p{margin:4px 0 0!important;font-size:13px;color:var(--muted)!important;line-height:1.5}
 .as-intro .as-ico{font-size:26px;line-height:1}
+
+/* ── Fondo vivo del panel ─────────────────────────────────────────────────
+   Detrás de TODAS las vistas del panel (solo donde hay barra de vistas:
+   ui/layouts/tabs.py pone --fondo-vivo:block; la portada, el acceso y la
+   consola Territorial tienen su propio fondo y no lo reciben).
+   - ::before: manchas de luz del color de la sección + anillos finos, que
+     derivan y giran muy despacio.
+   - ::after: una malla de puntos que se desliza en diagonal.
+   Rendimiento: las dos capas son fijas y solo animan `transform` (lo mueve
+   la tarjeta gráfica, sin repintar la página); nada de filter:blur. Las
+   tarjetas son opacas, así que el texto nunca queda sobre el movimiento.
+   `isolation` hace que z-index:-1 quede encima del fondo liso del
+   contenedor y debajo de todo el contenido. */
+[data-testid="stAppViewContainer"]{isolation:isolate}
+/* También antes de cargar el archivo (aún no hay barra, pero sí el
+   encabezado del panel): ahí es donde la página se veía más vacía. */
+[data-testid="stAppViewContainer"]:has(.app-hero){--fondo-vivo:block}
+[data-testid="stAppViewContainer"]::before,[data-testid="stAppViewContainer"]::after{content:"";display:var(--fondo-vivo,none);
+  position:fixed;z-index:-1;pointer-events:none;will-change:transform}
+[data-testid="stAppViewContainer"]::before{inset:-25vmax;
+  --aro:color-mix(in srgb,var(--vista,#e4002b) 20%,transparent);
+  background:
+    radial-gradient(circle at 80% 24%,transparent calc(13vmax - 1px),var(--aro) 13vmax,transparent calc(13vmax + 1px)),
+    radial-gradient(circle at 80% 24%,transparent calc(21vmax - 1px),var(--aro) 21vmax,transparent calc(21vmax + 1px)),
+    radial-gradient(circle at 80% 24%,transparent calc(30vmax - 1px),var(--aro) 30vmax,transparent calc(30vmax + 1px)),
+    radial-gradient(circle at 24% 76%,transparent calc(16vmax - 1px),var(--aro) 16vmax,transparent calc(16vmax + 1px)),
+    radial-gradient(circle at 24% 76%,transparent calc(25vmax - 1px),var(--aro) 25vmax,transparent calc(25vmax + 1px)),
+    radial-gradient(38vmax 30vmax at 30% 30%,color-mix(in srgb,var(--vista,#e4002b) 15%,transparent),transparent 70%),
+    radial-gradient(34vmax 28vmax at 76% 28%,color-mix(in srgb,#7c3aed 11%,transparent),transparent 70%),
+    radial-gradient(40vmax 30vmax at 66% 74%,color-mix(in srgb,#06b6d4 10%,transparent),transparent 70%),
+    radial-gradient(30vmax 26vmax at 26% 72%,color-mix(in srgb,var(--vista,#e4002b) 10%,transparent),transparent 70%);
+  animation:fondo-deriva 44s ease-in-out infinite alternate}
+@keyframes fondo-deriva{
+  0%{transform:translate3d(-3%,-2%,0) rotate(0deg) scale(1)}
+  50%{transform:translate3d(3%,3%,0) rotate(7deg) scale(1.07)}
+  100%{transform:translate3d(4%,-2%,0) rotate(-6deg) scale(1.02)}}
+[data-testid="stAppViewContainer"]::after{inset:-30px;
+  background-image:radial-gradient(circle,color-mix(in srgb,var(--text) 15%,transparent) 1px,transparent 1.7px);
+  background-size:30px 30px;animation:fondo-malla 16s linear infinite;
+  -webkit-mask-image:radial-gradient(ellipse 80% 75% at 50% 40%,#000 25%,transparent 90%);
+  mask-image:radial-gradient(ellipse 80% 75% at 50% 40%,#000 25%,transparent 90%)}
+@keyframes fondo-malla{to{transform:translate3d(30px,30px,0)}}
+
+/* ── Bordes en movimiento ─────────────────────────────────────────────────
+   Barra de vistas: una luz del color de la sección recorre el borde (el
+   ángulo --giro se anima con @property; donde no exista, queda un borde
+   fijo), la línea de abajo fluye y la pestaña activa lleva un brillo que
+   la cruza. Menú lateral: una luz sube y baja por su borde. */
+@property --giro{syntax:"<angle>";inherits:false;initial-value:0deg}
+.st-key-nav_barra::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1.5px;pointer-events:none;
+  background:conic-gradient(from var(--giro),transparent 0 50%,color-mix(in srgb,var(--vista,var(--blue)) 55%,transparent) 68%,
+    var(--vista,var(--blue)) 78%,color-mix(in srgb,var(--vista,var(--blue)) 50%,#7c3aed) 86%,transparent 96%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);
+  animation:borde-gira 8s linear infinite}
+@keyframes borde-gira{to{--giro:360deg}}
+.st-key-nav_barra::after{background:linear-gradient(90deg,transparent,var(--vista,var(--blue)),transparent,var(--vista,var(--blue)),transparent) 0 0/200% 100%!important;
+  animation:linea-fluye 6s linear infinite}
+@keyframes linea-fluye{to{background-position:200% 0}}
+.st-key-nav_barra .stButton button[kind="primary"]{overflow:hidden}
+.st-key-nav_barra .stButton button[kind="primary"]::after{content:"";position:absolute;top:0;bottom:0;left:0;width:45%;pointer-events:none;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.36),transparent);transform:translateX(-130%);
+  animation:nav-brillo 5s ease-in-out infinite}
+@keyframes nav-brillo{0%,60%{transform:translateX(-130%)}100%{transform:translateX(340%)}}
+section[data-testid="stSidebar"]::after{content:"";position:absolute;top:0;right:0;width:2px;height:100%;pointer-events:none;z-index:2;
+  background:linear-gradient(180deg,transparent,var(--vista,#e4002b),#7c3aed,transparent) 0 0/100% 38% no-repeat;
+  animation:borde-lateral 9s ease-in-out infinite alternate}
+@keyframes borde-lateral{to{background-position:0 100%}}
+/* Quien pidió menos movimiento en su sistema: todo queda quieto (la regla
+   general con `*` no alcanza a los ::before/::after). */
+@media (prefers-reduced-motion:reduce){
+  [data-testid="stAppViewContainer"]::before,[data-testid="stAppViewContainer"]::after,.st-key-nav_barra::before,.st-key-nav_barra::after,
+  .st-key-nav_barra .stButton button[kind="primary"]::after,section[data-testid="stSidebar"]::after{animation:none!important}
+}
 </style>"""
 
 
