@@ -39,6 +39,7 @@ VISTA_RESUMEN = "📋 Resumen"
 VISTA_ATACAR = "🎯 Qué atacar"
 VISTA_SEGUIMIENTO = "🔎 Seguimiento de un caso"
 VISTA_ESTRUCTURA = "🏢 Estructura"
+VISTA_ORGANIZAR = "🧹 Ordenar y corregir"
 
 
 def named_tabs(names: list[str]) -> dict:

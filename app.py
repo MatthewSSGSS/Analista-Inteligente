@@ -27,6 +27,7 @@ from datetime import datetime
 from ui.styles.theme import inject_theme
 from ui.layouts.hero import hero_app
 from ui.layouts.tabs import barra_de_vistas, ir_a, VISTA_ATACAR, VISTA_RESUMEN, VISTA_SEGUIMIENTO, VISTA_ESTRUCTURA
+from ui.layouts.tabs import VISTA_ORGANIZAR as V_ORGANIZAR
 from ui.components.section import section_header
 from core.loader import load_workbook
 from core.dashboard_engine import build_dashboard
@@ -79,6 +80,7 @@ from ui.tracking import render_tracking
 from ui.estructura import render_cargador_estructura, render_estructura
 from ui.multi_sheet import render_multi_sheet
 from ui.columnas import render_columnas
+from ui.organizar import render_organizar
 from core.tracking_engine import ingest_file, sources_to_long, merge_long, read_consolidated
 import core.db_engine as db_engine
 
@@ -269,6 +271,12 @@ with st.sidebar:
             f'<span class="sidebar-file-meta">{len(df):,} registros · {len(df.columns)} columnas · {wb["size_mb"]:.1f} MB</span></div>',
             unsafe_allow_html=True,
         )
+        # Nombres mal escritos, fechas que no se leían, filas repetidas: a la
+        # mano, junto al archivo, porque es lo primero que se hace con uno nuevo.
+        st.button("🧹 Ordenar y corregir el archivo", key="ir_a_organizar", use_container_width=True,
+                  on_click=ir_a, args=(V_ORGANIZAR,),
+                  help="Corrige nombres de columnas, fechas que no se leen, palabras mal escritas y filas "
+                       "repetidas, y descarga el Excel ordenado.")
 
         st.markdown('<p class="sidebar-section-label">Nivel de detalle</p>', unsafe_allow_html=True)
         st.session_state.view_mode = st.radio(
@@ -690,6 +698,7 @@ comparar_archivos = ([("⚖️ Comparar archivos", lambda: render_comparison(st.
                      if st.session_state.comparison_result else [])
 soporte = [
     ("🧮 Datos", lambda: render_data_table(df)),
+    (V_ORGANIZAR, lambda: render_organizar(item, sheet, wb["filename"])),
     ("✅ Calidad del dato", lambda: render_quality(item["profile"])),
     ("🔎 Columnas", lambda: render_columnas(item, sheet)),
 ]
@@ -713,8 +722,8 @@ if mode_info["mode"] in {"catalog", "reference"}:
     if not schema.get("dates"):
         _aviso, _boton = st.columns([4, 1])
         _aviso.caption("No encontré una columna de fecha, así que muestro el contenido para consultarlo. "
-                       "Si el archivo sí trae fechas o cifras que no reconocí, indícalo en «🔎 Columnas».")
-        _boton.button("🔎 Revisar columnas", key="ir_a_columnas", on_click=ir_a, args=("🔎 Columnas",))
+                       "Si el archivo sí trae fechas con otro nombre, «🧹 Ordenar y corregir» las busca.")
+        _boton.button("🧹 Ordenar y corregir", key="ir_a_columnas", on_click=ir_a, args=(V_ORGANIZAR,))
     # Un catálogo o lista de referencia no tiene desempeño que atacar ni
     # personas que comparar: su vista principal es explorar el contenido.
     principales = ([inicio] + estructura + [("📚 Vista principal", lambda: render_catalog(df, schema, mode_info))] + geo

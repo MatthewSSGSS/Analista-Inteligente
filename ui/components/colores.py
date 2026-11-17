@@ -32,6 +32,7 @@ _COLORES = (
     ("datos", "#475569"),
     ("calidad", "#0F766E"),
     ("columnas", "#854D0E"),       # café: corregir la lectura
+    ("ordenar", "#A16207"),        # ocre: ordenar y corregir el archivo
     ("anomal", "#BE123C"),
     ("finanzas", "#047857"),
     ("vista principal", "#2563EB"),

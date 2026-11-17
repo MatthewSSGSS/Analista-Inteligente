@@ -524,7 +524,12 @@ def _texto_de_fecha(valores: pd.Series) -> pd.Series:
 def detect_date(s, name):
     if pd.api.types.is_datetime64_any_dtype(s):
         converted = date_only(s)
-        return converted, converted.notna().mean(), "datetime"
+        # La tasa se mide sobre las celdas con dato, como en el texto: una
+        # columna de fechas reales con un 15 % de celdas en blanco se
+        # rechazaba (0,85 < 0,90) y quedaba como texto.
+        con_dato = s.notna()
+        tasa = float(converted[con_dato].notna().mean()) if con_dato.any() else 0.0
+        return converted, tasa, "datetime"
 
     x = s.dropna()
     if not len(x):
@@ -646,3 +651,37 @@ def detect_date(s, name):
             return date_only(result), rate, "text_date"
 
     return None, rate, None
+
+
+def leer_como_fecha(s):
+    """Lee una columna como fecha SIN pedirle nada al nombre.
+
+    `detect_date` es prudente a propósito: un número de serie de Excel o un
+    AAAAMM solo cuentan como fecha si el nombre lo dice, y una fecha escrita
+    tiene que leerse en el 90 % de las filas. Así no confunde un precio con
+    una fecha al cargar. Pero cuando la persona ya dijo «esto es una fecha»
+    (core/columnas.py, core/organizar.py) esa prudencia estorba: «Corte» con
+    números de serie, o una columna con unas pocas celdas basura («N/A»,
+    «pendiente»), se quedaban sin leer. Aquí basta con que la mayoría se lea;
+    lo que no se lee queda vacío.
+
+    Devuelve (fechas, tasa, método) como `detect_date`, o (None, tasa, None).
+    """
+    fechas, tasa, metodo = detect_date(s, "fecha")
+    if fechas is not None and tasa >= 0.5:
+        return fechas, tasa, metodo
+    x = s.dropna()
+    if pd.api.types.is_object_dtype(x) or pd.api.types.is_string_dtype(x):
+        x = x[x.astype(str).str.strip() != ""]
+    if not len(x):
+        return None, 0.0, None
+    texto = _texto_de_fecha(x)
+    dayfirst = texto.str.match(ISO_DATE_RE).mean() < 0.5
+    parsed = _parse_seguro(texto, dayfirst=dayfirst)
+    tasa = float(parsed.notna().mean())
+    anios = parsed.dropna().dt.year
+    if tasa >= 0.5 and len(anios) and anios.between(1900, 2100).mean() >= 0.95:
+        result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+        result.loc[x.index] = parsed
+        return date_only(result), tasa, "text_date"
+    return None, tasa, None

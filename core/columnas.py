@@ -19,7 +19,7 @@ import copy
 
 import pandas as pd
 
-from .dates import detect_date
+from .dates import leer_como_fecha
 from .numeric import numeric_series
 
 PAPELES = ["Fecha", "Dinero", "Cantidad", "Porcentaje", "Número", "Meta",
@@ -150,7 +150,7 @@ def aplicar_papeles(df: pd.DataFrame, schema: dict, papeles: dict) -> tuple[pd.D
             schema["types"].pop(columna, None)
             schema.setdefault("ignoradas", []).append(columna)
         elif papel == "Fecha":
-            fechas, tasa, metodo_nuevo = (serie, 1.0, metodo) if era_fecha else detect_date(serie, "fecha")
+            fechas, tasa, metodo_nuevo = (serie, 1.0, metodo) if era_fecha else leer_como_fecha(serie)
             if fechas is None or tasa < 0.5:
                 raise ValueError(f"«{columna}» no parece una fecha: menos de la mitad de sus valores se pueden "
                                  "leer como fecha.")

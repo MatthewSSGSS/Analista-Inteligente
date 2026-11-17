@@ -125,7 +125,10 @@ numeric aggregation even when they repeat). Column names are read through `core/
 recognizes dates in serial/AAAAMM, persons, cédulas and places by their values (`schema["por_valores"]` keeps why);
 meta/percentage are never guessed by value. The user can correct any column's role in «🔎 Columnas»
 (`core/columnas.aplicar_papeles` → `ui/columnas.py`, stored on the loaded sheet; `schema["meta_declarada"]` wins in
-`columna_meta`). `tests/nombres_columnas_test.py`, `tests/columnas_test.py`. `core/gerencia.analisis_gerencial` adds the sales-manager reading on top of the diagnostics: root cause of the
+`columna_meta`). `tests/nombres_columnas_test.py`, `tests/columnas_test.py`. «🧹 Ordenar y corregir» (`core/organizar.py` → `ui/organizar.py`;
+sidebar button + «➕ Más») proposes fixes with a reason each — misspelled values, misspelled/blank headers, dates the load
+rejected, duplicate rows, order — and on approval re-reads the corrected table with `profile_sheet` (keeping «🔎 Columnas»
+roles); it shares `item["antes_de_corregir"]` with Columnas. `tests/organizar_test.py`. `core/gerencia.analisis_gerencial` adds the sales-manager reading on top of the diagnostics: root cause of the
 change across every groupable column (two levels, e.g. region → channel), volume-vs-ticket lever, and
 opportunities valued in money. It is computed once inside `build_dashboard` (`dashboard["gerencia"]`) and
 reused by the plans, alerts, Resumen, «🎯 Qué atacar» and the HTML reports; `tests/gerencia_test.py`.
