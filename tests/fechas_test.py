@@ -22,7 +22,7 @@ import pandas as pd
 from openpyxl import Workbook
 
 from core import dates as D
-from core.dates import a_datetime, date_only
+from core.dates import a_datetime, date_only, detect_date
 from core.semantic_engine import _date_rate
 from core.filter_engine import mascara_regla
 from core.loader import load_workbook
@@ -313,6 +313,15 @@ def columnas_ya_fechadas_y_casos_raros():
               a_datetime(pd.Series([MEZCLA[0], None, "no es fecha", MEZCLA[1]])).notna().sum() == 2)
 
 
+def las_cedulas_de_diez_digitos_no_son_fechas():
+    """Una cédula nueva (1.043.210.987) tiene 10 dígitos, como una fecha Unix."""
+    cedulas = pd.Series([1043210987 + i * 7919 for i in range(50)])
+    fechas, _, _ = detect_date(cedulas, "Cédula asesor")
+    check("una columna de cédulas de 10 dígitos no se lee como fecha", fechas is None)
+    fechas, _, metodo = detect_date(pd.Series([1735689600 + i * 86400 for i in range(50)]), "Registro")
+    check("un sello Unix de verdad sigue leyéndose como fecha", fechas is not None and metodo == "unix_timestamp")
+
+
 def el_archivo_completo_carga_y_se_puede_filtrar():
     filas = [["Fecha", "Ciudad", "Ventas"]]
     filas += [[f, c, v] for f, c, v in zip(MEZCLA, ["Bogotá", "Cali", "Medellín"], [10, 20, 30])]
@@ -344,6 +353,7 @@ if __name__ == "__main__":
     el_resultado_es_siempre_una_columna_de_fechas()
     cualquier_forma_de_escribir_la_zona_abre_el_archivo()
     columnas_ya_fechadas_y_casos_raros()
+    las_cedulas_de_diez_digitos_no_son_fechas()
     el_archivo_completo_carga_y_se_puede_filtrar()
     los_meses_en_espanol_se_entienden()
     print("\nFechas test completado sin errores.")

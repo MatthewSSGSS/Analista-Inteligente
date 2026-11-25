@@ -779,6 +779,12 @@ def _identificador_repetido(df, schema) -> Optional[dict]:
         valores = valores[valores.ne("")]
         if len(valores) < len(df) * 0.9:
             continue
+        # Un identificador de TRANSACCIÓN (factura, radicado) es casi único y unas
+        # pocas filas se repiten. El código de una ENTIDAD (punto de venta,
+        # asesor) en una tabla con una fila por mes se repite por diseño: 268
+        # códigos en 27.000 filas no es un pegado doble, es la forma del archivo.
+        if valores.nunique() < len(valores) * 0.5:
+            continue
         repetidos = valores[valores.duplicated(keep=False)]
         if repetidos.empty:
             continue

@@ -342,6 +342,16 @@ def _otros_tipos_de_archivo():
     check("las filas iguales por coincidencia no se reportan como duplicados",
           _por_titulo(hallazgos_de(encuesta), "Identificador repetido") is None)
 
+    # Y una tabla mensual por punto de venta: su código se repite una vez por mes
+    # por diseño, no es un cruce repetido.
+    mensual = pd.DataFrame({
+        "Fecha": [f"2026-{m:02d}-01" for m in range(1, 11) for _ in range(60)],
+        "Código PDV": [70000 + i for _ in range(10) for i in range(60)],
+        "Ventas": [random.randint(50_000, 900_000) for _ in range(600)],
+    })
+    check("el código de una entidad repetido por mes no es «identificador repetido»",
+          _por_titulo(hallazgos_de(mensual), "Identificador repetido") is None)
+
 
 if __name__ == "__main__":
     main()

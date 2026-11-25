@@ -11,6 +11,12 @@ DATE_NAME = re.compile(
     r"(fecha|date|datetime|timestamp|created|updated|modified|period|periodo|"
     r"dia|día|mes|month|year|año|corte|emisi[oó]n|vencimiento|nacimiento|creaci[oó]n|apertura)", re.IGNORECASE
 )
+# Un número de 10 dígitos parece una fecha Unix (segundos desde 1970), pero las
+# cédulas nuevas también tienen 10 dígitos (1.043.210.987): sin esta guarda, la
+# columna «Cédula asesor» se leía como fechas de 2003 y desaparecía de los
+# identificadores. Si el nombre dice documento, código o teléfono, no es fecha.
+NOMBRE_DOCUMENTO = re.compile(r"c[eé]dula|\bcc\b|\bnit\b|documento|identificaci|\bid\b|c[oó]digo|\bcod\b|"
+                              r"tel[eé]fono|celular|\bmovil\b|serial|\bplaca\b", re.IGNORECASE)
 # Fechas en formato ISO (YYYY-MM-DD, con u sin hora) NO son ambiguas: el año
 # siempre va primero. pandas normalmente respeta esto, pero con
 # dayfirst=True puede invertir día y mes igualmente (confirmado en pruebas),
@@ -548,7 +554,8 @@ def detect_date(s, name):
         if len(valid):
             years = valid.dt.year
             if years.between(1990, 2100).mean() > 0.95 and (
-                DATE_NAME.search(nombre_para_buscar(name)) or numeric.median() >= 1_000_000_000
+                DATE_NAME.search(nombre_para_buscar(name))
+                or (numeric.median() >= 1_000_000_000 and not NOMBRE_DOCUMENTO.search(nombre_para_buscar(name)))
             ):
                 result = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
                 result.loc[x.index] = unix
