@@ -1573,6 +1573,78 @@ section[data-testid="stSidebar"]::after{content:"";position:absolute;top:0;right
 </style>""".replace("__RED__", _red_svg())
 
 
+BREAKPOINT_CELULAR = 640   # celulares (de pie): una columna, menú deslizable
+BREAKPOINT_TABLETA = 1024  # tabletas y portátiles pequeños
+
+
+def adaptable_css() -> str:
+    """El panel en celular, tableta y PC.
+
+    En un celular (390 px) la franja de marca, la tarjeta «Analizando» y la
+    barra de vistas partida en cinco filas ocupaban la primera pantalla entera:
+    el contenido de cada vista empezaba debajo del pliegue. Aquí se compactan:
+    la barra pasa a UNA fila que se desliza con el dedo (con la vista abierta de
+    primera, para que no quede escondida a la derecha) y la tarjeta muestra solo
+    qué se analiza. Los toques tienen al menos 40 px de alto. Las pantallas
+    animadas (ui/web/*.css) traen sus propias reglas: viven en su componente y
+    estos selectores no las alcanzan."""
+    c, t = BREAKPOINT_CELULAR, BREAKPOINT_TABLETA
+    return f"""<style>
+/* El script que centra la vista abierta en la barra (ui/layouts/tabs.py) no ocupa lugar */
+.st-key-nav_centrar{{position:absolute!important;height:0!important;overflow:hidden!important;margin:0!important}}
+/* ── Tableta y celular ── */
+@media (max-width:{t}px){{
+  .block-container{{padding-top:3.2rem!important}}
+  .app-hero.compacto{{padding:8px 14px;margin:2px 0 8px;gap:10px;border-radius:16px}}
+  .app-hero.compacto .app-hero-orb{{width:28px;height:28px;flex-basis:28px}}
+  .app-hero.compacto .app-hero-kicker{{display:none}}
+  .app-hero.compacto .app-hero-title{{font-size:17px}}
+  .app-hero.compacto .app-hero-txt{{min-width:0}}
+  .st-key-app_contexto{{padding:12px 14px 4px!important;border-radius:16px!important}}
+  .ctx-top{{gap:8px}}
+  .ctx-main{{min-width:0}}
+  .ctx-kicker{{display:none}}
+  .ctx-titulo{{font-size:16px;margin:0 0 7px}}
+  .ctx-estado:not(.filtrado){{display:none}}
+  .ctx-estado.filtrado{{min-width:0;width:100%;padding:8px 10px}}
+  /* Barra de vistas: UNA fila que se desliza con el dedo; un script centra la vista abierta */
+  [data-testid="stMain"] .st-key-nav_barra.st-key-nav_barra{{flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;
+    scrollbar-width:none;border-radius:16px;padding:5px!important;margin:2px 0 12px;-webkit-overflow-scrolling:touch}}
+  .st-key-nav_barra::-webkit-scrollbar{{display:none}}
+  .st-key-nav_barra::after{{display:none}}
+  .st-key-nav_barra [data-testid="stPopover"]{{margin-left:0}}
+  .st-key-nav_barra .stButton button{{padding:0 11px}}
+  /* Columnas de Streamlit: si no caben, pasan a la línea siguiente en vez de quedar angostas */
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"]:not(.st-key-nav_barra){{flex-wrap:wrap!important}}
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{{min-width:min(170px,100%)!important}}
+  [data-testid="stMain"] .terr-hud{{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  [data-testid="stMain"] .terr-hud-tile.principal{{grid-column:1/-1}}
+  .modebar-container{{display:none!important}}
+}}
+/* ── Celular ── */
+@media (max-width:{c}px){{
+  .block-container{{padding-left:.55rem!important;padding-right:.55rem!important;padding-top:3.1rem!important}}
+  .app-hero.compacto{{padding:7px 12px;margin:2px 0 6px;border-radius:14px}}
+  .app-hero.compacto .app-hero-orb{{width:24px;height:24px;flex-basis:24px}}
+  .app-hero.compacto .app-hero-title{{font-size:16px}}
+  .st-key-app_contexto{{padding:10px 12px 4px!important;border-radius:14px!important}}
+  .ctx-titulo{{font-size:15px;margin:0 0 6px}}
+  .ctx-fichas{{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:6px;-webkit-overflow-scrolling:touch;
+    margin-right:-12px;padding-right:12px}}
+  .ctx-fichas::-webkit-scrollbar{{display:none}}
+  .ctx-ficha{{flex:0 0 auto}}
+  [data-testid="stLayoutWrapper"]:has(> .st-key-nav_barra){{top:2.9rem}}
+  .st-key-nav_barra{{border-radius:14px;margin:2px 0 10px}}
+  .st-key-nav_barra .stButton button{{min-height:38px;padding:0 10px}}
+  .st-key-nav_barra .stButton button p{{font-size:12.5px!important}}
+  /* Toques cómodos */
+  .stButton button,[data-testid="stDownloadButton"] button,[data-testid="stPopover"] button{{min-height:40px}}
+  h1{{font-size:1.5rem!important}} h2{{font-size:1.25rem!important}} h3{{font-size:1.08rem!important}}
+  [data-testid="stMain"] .terr-hud{{gap:8px}}
+}}
+</style>"""
+
+
 def inject_theme(dark: bool) -> None:
     """Punto de entrada único: inyecta el tema completo (tokens + clases).
     Sustituye a los dos `st.markdown(...)` que antes vivían inline en
@@ -1580,6 +1652,7 @@ def inject_theme(dark: bool) -> None:
     st.markdown(base_layer_css(dark), unsafe_allow_html=True)
     st.markdown(components_css(), unsafe_allow_html=True)
     st.markdown(pulido_css(), unsafe_allow_html=True)
+    st.markdown(adaptable_css(), unsafe_allow_html=True)
     if dark:
         # Las tablas (st.dataframe) se dibujan en un lienzo con el tema propio
         # de Streamlit, que es el claro (config.toml): en modo oscuro salían

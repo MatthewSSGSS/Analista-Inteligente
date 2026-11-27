@@ -115,6 +115,13 @@
 .at-tarjeta-medir{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.4}
 .at-vacio{font-size:12.5px;color:var(--muted);text-align:center;padding:18px 0;border:1px dashed var(--line);border-radius:12px}
 
+@media (max-width:900px){
+  /* En celular y tableta el titular y la cifra grande no caben lado a lado: el titular
+     quedaba con una palabra por línea y la cifra cortada («+9.»). */
+  .at-hero-cab{flex-direction:column;gap:12px}
+  .at-delta{text-align:left;align-self:stretch;padding:10px 14px}
+  .at-delta b{font-size:30px}
+}
 @media (max-width:980px){
   .at-grid{grid-template-columns:1fr}
   .at-op{grid-template-columns:36px 1fr}

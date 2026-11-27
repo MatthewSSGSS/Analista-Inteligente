@@ -110,5 +110,28 @@ def barra_de_vistas(principales: list[Vista], secundarias: list[Vista] | None = 
                     st.button(etiqueta, key=f"nav_mas_{slug(etiqueta)}", use_container_width=True,
                               type="primary" if etiqueta == activa else "secondary",
                               on_click=_elegir, args=(etiqueta,))
+    _centrar_vista_activa(activa)
 
     todas[activa]()
+
+
+def _centrar_vista_activa(activa: str) -> None:
+    """En el celular la barra es UNA fila que se desliza (theme.adaptable_css) y
+    conserva su desplazamiento entre clics: la vista recién abierta quedaba
+    cortada en un borde. Este script la centra. Solo mueve la barra si de verdad
+    se desborda (en el PC no hace nada) y no toca nada más de la página. El
+    nombre de la vista va en el HTML para que se vuelva a ejecutar al cambiar."""
+    import html as _html
+
+    import streamlit.components.v1 as components
+    with st.container(key="nav_centrar"):
+        components.html(
+            "<script>(function(){var d=window.parent.document,n=0;"
+            "function centrar(){var barra=d.querySelector('.st-key-nav_barra');"
+            "var b=barra&&barra.querySelector('button[kind=\"primary\"]');if(!b)return false;"
+            "if(barra.scrollWidth>barra.clientWidth+2){var r=b.getBoundingClientRect(),rb=barra.getBoundingClientRect();"
+            "barra.scrollTo({left:barra.scrollLeft+(r.left-rb.left)-(rb.width-r.width)/2,behavior:'smooth'});}return true;}"
+            "var t=setInterval(function(){if(centrar()||++n>25)clearInterval(t);},120);})();</script>"
+            f"<!-- {_html.escape(activa)} -->",
+            height=0,
+        )

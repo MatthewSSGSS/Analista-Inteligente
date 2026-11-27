@@ -68,6 +68,11 @@ Inside `ui/`:
 - `ui/styles/theme.py` — the **only** source of injected `<style>`/theme tokens (light/dark). Never
   add a second theme system; a view-local `<style>` block may only *add* classes on top of these
   tokens, never redefine `:root` colors.
+- Phones/tablets: `theme.adaptable_css()` (≤1024 px tablet, ≤640 px phone) compacts the brand strip and the
+  «Analizando» card and turns the nav bar into ONE horizontally scrollable row; `tabs._centrar_vista_activa` (a tiny
+  components.html script) scrolls the open view into the middle of that row. On tablets Streamlit columns wrap
+  (`min-width:170px`) instead of shrinking; the nav bar is excluded from that rule. Shadow-DOM screens (`ui/web/*.css`)
+  need their own media queries. `.streamlit/config.toml` sets `toolbarMode = "minimal"` (no «Deploy»).
 - `ui/components/` — pure, reusable render helpers (`cards.py`, `charts.py`, `section.py`, `descarga.py` →
   `preparar_y_descargar`, the two-step «Preparar → Descargar» used by Exportar and Territorial). No
   business logic, no reading `core/` directly, no reading business `session_state` keys.

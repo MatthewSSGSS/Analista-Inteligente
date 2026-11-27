@@ -5,3 +5,8 @@ backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F7F9FC"
 textColor = "#172033"
 font = "sans serif"
+
+[client]
+# Sin el botón «Deploy» ni las opciones de desarrollador: quien abre el panel
+# (en el celular, la tableta o el PC) ve la aplicación, no la herramienta.
+toolbarMode = "minimal"
