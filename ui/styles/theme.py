@@ -1625,6 +1625,11 @@ def adaptable_css() -> str:
 @media (min-width:{c1}px) and (max-width:{t}px){{
   [data-testid="stMain"] [data-testid="stHorizontalBlock"]:not(.st-key-nav_barra){{flex-wrap:wrap!important}}
   [data-testid="stMain"] [data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{{min-width:min(170px,100%)!important}}
+  /* La tarjeta de acceso va entre dos columnas de relleno (ui/login.py): en tableta quedaba de ~290 px y
+     cortaba «Crear cuenta». Aquí toma un ancho cómodo y el relleno se encoge. */
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(.st-key-acceso_tarjeta)>[data-testid="stColumn"]{{min-width:0!important;flex:1 1 0!important}}
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"]>[data-testid="stColumn"]:has(.st-key-acceso_tarjeta){{
+    flex:0 0 min(460px,100%)!important;min-width:min(460px,100%)!important}}
 }}
 /* ── Celular ── */
 @media (max-width:{c}px){{
