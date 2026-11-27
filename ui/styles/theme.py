@@ -1589,6 +1589,7 @@ def adaptable_css() -> str:
     animadas (ui/web/*.css) traen sus propias reglas: viven en su componente y
     estos selectores no las alcanzan."""
     c, t = BREAKPOINT_CELULAR, BREAKPOINT_TABLETA
+    c1 = c + 1
     return f"""<style>
 /* El script que centra la vista abierta en la barra (ui/layouts/tabs.py) no ocupa lugar */
 .st-key-nav_centrar{{position:absolute!important;height:0!important;overflow:hidden!important;margin:0!important}}
@@ -1614,12 +1615,16 @@ def adaptable_css() -> str:
   .st-key-nav_barra::after{{display:none}}
   .st-key-nav_barra [data-testid="stPopover"]{{margin-left:0}}
   .st-key-nav_barra .stButton button{{padding:0 11px}}
-  /* Columnas de Streamlit: si no caben, pasan a la línea siguiente en vez de quedar angostas */
-  [data-testid="stMain"] [data-testid="stHorizontalBlock"]:not(.st-key-nav_barra){{flex-wrap:wrap!important}}
-  [data-testid="stMain"] [data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{{min-width:min(170px,100%)!important}}
   [data-testid="stMain"] .terr-hud{{grid-template-columns:repeat(2,minmax(0,1fr))}}
   [data-testid="stMain"] .terr-hud-tile.principal{{grid-column:1/-1}}
   .modebar-container{{display:none!important}}
+}}
+/* ── Solo tableta: columnas de Streamlit que no caben pasan a la línea siguiente en vez de quedar
+   angostas. En el celular NO: ahí Streamlit ya apila cada columna a lo ancho, y esta regla dejaba
+   las columnas de relleno de la pantalla de acceso al lado de la tarjeta (tarjeta corrida y angosta). */
+@media (min-width:{c1}px) and (max-width:{t}px){{
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"]:not(.st-key-nav_barra){{flex-wrap:wrap!important}}
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{{min-width:min(170px,100%)!important}}
 }}
 /* ── Celular ── */
 @media (max-width:{c}px){{

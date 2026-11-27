@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Analista Inteligente</title>
+<meta name="description" content="Convierte cualquier Excel en un panel de análisis: indicadores, hallazgos, mapa, proyecciones e informes.">
+<meta name="theme-color" content="#10131c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Analista">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="iconos/favicon-64.png">
+<link rel="apple-touch-icon" href="iconos/apple-touch-icon.png">
+<style>
+  :root { --fondo:#10131c; --rojo:#e4002b; --texto:#f2f4f8; --suave:#9aa3b8; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { height:100%; background:var(--fondo); color:var(--texto);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif; overflow:hidden; }
+  /* El panel ocupa toda la pantalla, respetando el notch y la barra de gestos */
+  #panel { position:fixed; inset:0; width:100%; height:100%; border:0;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background:#fff; opacity:0; transition:opacity .5s ease; }
+  #panel.listo { opacity:1; }
+  /* Pantalla de carga con la marca */
+  #carga { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px; padding:24px; text-align:center; z-index:2; transition:opacity .45s ease;
+    background:radial-gradient(circle at 50% 35%,#2a1420 0%,var(--fondo) 62%); }
+  #carga.fuera { opacity:0; pointer-events:none; }
+  #carga img { width:96px; height:96px; border-radius:24px; box-shadow:0 18px 50px rgba(228,0,43,.35); }
+  #carga h1 { font-size:24px; font-weight:800; letter-spacing:-.02em; }
+  #carga p { font-size:14px; color:var(--suave); max-width:320px; line-height:1.45; }
+  .barra { width:160px; height:4px; border-radius:4px; background:rgba(255,255,255,.12); overflow:hidden; }
+  .barra i { display:block; width:40%; height:100%; border-radius:4px; background:var(--rojo); animation:va 1.3s ease-in-out infinite; }
+  @keyframes va { 0% { transform:translateX(-110%) } 100% { transform:translateX(280%) } }
+  #lento { display:none; font-size:13px; color:var(--suave); }
+  #lento a, .aviso a { color:#ff8da0; }
+  /* Botón y ayudas de instalación */
+  .aviso { position:fixed; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); z-index:3;
+    display:none; align-items:center; gap:12px; padding:12px 14px; border-radius:16px; font-size:13.5px; line-height:1.35;
+    background:rgba(16,19,28,.94); color:var(--texto); box-shadow:0 12px 40px rgba(0,0,0,.35);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); max-width:520px; margin:0 auto; }
+  .aviso.ver { display:flex; }
+  .aviso img { width:36px; height:36px; border-radius:9px; flex:0 0 36px; }
+  .aviso div { flex:1; }
+  .aviso b { display:block; font-size:14px; }
+  .aviso button { border:0; border-radius:11px; padding:9px 14px; font-weight:700; font-size:13.5px; cursor:pointer; }
+  .aviso .si { background:var(--rojo); color:#fff; }
+  .aviso .no { background:transparent; color:var(--suave); padding:9px 6px; }
+  #sinred { position:fixed; inset:0; z-index:4; display:none; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; padding:24px; text-align:center; background:var(--fondo); }
+  #sinred.ver { display:flex; }
+  #sinred button { border:0; border-radius:12px; padding:11px 18px; font-weight:700; background:var(--rojo); color:#fff; }
+</style>
+</head>
+<body>
+  <div id="carga">
+    <img src="iconos/icono-192.png" alt="">
+    <h1>Analista Inteligente</h1>
+    <p>Cualquier Excel convertido en un panel de análisis.</p>
+    <div class="barra"><i></i></div>
+    <p id="lento">Está tardando más de lo normal…<br>
+      Si el panel estaba dormido, <a id="directo" target="_blank" rel="noopener">despiértalo aquí</a> y vuelve.</p>
+  </div>
+
+  <iframe id="panel" title="Analista Inteligente"
+          allow="clipboard-read; clipboard-write; fullscreen; geolocation; web-share"></iframe>
+
+  <div class="aviso" id="instalar">
+    <img src="iconos/icono-192.png" alt="">
+    <div><b>Instala Analista Inteligente</b>Ábrelo desde tu pantalla de inicio, a pantalla completa.</div>
+    <button class="no" id="instalar-no">Ahora no</button>
+    <button class="si" id="instalar-si">Instalar</button>
+  </div>
+  <div class="aviso" id="ios">
+    <img src="iconos/icono-192.png" alt="">
+    <div><b>Agrégala a tu inicio</b>Toca <span aria-label="Compartir">⬆︎ Compartir</span> y luego «Agregar a inicio».</div>
+    <button class="no" id="ios-no">Listo</button>
+  </div>
+
+  <div id="sinred">
+    <img src="iconos/icono-192.png" alt="" width="72" height="72" style="border-radius:18px">
+    <h2>Sin conexión</h2>
+    <p style="color:var(--suave);max-width:300px">El panel necesita internet para analizar tus archivos. Revisa la conexión e intenta de nuevo.</p>
+    <button onclick="location.reload()">Reintentar</button>
+  </div>
+
+<script>
+  // Dirección del panel publicado. Se abre el panel interno («/~/+/») y no la portada de Streamlit
+  // Cloud: dentro de otra página, esa portada encoge el panel a 150 px de alto. «embed=true» quita
+  // la barra de Streamlit para que se vea como una app.
+  const PANEL = "https://dashboard-seguimiento-inteligente.streamlit.app/";
+  const PANEL_INTERNO = PANEL + "~/+/?embed=true";
+  const panel = document.getElementById("panel");
+  const carga = document.getElementById("carga");
+  document.getElementById("directo").href = PANEL;
+
+  function abrir() {
+    if (!navigator.onLine) { document.getElementById("sinred").classList.add("ver"); return; }
+    panel.src = PANEL_INTERNO;
+    panel.addEventListener("load", () => {
+      panel.classList.add("listo");
+      setTimeout(() => carga.classList.add("fuera"), 250);
+    }, { once: true });
+    // Streamlit Cloud duerme las apps sin uso: si tarda, se explica en vez de dejar la pantalla quieta.
+    setTimeout(() => { if (!panel.classList.contains("listo")) document.getElementById("lento").style.display = "block"; }, 6000);
+  }
+  window.addEventListener("online", () => { document.getElementById("sinred").classList.remove("ver"); if (!panel.src) abrir(); });
+  window.addEventListener("offline", () => document.getElementById("sinred").classList.add("ver"));
+  abrir();
+
+  // ¿Ya está instalada? Entonces no se ofrece instalarla.
+  const instalada = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const yaDijoQueNo = (() => { try { return localStorage.getItem("analista-no-instalar") === "1"; } catch (e) { return false; } })();
+  function noMolestar() { try { localStorage.setItem("analista-no-instalar", "1"); } catch (e) {} }
+
+  // Android, Chrome y Edge: el navegador avisa que se puede instalar y aquí se muestra el botón.
+  let pedido = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    pedido = e;
+    if (!instalada && !yaDijoQueNo) setTimeout(() => document.getElementById("instalar").classList.add("ver"), 4000);
+  });
+  document.getElementById("instalar-si").onclick = async () => {
+    document.getElementById("instalar").classList.remove("ver");
+    if (pedido) { pedido.prompt(); await pedido.userChoice; pedido = null; }
+  };
+  document.getElementById("instalar-no").onclick = () => { document.getElementById("instalar").classList.remove("ver"); noMolestar(); };
+
+  // iPhone y iPad (Safari): no hay botón automático, se explica cómo agregarla.
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (ios && !instalada && !yaDijoQueNo) setTimeout(() => document.getElementById("ios").classList.add("ver"), 5000);
+  document.getElementById("ios-no").onclick = () => { document.getElementById("ios").classList.remove("ver"); noMolestar(); };
+
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>

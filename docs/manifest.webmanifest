@@ -1,0 +1,20 @@
+{
+  "name": "Analista Inteligente",
+  "short_name": "Analista",
+  "description": "Convierte cualquier Excel en un panel de análisis: indicadores, hallazgos, mapa, proyecciones e informes.",
+  "lang": "es-CO",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#10131c",
+  "theme_color": "#10131c",
+  "categories": ["business", "productivity", "finance"],
+  "icons": [
+    { "src": "iconos/icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "iconos/icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "iconos/icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

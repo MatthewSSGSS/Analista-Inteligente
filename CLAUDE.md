@@ -73,6 +73,10 @@ Inside `ui/`:
   components.html script) scrolls the open view into the middle of that row. On tablets Streamlit columns wrap
   (`min-width:170px`) instead of shrinking; the nav bar is excluded from that rule. Shadow-DOM screens (`ui/web/*.css`)
   need their own media queries. `.streamlit/config.toml` sets `toolbarMode = "minimal"` (no «Deploy»).
+  The column-wrap rule is tablet-only (641–1024 px): on phones Streamlit stacks columns itself, and the rule pushed the
+  login card next to its spacer columns. `docs/` is the installable app (PWA: manifest, icons, service worker) meant
+  for GitHub Pages: it frames `<app>/~/+/?embed=true` (the inner app; framing the Cloud wrapper `?embed=true` from
+  another page shrinks the app to 150 px, and without `embed` Cloud refuses to be framed).
 - `ui/components/` — pure, reusable render helpers (`cards.py`, `charts.py`, `section.py`, `descarga.py` →
   `preparar_y_descargar`, the two-step «Preparar → Descargar» used by Exportar and Territorial). No
   business logic, no reading `core/` directly, no reading business `session_state` keys.
